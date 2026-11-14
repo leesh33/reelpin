@@ -248,7 +248,7 @@ const CATEGORY_RULES = [
   { category: '카페', words: ['카페', '커피', '로스터리', '찻집', 'cafe', 'coffee', 'tea house', 'roastery'] },
   {
     category: '가볼곳',
-    words: ['관광', '명소', '공원', '미술관', '박물관', '전시', '해변', '전망대', 'tourist', 'park', 'museum', 'attraction', 'garden', 'viewpoint'],
+    words: ['관광', '명소', '공원', '미술관', '박물관', '전시', '해변', '비치', '전망대', '온천', 'tourist', 'park', 'museum', 'attraction', 'garden', 'viewpoint', 'beach', 'landmark', 'shrine', 'temple', 'onsen'],
   },
   {
     category: '맛집',
@@ -578,10 +578,14 @@ export const localSearchAdapter = {
 // ─────────────────────────────────────────────────────────────
 function deriveQuery(text, llm) {
   if (llm && llm.name) {
+    // 가게명에 이미 동네 이름이 들어 있으면('성수동 소금빵집') 중복해서 붙이지 않습니다.
+    const name = String(llm.name);
+    const area = String(llm.area || '');
+    const query = area && !name.includes(area) ? area + ' ' + name : name;
     return {
-      query: [llm.area, llm.name].filter(Boolean).join(' '),
-      name: llm.name,
-      area: llm.area || '',
+      query,
+      name,
+      area,
       category: llm.category || '',
       menuTags: Array.isArray(llm.menuTags) ? llm.menuTags : [],
     };
@@ -780,8 +784,8 @@ export async function extractPlaces(rawUrl, options = {}) {
       title: chain.candidates[0].name,
       candidates: chain.candidates.map((c) => ({
         ...c,
-        // LLM이 분류한 카테고리가 더 구체적이면 그쪽을 우선
-        category: derived.category || c.category || '맛집',
+        // 지도사가 준 분류(rawCategory)가 있으면 그쪽이 정확합니다. LLM 분류는 지도가 말해 주지 않을 때만.
+        category: c.rawCategory ? c.category : derived.category || c.category || '맛집',
         menuTags: derived.menuTags && derived.menuTags.length ? derived.menuTags : c.menuTags || [],
       })),
       usedAdapter: kind,

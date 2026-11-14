@@ -234,6 +234,29 @@ const emptyFallback = await extractPlaces(PRESETS[0].url, { caption: PRESETS[0].
 check('flow: empty api result falls back offline', emptyFallback.usedAdapter === 'offline-fallback', emptyFallback.usedAdapter);
 check('flow: offline candidates still valid', emptyFallback.candidates.length > 0 && emptyFallback.candidates[0].name === '성수동 소금빵집', emptyFallback.candidates[0].name);
 
+// 3-8b. LLM 분류는 지도사 분류가 없을 때만 쓰임 (지도사 분류 우선)
+process.env.EXPO_PUBLIC_OPENAI_API_KEY = 'OPENAIKEY';
+handler = (url) => {
+  if (url.includes('api.openai.com'))
+    return jsonRes({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({ name: '성수동 소금빵집', area: '성수동', category: '카페', menuTags: ['소금빵'] }),
+          },
+        },
+      ],
+    });
+  if (url.includes('dapi.kakao.com')) return jsonRes({ documents: [KAKAO_DOC] });
+  return jsonRes({ items: [], places: [] });
+};
+const llmFlow = await extractPlaces(PRESETS[0].url, { caption: PRESETS[0].caption });
+check('llm: query uses llm name (no duplicated area)', llmFlow.query === '성수동 소금빵집', llmFlow.query);
+check('llm: adapter label llm+kakao', llmFlow.usedAdapter === 'llm+kakao', llmFlow.usedAdapter);
+check('llm: map provider category wins', llmFlow.candidates[0].category === '베이커리', llmFlow.candidates[0].category);
+check('llm: menuTags from caption kept', JSON.stringify(llmFlow.candidates[0].menuTags) === '["소금빵"]', JSON.stringify(llmFlow.candidates[0].menuTags));
+delete process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+
 // 3-9. 어댑터 단위: 키 없으면 요청조차 하지 않음
 setKeys({});
 calls = [];
