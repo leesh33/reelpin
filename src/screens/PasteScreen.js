@@ -10,8 +10,17 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { PRESETS, extractPlaces, isSupportedUrl, parseUrl } from '../services/extractor';
+import {
+  DIRECT_PRESETS,
+  PRESETS,
+  extractPlaces,
+  isSupportedUrl,
+  parseUrl,
+  searchPlacesDirect,
+} from '../services/extractor';
 import { FREE_PIN_LIMIT } from '../data/seedPins';
+import ProviderBadges from '../components/ProviderBadge';
+import { buildPin } from '../utils/pins';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 const EMOJI_BY_CATEGORY = {
@@ -24,6 +33,9 @@ const EMOJI_BY_CATEGORY = {
 
 const TILE_BG = ['#FFF0EA', '#EDF6F2', '#F2F1FA', '#FFF7E6'];
 
+const LINK_STAGES = ['링크 확인', '캡션 분석', '좌표 매칭'];
+const SEARCH_STAGES = ['지도 조회', '중복 정리', '후보 정렬'];
+
 export default function PasteScreen({
   active,
   pinCount,
@@ -32,8 +44,11 @@ export default function PasteScreen({
   onClose,
   onGoProfile,
   onToast,
+  initialMode = 'link',
 }) {
+  const [mode, setMode] = useState(initialMode === 'search' ? 'search' : 'link'); // 'link' | 'search'
   const [url, setUrl] = useState('');
+  const [query, setQuery] = useState('');
   const [clipboardUrl, setClipboardUrl] = useState(null);
   const [extracting, setExtracting] = useState(false);
   const [stage, setStage] = useState(0);
@@ -44,6 +59,8 @@ export default function PasteScreen({
   const scrollRef = useRef(null);
 
   const limitReached = !isPro && pinCount >= FREE_PIN_LIMIT;
+  const isSearch = mode === 'search';
+  const stageLabels = isSearch ? SEARCH_STAGES : LINK_STAGES;
 
   const readClipboard = useCallback(async () => {
     try {
@@ -60,8 +77,8 @@ export default function PasteScreen({
   }, []);
 
   useEffect(() => {
-    if (active) readClipboard();
-  }, [active, readClipboard]);
+    if (active && !isSearch) readClipboard();
+  }, [active, isSearch, readClipboard]);
 
   const applyPaste = async () => {
     const text = await readClipboard();
@@ -72,6 +89,24 @@ export default function PasteScreen({
     } else {
       onToast('클립보드에 릴스·쇼츠 링크가 없어요');
     }
+  };
+
+  /** 모드를 바꾸면 이전 결과는 지웁니다. (링크 결과를 검색 결과처럼 저장하는 실수 방지) */
+  const changeMode = (next) => {
+    if (next === mode) return;
+    setMode(next);
+    setError('');
+    setCandidates([]);
+    setSelectedId(null);
+    setMeta(null);
+    setStage(0);
+  };
+
+  const startProgress = () => {
+    setStage(0);
+    return setInterval(() => {
+      setStage((s) => (s < 2 ? s + 1 : s));
+    }, 380);
   };
 
   const runExtract = async (targetUrl) => {
@@ -88,11 +123,8 @@ export default function PasteScreen({
     setExtracting(true);
     setCandidates([]);
     setSelectedId(null);
-    setStage(0);
 
-    const stageTimer = setInterval(() => {
-      setStage((s) => (s < 2 ? s + 1 : s));
-    }, 380);
+    const stageTimer = startProgress();
 
     const preset = PRESETS.find((p) => p.url === value);
     try {
@@ -108,9 +140,12 @@ export default function PasteScreen({
       setCandidates(result.candidates || []);
       setSelectedId(result.candidates && result.candidates[0] ? result.candidates[0].id : null);
       setMeta({
+        mode: 'link',
         platform: result.platformLabel || '링크',
         platformKey: result.platform,
         usedAdapter: result.usedAdapter,
+        query: result.query || '',
+        sources: result.providersUsed || [],
       });
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
@@ -120,6 +155,51 @@ export default function PasteScreen({
     }
   };
 
+  /** '가게명으로 찾기' — 캡션 없이 검색어만으로 지도 3사를 바로 조회합니다. */
+  const runSearch = async (targetQuery) => {
+    const value = (targetQuery != null ? targetQuery : query).trim();
+    if (!value) {
+      setError('가게명이나 동네를 먼저 입력해 주세요. 예) 성수동 소금빵');
+      return;
+    }
+    setError('');
+    setExtracting(true);
+    setCandidates([]);
+    setSelectedId(null);
+    if (targetQuery != null) setQuery(targetQuery);
+
+    const stageTimer = startProgress();
+    try {
+      const result = await searchPlacesDirect(value, { limit: 4 });
+      await new Promise((resolve) => setTimeout(resolve, 420));
+      clearInterval(stageTimer);
+      setExtracting(false);
+      if (!result.ok) {
+        setCandidates([]);
+        setMeta(null);
+        setError(result.message || '검색 결과를 찾지 못했어요.');
+        return;
+      }
+      setCandidates(result.candidates || []);
+      setSelectedId(result.candidates && result.candidates[0] ? result.candidates[0].id : null);
+      setMeta({
+        mode: 'search',
+        platform: '직접 검색',
+        platformKey: 'search',
+        usedAdapter: result.usedAdapter,
+        query: result.query,
+        sources: result.providersUsed || [],
+      });
+      setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
+    } catch (e) {
+      clearInterval(stageTimer);
+      setExtracting(false);
+      setError('검색 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.');
+    }
+  };
+
+  const runPrimary = () => (isSearch ? runSearch() : runExtract());
+
   const usePreset = (preset) => {
     setUrl(preset.url);
     setError('');
@@ -128,36 +208,37 @@ export default function PasteScreen({
 
   const selectedCandidate = candidates.find((c) => c.id === selectedId) || null;
 
-  const savePin = () => {
-    if (!selectedCandidate) return;
-    if (limitReached) {
-      onToast('무료 플랜은 핀 10개까지예요');
-      return;
-    }
-    const parsed = parseUrl(url);
-    const pin = {
-      id: 'pin-' + Date.now(),
-      name: selectedCandidate.name,
-      area: selectedCandidate.area || '',
-      category: selectedCandidate.category || '맛집',
-      menuTags: selectedCandidate.menuTags || [],
-      address: selectedCandidate.address || '주소 미확인',
-      lat: selectedCandidate.lat,
-      lng: selectedCandidate.lng,
-      sourceUrl: url.trim(),
-      platform: parsed.platform || 'instagram',
-      note: '',
-      createdAt: new Date().toISOString(),
-    };
-    onSaved(pin);
+  const resetInputs = () => {
     setUrl('');
+    setQuery('');
     setCandidates([]);
     setSelectedId(null);
     setMeta(null);
     setClipboardUrl(null);
   };
 
-  const stageLabels = ['링크 확인', '캡션 분석', '좌표 매칭'];
+  const savePin = () => {
+    if (!selectedCandidate) return;
+    if (limitReached) {
+      onToast('무료 플랜은 핀 10개까지예요');
+      return;
+    }
+    const searchMode = meta ? meta.mode === 'search' : isSearch;
+    const sourceUrl = searchMode ? '' : url.trim();
+    const platform = searchMode ? 'search' : parseUrl(sourceUrl).platform || 'instagram';
+    const pin = buildPin(selectedCandidate, { sourceUrl, platform });
+    if (!pin) {
+      setError('저장할 장소 정보가 비어 있어요. 후보를 다시 골라 주세요.');
+      return;
+    }
+    onSaved(pin);
+    resetInputs();
+  };
+
+  const sourceLabel = (meta && meta.sources ? meta.sources : [])
+    .map((id) => ({ kakao: '카카오', naver: '네이버', google: '구글' }[id] || ''))
+    .filter(Boolean)
+    .join(' · ');
 
   return (
     <View style={styles.root}>
@@ -184,8 +265,30 @@ export default function PasteScreen({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* 클립보드 자동 감지 배너 */}
-        {clipboardUrl ? (
+        {/* 입력 방식 전환: 릴스 링크 ↔ 가게명 직접 검색 */}
+        <View style={styles.modeRow}>
+          {[
+            { key: 'link', label: '릴스 링크', icon: 'link-outline' },
+            { key: 'search', label: '가게명으로 찾기', icon: 'search' },
+          ].map((m) => {
+            const on = mode === m.key;
+            return (
+              <Pressable
+                key={m.key}
+                style={[styles.modeBtn, on && styles.modeBtnOn]}
+                onPress={() => changeMode(m.key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: on }}
+              >
+                <Ionicons name={m.icon} size={14} color={on ? colors.coralDark : colors.textSub} />
+                <Text style={[styles.modeText, on && styles.modeTextOn]}>{m.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* 클립보드 자동 감지 배너 (링크 모드 전용) */}
+        {!isSearch && clipboardUrl ? (
           <View style={styles.clipBanner}>
             <View style={styles.clipIcon}>
               <Ionicons name="clipboard-outline" size={20} color={colors.coral} />
@@ -202,32 +305,72 @@ export default function PasteScreen({
           </View>
         ) : null}
 
-        <Text style={styles.label}>릴스 · 쇼츠 링크</Text>
-        <View style={styles.inputWrap}>
-          <TextInput
-            value={url}
-            onChangeText={(t) => {
-              setUrl(t);
-              setError('');
-            }}
-            placeholder="https://www.instagram.com/reel/..."
-            placeholderTextColor={colors.textMuted}
-            style={styles.input}
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="url"
-            returnKeyType="done"
-            onSubmitEditing={() => runExtract()}
-            accessibilityLabel="릴스 링크 입력"
-          />
-          <Pressable style={styles.inputIconBtn} onPress={applyPaste} hitSlop={8} accessibilityLabel="붙여넣기">
-            <Ionicons name="clipboard-outline" size={18} color={colors.coral} />
-          </Pressable>
-        </View>
+        {isSearch ? (
+          <>
+            <Text style={styles.label}>가게명 · 동네</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                value={query}
+                onChangeText={(t) => {
+                  setQuery(t);
+                  setError('');
+                }}
+                placeholder="예) 성수동 소금빵, 연남동 딸기케이크"
+                placeholderTextColor={colors.textMuted}
+                style={styles.input}
+                autoCorrect={false}
+                returnKeyType="search"
+                onSubmitEditing={() => runSearch()}
+                accessibilityLabel="가게명 검색 입력"
+              />
+              {query ? (
+                <Pressable
+                  style={styles.inputIconBtn}
+                  onPress={() => {
+                    setQuery('');
+                    setError('');
+                  }}
+                  hitSlop={8}
+                  accessibilityLabel="검색어 지우기"
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
+            <Text style={styles.helper}>
+              카카오·네이버 지도에서 바로 찾아 좌표까지 채워요. 캡션을 못 긁어온 릴스도 이렇게 저장하세요.
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.label}>릴스 · 쇼츠 링크</Text>
+            <View style={styles.inputWrap}>
+              <TextInput
+                value={url}
+                onChangeText={(t) => {
+                  setUrl(t);
+                  setError('');
+                }}
+                placeholder="https://www.instagram.com/reel/..."
+                placeholderTextColor={colors.textMuted}
+                style={styles.input}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                returnKeyType="done"
+                onSubmitEditing={() => runExtract()}
+                accessibilityLabel="릴스 링크 입력"
+              />
+              <Pressable style={styles.inputIconBtn} onPress={applyPaste} hitSlop={8} accessibilityLabel="붙여넣기">
+                <Ionicons name="clipboard-outline" size={18} color={colors.coral} />
+              </Pressable>
+            </View>
+          </>
+        )}
 
         <Pressable
           style={[styles.primaryBtn, extracting && styles.primaryBtnDisabled]}
-          onPress={() => runExtract()}
+          onPress={runPrimary}
           disabled={extracting}
           accessibilityRole="button"
         >
@@ -237,7 +380,10 @@ export default function PasteScreen({
               <Text style={styles.primaryBtnText}>{stageLabels[stage]} 중…</Text>
             </View>
           ) : (
-            <Text style={styles.primaryBtnText}>장소 추출하기</Text>
+            <View style={styles.loadingRow}>
+              <Ionicons name={isSearch ? 'search' : 'sparkles'} size={16} color={colors.white} />
+              <Text style={styles.primaryBtnText}>{isSearch ? '가게 찾기' : '장소 추출하기'}</Text>
+            </View>
           )}
         </Pressable>
 
@@ -250,28 +396,43 @@ export default function PasteScreen({
 
         {/* 원탭 테스트 프리셋 */}
         <View style={styles.presetHead}>
-          <Text style={styles.sectionTitle}>원탭 테스트</Text>
-          <Text style={styles.sectionHint}>링크 없이 바로 눌러 보세요</Text>
+          <Text style={styles.sectionTitle}>{isSearch ? '이렇게 찾아보세요' : '원탭 테스트'}</Text>
+          <Text style={styles.sectionHint}>{isSearch ? '한 번 눌러 바로 검색' : '링크 없이 바로 눌러 보세요'}</Text>
         </View>
         <View style={styles.presetRow}>
-          {PRESETS.map((p) => (
-            <Pressable key={p.url} style={styles.presetChip} onPress={() => usePreset(p)}>
-              <Text style={styles.presetText} numberOfLines={1}>
-                {p.label}
-              </Text>
-            </Pressable>
-          ))}
+          {isSearch
+            ? DIRECT_PRESETS.map((q) => (
+                <Pressable key={q} style={styles.presetChip} onPress={() => runSearch(q)}>
+                  <Text style={styles.presetText} numberOfLines={1}>
+                    {q}
+                  </Text>
+                </Pressable>
+              ))
+            : PRESETS.map((p) => (
+                <Pressable key={p.url} style={styles.presetChip} onPress={() => usePreset(p)}>
+                  <Text style={styles.presetText} numberOfLines={1}>
+                    {p.label}
+                  </Text>
+                </Pressable>
+              ))}
         </View>
 
-        {/* 추출 결과 */}
+        {/* 안내 카드 */}
         {candidates.length === 0 && !extracting && (
           <View style={styles.guideCard}>
-            <Text style={styles.guideTitle}>저장은 3초면 끝나요</Text>
-            {[
-              ['릴스 공유 버튼 → 링크 복사', '인스타·유튜브 어디서든'],
-              ['위 칸에 붙여넣고 [장소 추출하기]', '캡션에서 가게·메뉴를 뽑아요'],
-              ['후보 확인 후 [지도에 핀 꽂기]', '그 동네 가면 알려드려요'],
-            ].map((step, i) => (
+            <Text style={styles.guideTitle}>{isSearch ? '이름만 알 때는 이렇게' : '저장은 3초면 끝나요'}</Text>
+            {(isSearch
+              ? [
+                  ['가게명이나 동네를 입력', '예) 성수동 소금빵'],
+                  ['지도에서 찾은 후보 확인', '출처 배지로 카카오·네이버 확인'],
+                  ['[지도에 핀 꽂기]', '매장 정보 링크까지 함께 저장'],
+                ]
+              : [
+                  ['릴스 공유 버튼 → 링크 복사', '인스타·유튜브 어디서든'],
+                  ['위 칸에 붙여넣고 [장소 추출하기]', '캡션에서 가게·메뉴를 뽑아요'],
+                  ['후보 확인 후 [지도에 핀 꽂기]', '그 동네 가면 알려드려요'],
+                ]
+            ).map((step, i) => (
               <View key={step[0]} style={styles.guideRow}>
                 <View style={styles.guideNum}>
                   <Text style={styles.guideNumText}>{i + 1}</Text>
@@ -288,11 +449,23 @@ export default function PasteScreen({
         {candidates.length > 0 && (
           <View style={styles.resultWrap}>
             <View style={styles.resultHead}>
-              <Text style={styles.sectionTitle}>추출된 장소 {candidates.length}곳</Text>
+              <Text style={styles.sectionTitle}>
+                {meta && meta.mode === 'search' ? '찾은 가게' : '추출된 장소'} {candidates.length}곳
+              </Text>
               <View style={styles.platformChip}>
                 <Text style={styles.platformChipText}>{meta ? meta.platform : '링크'}</Text>
               </View>
             </View>
+
+            {!!sourceLabel && (
+              <View style={styles.sourceLine}>
+                <Ionicons name="layers-outline" size={12} color={colors.textSub} />
+                <Text style={styles.sourceLineText} numberOfLines={1}>
+                  {sourceLabel} 지도에서 실시간 확인
+                  {meta && meta.query ? ' · “' + meta.query + '”' : ''}
+                </Text>
+              </View>
+            )}
 
             <View style={styles.heroCard}>
               <View style={styles.heroTile}>
@@ -304,6 +477,7 @@ export default function PasteScreen({
                 <Text style={styles.heroName} numberOfLines={1}>
                   {selectedCandidate ? selectedCandidate.name : ''}
                 </Text>
+                {selectedCandidate ? <ProviderBadges item={selectedCandidate} size="sm" style={styles.heroBadges} /> : null}
               </View>
             </View>
 
@@ -324,9 +498,12 @@ export default function PasteScreen({
                     <Text style={styles.candName} numberOfLines={1}>
                       {i + 1}. {c.name}
                     </Text>
-                    <Text style={styles.candAddr} numberOfLines={1}>
-                      {c.address} · {c.category}
-                    </Text>
+                    <View style={styles.candMetaRow}>
+                      <ProviderBadges item={c} size="sm" />
+                      <Text style={styles.candAddr} numberOfLines={1}>
+                        {c.address} · {c.category}
+                      </Text>
+                    </View>
                   </View>
                   <View style={[styles.radio, on && styles.radioOn]}>
                     {on ? <View style={styles.radioDot} /> : null}
@@ -360,8 +537,8 @@ export default function PasteScreen({
               </Pressable>
             )}
 
-            <Pressable style={styles.againBtn} onPress={() => runExtract()}>
-              <Text style={styles.againText}>다시 추출하기</Text>
+            <Pressable style={styles.againBtn} onPress={runPrimary}>
+              <Text style={styles.againText}>{isSearch ? '다시 찾기' : '다시 추출하기'}</Text>
             </Pressable>
           </View>
         )}
@@ -434,6 +611,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 36,
   },
+  modeRow: {
+    flexDirection: 'row',
+    gap: 6,
+    backgroundColor: colors.lineSoft,
+    borderRadius: radius.md,
+    padding: 4,
+    marginBottom: 16,
+  },
+  modeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    height: 36,
+    borderRadius: radius.sm,
+  },
+  modeBtnOn: {
+    backgroundColor: colors.white,
+    ...cardShadow,
+  },
+  modeText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: colors.textSub,
+  },
+  modeTextOn: {
+    color: colors.coralDark,
+    fontWeight: '800',
+  },
   clipBanner: {
     flexDirection: 'row',
     gap: 12,
@@ -479,6 +686,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     marginBottom: 7,
+  },
+  helper: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textMuted,
+    marginTop: 7,
   },
   inputWrap: {
     flexDirection: 'row',
@@ -527,7 +740,7 @@ const styles = StyleSheet.create({
   loadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 9,
+    gap: 8,
   },
   errorBox: {
     flexDirection: 'row',
@@ -630,7 +843,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   platformChip: {
     backgroundColor: colors.card,
@@ -641,6 +854,18 @@ const styles = StyleSheet.create({
   platformChipText: {
     fontSize: 10,
     fontWeight: '800',
+    color: colors.textSub,
+  },
+  sourceLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 10,
+  },
+  sourceLineText: {
+    flex: 1,
+    fontSize: 10.5,
+    fontWeight: '700',
     color: colors.textSub,
   },
   heroCard: {
@@ -667,12 +892,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 7,
     borderRadius: 10,
-    maxWidth: '70%',
+    maxWidth: '78%',
   },
   heroName: {
     fontSize: 13,
     fontWeight: '800',
     color: colors.text,
+  },
+  heroBadges: {
+    marginTop: 5,
   },
   candCard: {
     flexDirection: 'row',
@@ -706,10 +934,16 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.text,
   },
+  candMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 4,
+  },
   candAddr: {
+    flex: 1,
     fontSize: 11,
     color: colors.textSub,
-    marginTop: 3,
   },
   radio: {
     width: 22,

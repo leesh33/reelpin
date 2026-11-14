@@ -5,13 +5,24 @@ import {
   isSupportedUrl,
   extractPlaces,
   searchPlaceProviders,
+  searchPlacesDirect,
   kakaoLocalAdapter,
   naverLocalAdapter,
   googlePlacesAdapter,
   offlineSmartExtract,
+  DIRECT_PRESETS,
   PRESETS,
 } from '../src/services/extractor.js';
-import { naverMapAppUrl, naverMapWebUrl, kakaoMapAppUrl, kakaoMapWebUrl, buildShareLink } from '../src/utils/links.js';
+import {
+  naverMapAppUrl,
+  naverMapWebUrl,
+  kakaoMapAppUrl,
+  kakaoMapWebUrl,
+  buildShareLink,
+  normalizePlaceUrl,
+  openPlace,
+} from '../src/utils/links.js';
+import { buildPin, normalizePin, normalizePins, findExistingPin } from '../src/utils/pins.js';
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -73,6 +84,7 @@ const KAKAO_DOC = {
 
 const NAVER_ITEM = {
   title: '<b>성수동</b> 소금빵집',
+  link: 'http://map.naver.com/p/entry/place/12345',
   category: '음식점>간식>제과,베이커리',
   address: '서울 성동구 성수동2가 123-4',
   roadAddress: '서울 성동구 연무장길 45',
@@ -394,6 +406,84 @@ check('naver web url', naverMapWebUrl(pin).includes('map.naver.com'), naverMapWe
 check('kakao app url', kakaoMapAppUrl(pin).includes('kakaomap://search?q='), kakaoMapAppUrl(pin));
 check('kakao web url', kakaoMapWebUrl(pin).includes('map.kakao.com'), kakaoMapWebUrl(pin));
 check('share link', buildShareLink('odol', [{ name: 'A', category: '카페' }], '성수동').includes('https://reelpin.app/m/odol'));
+
+// ── 6. v1.1: 매장 정보 링크(placeUrl) · 출처 배지 데이터 ──────────
+// 6-1. 카카오는 place_url 을 https 로 올리고 '카카오맵' 라벨을 붙입니다.
+check('place: kakao label', k0.placeUrlLabel === '카카오맵', String(k0.placeUrlLabel));
+check('place: kakao providers array', JSON.stringify(k0.providers) === '["kakao"]', JSON.stringify(k0.providers));
+
+// 6-2. 네이버는 link 를 placeUrl 로 쓰고, 네이버 지도 주소는 https 로 올립니다. (그 외 사이트는 스킴 유지)
+check('place: naver link → placeUrl (https 승격)', n0.placeUrl === 'https://map.naver.com/p/entry/place/12345', n0.placeUrl);
+check('place: naver label', n0.placeUrlLabel === '네이버', String(n0.placeUrlLabel));
+check('place: naver hub 스킴 유지(instagram)', h0.placeUrl === 'http://www.instagram.com/beton.kr', h0.placeUrl);
+check('place: naver hub 라벨 = 매장 홈페이지', h0.placeUrlLabel === '매장 홈페이지', String(h0.placeUrlLabel));
+
+// 6-3. 구글은 googleMapsUri 를 그대로 씁니다.
+check('place: google label', g0.placeUrlLabel === '구글 지도', String(g0.placeUrlLabel));
+
+// 6-4. 두 곳 이상에서 확인된 후보는 providers 배열 + 대표 placeUrl 을 유지합니다.
+check('place: merged keeps kakao placeUrl', merged.placeUrl === 'https://place.map.kakao.com/12345', merged.placeUrl);
+check('place: merged label from kakao', merged.placeUrlLabel === '카카오맵', String(merged.placeUrlLabel));
+
+// 6-5. 직접 검색(searchPlacesDirect) — 지도 3사를 그대로 호출합니다.
+setKeys({ kakao: 'KAKAOKEY', naver: true });
+calls = [];
+handler = (url) =>
+  url.includes('dapi.kakao.com') ? jsonRes({ documents: [KAKAO_DOC] }) : jsonRes({ items: [NAVER_ITEM] });
+const direct = await searchPlacesDirect('  성수동   소금빵 ');
+check('direct: ok', direct.ok === true, JSON.stringify(direct).slice(0, 120));
+check('direct: query trimmed', direct.query === '성수동 소금빵', direct.query);
+check('direct: 2 requests (kakao+naver)', calls.length === 2, String(calls.length));
+check('direct: merges same place into 1', direct.candidates.length === 1, JSON.stringify(direct.candidates.map((c) => c.name)));
+check('direct: providers 두 곳', JSON.stringify(direct.candidates[0].providers) === '["kakao","naver"]', JSON.stringify(direct.candidates[0].providers));
+check('direct: pin 만들 수 있는 placeUrl', String(direct.candidates[0].placeUrl).indexOf("place.map.kakao.com") > 0, direct.candidates[0].placeUrl);
+check('direct: usedAdapter', direct.usedAdapter === 'kakao+naver', String(direct.usedAdapter));
+
+const directEmpty = await searchPlacesDirect('   ');
+check('direct: 빈 검색어 거절', directEmpty.ok === false && directEmpty.reason === 'empty-query' && !!directEmpty.message, directEmpty.reason);
+const directShort = await searchPlacesDirect('성');
+check('direct: 한 글자 거절', directShort.ok === false && directShort.reason === 'too-short', directShort.reason);
+
+calls = [];
+handler = () => jsonRes({ documents: [], items: [], places: [] });
+const directNone = await searchPlacesDirect('없는가게이름');
+check('direct: 결과 없음 안내', directNone.ok === false && directNone.reason === 'no-result' && /찾은 가게가 없/.test(directNone.message), directNone.message);
+check('direct: 결과 없음이면 요청은 실제로 나감', calls.length === 2, String(calls.length));
+
+setKeys({});
+calls = [];
+const directNoKey = await searchPlacesDirect('성수 소금빵');
+check('direct: 키 없음 → no-key 안내', directNoKey.ok === false && directNoKey.reason === 'no-key' && /지도 API 키/.test(directNoKey.message), directNoKey.reason);
+check('direct: 키 없으면 요청 0건', calls.length === 0, String(calls.length));
+check('direct: 예시 검색어 3개', Array.isArray(DIRECT_PRESETS) && DIRECT_PRESETS.length === 3, String(DIRECT_PRESETS.length));
+
+// ── 7. 핀 변환·이전 버전 호환 ──────────────────
+const built = buildPin(direct.candidates[0], { platform: 'search', sourceUrl: '', now: '2026-11-15T00:00:00+09:00' });
+check('pin: placeUrl 저장', built.placeUrl === 'https://place.map.kakao.com/12345', built.placeUrl);
+check('pin: placeUrlLabel 저장', built.placeUrlLabel === '카카오맵', built.placeUrlLabel);
+check('pin: providers 저장', JSON.stringify(built.providers) === '["kakao","naver"]', JSON.stringify(built.providers));
+check('pin: 직접 검색 핀 platform=search', built.platform === 'search' && built.sourceUrl === '', built.platform + '/' + built.sourceUrl);
+check('pin: 빈 후보 → null', buildPin(null) === null && buildPin({ name: '' }) === null);
+
+const legacyPin = normalizePin({ id: 'p1', name: '옛 핀', lat: 37.5, lng: 127 });
+check('pin: v1.0 핀에 placeUrl 기본값', legacyPin.placeUrl === '' && legacyPin.providers.length === 0, JSON.stringify(legacyPin.providers));
+check('pin: v1.0 핀 카테고리 기본값', legacyPin.category === '맛집' && legacyPin.address === '주소 미확인', legacyPin.category);
+check('pin: normalizePins 깨진 항목 제거', normalizePins([null, { name: 'A' }, { lat: 1 }]).length === 1, String(normalizePins([null, { name: 'A' }, { lat: 1 }]).length));
+
+const dupByUrl = findExistingPin([{ id: 'a', name: '딴이름', placeUrl: 'https://place.map.kakao.com/12345' }], { name: '성수동 소금빵집', placeUrl: 'https://place.map.kakao.com/12345' });
+check('pin: 같은 placeUrl 이면 중복으로 판정', dupByUrl && dupByUrl.id === 'a', JSON.stringify(dupByUrl));
+const dupByName = findExistingPin([{ id: 'b', name: '성수동 소금빵집', area: '성수동' }], { name: '성수동 소금빵집', area: '성수동' });
+check('pin: 이름+동가 같으면 중복', dupByName && dupByName.id === 'b', JSON.stringify(dupByName));
+check('pin: 다른 장소는 중복 아님', findExistingPin([{ id: 'b', name: 'A', area: '성수동' }], { name: 'A', area: '연남동' }) === null);
+
+// ── 8. 매장 정보 열기(openPlace) ───────────────────────
+check('openPlace: 스킴 없는 주소에 https 붙임', normalizePlaceUrl('place.map.kakao.com/123') === 'https://place.map.kakao.com/123', normalizePlaceUrl('place.map.kakao.com/123'));
+check('openPlace: http 주소는 스킴 유지', normalizePlaceUrl('http://store.example.com') === 'http://store.example.com', normalizePlaceUrl('http://store.example.com'));
+check('openPlace: 빈 값·딥링크 거절', normalizePlaceUrl('') === '' && normalizePlaceUrl('javascript:alert(1)') === '', normalizePlaceUrl('javascript:alert(1)'));
+const opened = await openPlace('https://place.map.kakao.com/12345');
+check('openPlace: 열기 성공', opened.opened === true && opened.url === 'https://place.map.kakao.com/12345', JSON.stringify(opened));
+const openedEmpty = await openPlace('');
+check('openPlace: 빈 주소는 열지 않음', openedEmpty.opened === false, JSON.stringify(openedEmpty));
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;

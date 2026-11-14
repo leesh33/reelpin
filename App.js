@@ -15,6 +15,7 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import TabBar from './src/components/TabBar';
 import Toast from './src/components/Toast';
 import { loadPins, loadPro, loadRadius, savePins, savePro, saveRadius } from './src/storage';
+import { findExistingPin, normalizePins } from './src/utils/pins';
 import { colors, typography } from './src/theme';
 
 const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
@@ -39,7 +40,8 @@ export default function App() {
         loadPro(),
       ]);
       if (cancelled) return;
-      setPins(storedPins);
+      // v1.0에서 저장된 핀에 없던 필드(placeUrl·providers)를 채워 넣습니다.
+      setPins(normalizePins(storedPins));
       setRadius(storedRadius);
       setIsPro(storedPro);
       setReady(true);
@@ -77,9 +79,8 @@ export default function App() {
 
   const handleSaved = useCallback(
     (pin) => {
-      const existing = pins.find(
-        (p) => p.name === pin.name && (p.area || '') === (pin.area || '')
-      );
+      // 매장 정보 URL 또는 이름+동네가 같으면 같은 장소 — 중복 핀을 만들지 않습니다.
+      const existing = findExistingPin(pins, pin);
       if (existing) {
         setSelectedPinId(existing.id);
         setTab('map');

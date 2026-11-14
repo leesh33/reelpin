@@ -70,6 +70,32 @@ export async function openSource(sourceUrl) {
   }
 }
 
+/**
+ * 저장된 매장 정보 주소(placeUrl)를 정리합니다.
+ * - 이미 http(s) 면 그대로 (가게 홈페이지가 http 전용인 경우가 있어 스킴을 바꾸지 않음)
+ * - 스킴이 없으면 https 로 붙입니다. (예: 'place.map.kakao.com/123')
+ * - http(s) 가 아닌 값(빈 문자열·딥링크 등)은 버립니다.
+ */
+export function normalizePlaceUrl(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) return s;
+  if (/^[\w-]+(\.[\w-]+)+(\/|$)/.test(s)) return 'https://' + s;
+  return '';
+}
+
+/** [매장 정보 보기] — 카카오맵 매장 페이지·네이버 링크·구글 지도·가게 홈페이지를 엽니다. */
+export async function openPlace(rawUrl) {
+  const url = normalizePlaceUrl(rawUrl);
+  if (!url) return { opened: false, url: '' };
+  try {
+    await Linking.openURL(url);
+    return { opened: true, url };
+  } catch (e) {
+    return { opened: false, url };
+  }
+}
+
 /** 내 릴스 지도 공유용 텍스트/링크 */
 export function buildShareLink(handle, pins, area) {
   const list = pins.slice(0, 3).map((p) => '· ' + p.name + ' (' + p.category + ')').join('\n');

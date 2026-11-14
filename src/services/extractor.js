@@ -210,6 +210,34 @@ function normalizeName(name) {
     .replace(/[\s\u00a0()[\]{}<>·,.'"“”‘’\-_/|]/g, '');
 }
 
+/**
+ * 저장된 장소 링크(placeUrl)를 앱에서 바로 열 수 있는 형태로 정리합니다.
+ * - http → https 승격은 카카오맵·네이버처럼 https 를 지원하는 지도 계열 호스트만 합니다.
+ *   (가게 자체 홈페이지는 http 만 지원하는 곳이 있어 스킴을 그대로 둡니다)
+ * - http(s) 가 아닌 값은 버립니다.
+ */
+function toOpenableUrl(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (/^https:\/\//i.test(s)) return s;
+  if (/^http:\/\//i.test(s)) {
+    const host = s.replace(/^http:\/\//i, '').split(/[/?#]/)[0].toLowerCase();
+    const mapHost = /(^|\.)(kakao\.com|kakao\.co\.kr|naver\.com|naver\.me|google\.com|goo\.gl)$/.test(host);
+    return mapHost ? s.replace(/^http:\/\//i, 'https://') : s;
+  }
+  return '';
+}
+
+/** placeUrl 이 어느 서비스의 페이지인지 사람이 읽을 이름표로 바꿉니다. */
+function placeUrlLabelOf(rawUrl) {
+  const s = String(rawUrl || '').toLowerCase();
+  if (!s) return '';
+  if (s.indexOf('kakao.com') >= 0) return '카카오맵';
+  if (s.indexOf('naver.com') >= 0 || s.indexOf('naver.me') >= 0) return '네이버';
+  if (s.indexOf('google.com') >= 0 || s.indexOf('goo.gl') >= 0) return '구글 지도';
+  return '매장 홈페이지';
+}
+
 function distanceMeters(a, b) {
   const lat1 = Number(a && a.lat);
   const lng1 = Number(a && a.lng);
@@ -340,7 +368,8 @@ export const kakaoLocalAdapter = {
         lat: Number(d.y),
         lng: Number(d.x),
         phone: d.phone || '',
-        placeUrl: String(d.place_url || '').replace(/^http:/, 'https:'),
+        placeUrl: toOpenableUrl(d.place_url),
+        placeUrlLabel: placeUrlLabelOf(d.place_url),
         provider: 'kakao',
         manual: false,
       };
@@ -459,8 +488,10 @@ export const naverLocalAdapter = {
         // 네이버는 mapx/mapy를 소수점 제거한 정수(1e7 스케일)로 줍니다.
         lat: Number(it.mapy) / 1e7,
         lng: Number(it.mapx) / 1e7,
-        phone: '',
-        placeUrl: '',
+        phone: it.telephone || '',
+        // 지도사가 주는 link 는 업체 홈페이지·SNS 일 수 있고, 없으면 비워 둡니다.
+        placeUrl: toOpenableUrl(it.link),
+        placeUrlLabel: placeUrlLabelOf(it.link),
         provider: 'naver',
         manual: false,
       };
@@ -523,7 +554,8 @@ export const googlePlacesAdapter = {
         lat: Number(p.location && p.location.latitude),
         lng: Number(p.location && p.location.longitude),
         phone: p.internationalPhoneNumber || '',
-        placeUrl: p.googleMapsUri || '',
+        placeUrl: toOpenableUrl(p.googleMapsUri),
+        placeUrlLabel: placeUrlLabelOf(p.googleMapsUri),
         provider: 'google',
         manual: false,
       };
@@ -562,7 +594,10 @@ function mergeProviderResults(groups, query) {
         dup.providers = Array.from(new Set([...(dup.providers || []), group.provider]));
         dup.confidence = clamp(Math.max(dup.confidence, (weights[group.provider] || 0.8) - index * 0.05) + 0.04, 0.3, 0.99);
         if (!dup.address && item.address) dup.address = item.address;
-        if (!dup.placeUrl && item.placeUrl) dup.placeUrl = item.placeUrl;
+        if (!dup.placeUrl && item.placeUrl) {
+          dup.placeUrl = item.placeUrl;
+          dup.placeUrlLabel = item.placeUrlLabel || '';
+        }
         if (!dup.phone && item.phone) dup.phone = item.phone;
         if (!dup.area && item.area) dup.area = item.area;
         return;
@@ -619,6 +654,60 @@ export async function searchPlaceProviders({ query, limit = 3, providers } = {})
     providersUsed: groups.map((g) => g.provider),
     failures: results.filter((r) => !r.ok).map((r) => ({ provider: r.provider, error: r.error })),
     reason: candidates.length ? undefined : 'no-result',
+  };
+}
+
+/**
+ * 직접 검색 — 릴스 캡션을 못 긁어온 상황에서 '가게명/동네'만으로 지도 3사를 조회합니다.
+ * 화면(PasteScreen '가게명으로 찾기' 모드)에서 그대로 호출하고, 결과 후보를 핀으로 꽂습니다.
+ *
+ * @param {string} rawQuery 예: '성수동 소금빵', '연남동 딸기케이크'
+ * @param {{limit?:number, providers?:string[]}} options
+ * @returns {Promise<{ok:boolean, query:string, candidates:Array<object>, message?:string,
+ *                    reason?:string, usedAdapter?:string, providersTried:string[],
+ *                    providersUsed:string[], failures:Array<object>}>}
+ */
+export async function searchPlacesDirect(rawQuery, options = {}) {
+  const query = String(rawQuery || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const empty = { candidates: [], providersTried: [], providersUsed: [], failures: [] };
+
+  if (!query) {
+    return { ok: false, ...empty, query, reason: 'empty-query', message: '가게명이나 동네를 먼저 입력해 주세요.' };
+  }
+  if (query.length < 2) {
+    return { ok: false, ...empty, query, reason: 'too-short', message: '두 글자 이상으로 찾아 주세요. (예: 성수동 소금빵)' };
+  }
+
+  const chain = await searchPlaceProviders({ query, limit: options.limit || 4, providers: options.providers });
+
+  if (chain.candidates.length) {
+    return {
+      ok: true,
+      query,
+      candidates: chain.candidates,
+      usedAdapter: chain.providersUsed.join('+'),
+      providersTried: chain.providersTried,
+      providersUsed: chain.providersUsed,
+      failures: chain.failures,
+    };
+  }
+
+  const message =
+    chain.reason === 'no-key'
+      ? '지도 API 키가 없어 직접 검색을 쓸 수 없어요. 릴스 링크로 저장하거나 .env 에 카카오·네이버 키를 넣어 주세요.'
+      : '“' + query + '” 로 찾은 가게가 없어요. 동네 이름을 붙여 다시 찾아보세요. (예: 성수동 소금빵)';
+  return {
+    ok: false,
+    ...empty,
+    query,
+    candidates: chain.candidates,
+    providersTried: chain.providersTried,
+    providersUsed: chain.providersUsed,
+    failures: chain.failures,
+    reason: chain.reason || 'no-result',
+    message,
   };
 }
 
@@ -901,6 +990,9 @@ export async function extractPlaces(rawUrl, options = {}) {
     failures: chain.failures,
   };
 }
+
+/** '가게명으로 찾기' 모드의 원탭 예시 검색어 */
+export const DIRECT_PRESETS = ['성수동 소금빵', '연남동 딸기케이크', '검단 카페'];
 
 // 원탭 테스트용 프리셋 (실제 존재하는 릴스 링크 형식 그대로)
 export const PRESETS = [

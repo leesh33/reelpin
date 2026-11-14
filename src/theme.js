@@ -30,8 +30,13 @@ export const colors = {
 
   // brand deep links
   naver: '#03C75A',
+  naverText: '#FFFFFF',
   kakao: '#FEE500',
   kakaoText: '#3C1E1E',
+  google: '#4285F4',
+  googleText: '#FFFFFF',
+  mutedBadge: '#E7E7EE',
+  mutedBadgeText: '#5B6170',
 };
 
 export const radius = {

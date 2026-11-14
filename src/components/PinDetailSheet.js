@@ -2,13 +2,15 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
-import { openMap, openSource } from '../utils/links';
+import { openMap, openPlace, openSource } from '../utils/links';
+import ProviderBadges from './ProviderBadge';
 
 const PLATFORM_LABEL = {
   instagram: '인스타 릴스',
   youtube: '유튜브 쇼츠',
   tiktok: '틱톡',
   naver: '네이버 블로그',
+  search: '가게명으로 찾기',
   unknown: '원본 링크',
 };
 
@@ -25,6 +27,17 @@ export default function PinDetailSheet({ pin, radiusMeters, onClose, onDelete, o
       } else if (result.opened === 'failed') {
         onToast('지도를 열 수 없어요. 잠시 후 다시 시도해 주세요');
       }
+    }
+  };
+
+  const handlePlace = async () => {
+    const result = await openPlace(pin.placeUrl);
+    if (onToast) {
+      onToast(
+        result.opened
+          ? (pin.placeUrlLabel ? pin.placeUrlLabel + '로 열었어요' : '매장 정보를 열었어요')
+          : '매장 정보를 열 수 없어요. 잠시 후 다시 시도해 주세요'
+      );
     }
   };
 
@@ -57,6 +70,9 @@ export default function PinDetailSheet({ pin, radiusMeters, onClose, onDelete, o
         </Pressable>
       </View>
 
+      {/* 어느 지도에서 확인된 장소인지 — 두 곳 이상이면 배지가 나란히 붙습니다 */}
+      <ProviderBadges item={pin} size="sm" style={styles.badgeRow} />
+
       {pin.menuTags && pin.menuTags.length > 0 && (
         <View style={styles.tagRow}>
           {pin.menuTags.map((tag) => (
@@ -73,23 +89,25 @@ export default function PinDetailSheet({ pin, radiusMeters, onClose, onDelete, o
         </Text>
       )}
 
-      <Pressable
-        style={styles.sourceRow}
-        onPress={() => openSource(pin.sourceUrl)}
-        accessibilityRole="link"
-        accessibilityLabel="원본 릴스 열기"
-      >
-        <View style={styles.sourceIcon}>
-          <Ionicons name="play" size={12} color={colors.coral} />
-        </View>
-        <View style={styles.sourceTextWrap}>
-          <Text style={styles.sourceLabel}>{platform}</Text>
-          <Text style={styles.sourceUrl} numberOfLines={1}>
-            {pin.sourceUrl}
-          </Text>
-        </View>
-        <Ionicons name="open-outline" size={16} color={colors.textMuted} />
-      </Pressable>
+      {!!pin.sourceUrl && (
+        <Pressable
+          style={styles.sourceRow}
+          onPress={() => openSource(pin.sourceUrl)}
+          accessibilityRole="link"
+          accessibilityLabel="원본 릴스 열기"
+        >
+          <View style={styles.sourceIcon}>
+            <Ionicons name="play" size={12} color={colors.coral} />
+          </View>
+          <View style={styles.sourceTextWrap}>
+            <Text style={styles.sourceLabel}>{platform}</Text>
+            <Text style={styles.sourceUrl} numberOfLines={1}>
+              {pin.sourceUrl}
+            </Text>
+          </View>
+          <Ionicons name="open-outline" size={16} color={colors.textMuted} />
+        </Pressable>
+      )}
 
       <View style={styles.addrRow}>
         <Ionicons name="location-outline" size={14} color={colors.textMuted} />
@@ -97,6 +115,21 @@ export default function PinDetailSheet({ pin, radiusMeters, onClose, onDelete, o
           {pin.address || '주소 미확인'}
         </Text>
       </View>
+
+      {/* 지도 API가 준 매장 페이지가 있을 때만 — 없으면 지도 검색 버튼으로 안내 */}
+      {!!pin.placeUrl && (
+        <Pressable
+          style={styles.placeBtn}
+          onPress={handlePlace}
+          accessibilityRole="link"
+          accessibilityLabel="매장 정보 보기"
+        >
+          <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
+          <Text style={styles.placeBtnText}>매장 정보 보기</Text>
+          {!!pin.placeUrlLabel && <Text style={styles.placeBtnMeta}>{pin.placeUrlLabel}</Text>}
+          <Ionicons name="open-outline" size={14} color={colors.coralDark} />
+        </Pressable>
+      )}
 
       <View style={styles.btnRow}>
         <Pressable
@@ -196,6 +229,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  badgeRow: {
+    marginTop: 8,
+  },
   tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -259,14 +295,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     flex: 1,
   },
+  placeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 12,
+    height: 44,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.coralSoft2,
+    backgroundColor: colors.coralSoft,
+    paddingHorizontal: 12,
+  },
+  placeBtnText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: colors.coralDark,
+  },
+  placeBtnMeta: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.coralDark,
+    opacity: 0.7,
+    textAlign: 'right',
+  },
   btnRow: {
     flexDirection: 'row',
     gap: 8,
-    marginTop: 14,
+    marginTop: 10,
   },
   mapBtn: {
     flex: 1,
-    height: 46,
+    height: 44,
     borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
@@ -276,7 +337,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   deleteBtn: {
-    marginTop: 10,
+    marginTop: 8,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
