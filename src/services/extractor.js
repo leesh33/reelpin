@@ -3,17 +3,20 @@
  * ─────────────────────────────────────────────────────────────
  * 릴스/쇼츠 URL → 장소 후보 추출기.
  *
- * 구조 (v1.0)
+ * 구조 (v1.1 — 카카오·네이버·구글 3사 지도 API 통합)
  *   extractPlaces(url)
  *     ├─ parseUrl(url)                    … 플랫폼·ID 파싱
  *     ├─ SourceAdapter.fetchMetadata()    … 유튜브 / 인스타 메타데이터
  *     ├─ LlmAdapter.extractPlaceJson()    … 캡션 → {가게명·지역·메뉴·카테고리}
- *     ├─ LocalSearchAdapter.search()      … 네이버·카카오 로컬 → 좌표·도로명주소
- *     └─ offlineSmartExtract()            … API 키가 없어도 동작하는 오프라인 추출기
+ *     ├─ searchPlaceProviders()           … 카카오 로컬 + 네이버 지역검색 + 구글 Places 병렬 조회 → 후보 병합
+ *     └─ offlineSmartExtract()            … API 키가 하나도 없거나 전부 실패하면 오프라인 추출기로 폴백
  *
- * 지금은 API 키가 없으므로 마지막 단계(오프라인 추출기)만 실제로 동작하고,
- * 나머지 어댑터는 키를 채우는 순간 그대로 살아나도록 자리와 입출력 규격을 잡아 두었습니다.
- * (키는 app.json extra가 아니라 EXPO_PUBLIC_* 환경변수로만 넣습니다.)
+ * 설계 원칙
+ *   1. 세 지도 API 키 중 **설정된 키만** 골라 동시에 조회하고, 한 곳이 실패해도 나머지 결과로 후보를 채웁니다.
+ *   2. 키가 하나도 없으면 예전처럼 오프라인 스마트 추출기로 끝까지 동작합니다(앱이 멈추지 않음).
+ *   3. 키는 app.json extra가 아니라 EXPO_PUBLIC_* 환경변수로만 넣습니다. (.env.example 참고)
+ *      → Expo는 `process.env.EXPO_PUBLIC_XXX` 를 빌드 시점에 문자열로 치환하므로
+ *        반드시 아래처럼 **직접 표기**해야 합니다. (`process.env[name]` 동적 접근은 치환되지 않음)
  */
 
 export const PLATFORMS = {
@@ -172,44 +175,433 @@ export const llmAdapter = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// 어댑터 3 · 로컬 검색 지오코딩 (네이버 / 카카오)
+// 공통 유틸
 // ─────────────────────────────────────────────────────────────
-export const localSearchAdapter = {
-  /**
-   * 가게명 + 지역 → 후보 3개(좌표·도로명주소 포함).
-   * 네이버 지역검색은 서버에서 호출해야 키가 노출되지 않습니다.
-   * 여기서는 앱에서 직접 호출하는 형태로 규격만 잡아 두었습니다.
-   */
-  async search({ name, area }) {
-    const key = process.env.EXPO_PUBLIC_NAVER_SEARCH_KEY_ID;
-    const secret = process.env.EXPO_PUBLIC_NAVER_SEARCH_SECRET;
-    if (!key || !secret || !name) return null;
-    try {
-      const query = encodeURIComponent([area, name].filter(Boolean).join(' '));
-      const res = await fetch('https://openapi.naver.com/v1/search/local.json?query=' + query + '&display=3', {
-        headers: { 'X-Naver-Client-Id': key, 'X-Naver-Client-Secret': secret },
-      });
-      if (!res.ok) return null;
-      const json = await res.json();
-      const items = (json && json.items) || [];
-      return items.map((it, i) => ({
-        id: 'naver-' + i,
-        name: stripTags(it.title),
-        area: area || '',
-        category: it.category || '',
-        address: it.roadAddress || it.address || '',
-        lat: Number(it.mapy) / 1e7,
-        lng: Number(it.mapx) / 1e7,
-        menuTags: [],
-      }));
-    } catch (e) {
-      return null;
+const KAKAO_KEYWORD_ENDPOINT = 'https://dapi.kakao.com/v2/local/search/keyword.json';
+const NAVER_LOCAL_ENDPOINT = 'https://openapi.naver.com/v1/search/local.json';
+const GOOGLE_TEXT_SEARCH_ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
+
+/** 지도 3사 후보를 합친 뒤 화면에 보여 줄 최대 개수(라디오 선택 UX 기준) */
+export const MAX_MAP_RESULTS = 5;
+
+function stripTags(s) {
+  return String(s || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .trim();
+}
+
+function clamp(n, min, max) {
+  return Math.min(max, Math.max(min, n));
+}
+
+function normalizeName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[\s\u00a0()[\]{}<>·,.'"“”‘’\-_/|]/g, '');
+}
+
+function distanceMeters(a, b) {
+  const lat1 = Number(a && a.lat);
+  const lng1 = Number(a && a.lng);
+  const lat2 = Number(b && b.lat);
+  const lng2 = Number(b && b.lng);
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return Infinity;
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** 같은 가게를 3사가 각자 돌려줬을 때 하나로 합치기 위한 판정 */
+function samePlace(a, b) {
+  const na = normalizeName(a && a.name);
+  const nb = normalizeName(b && b.name);
+  if (!na || !nb) return false;
+  const d = distanceMeters(a, b);
+  if (na === nb) return d <= 300 || d === Infinity; // 이름이 같으면 같은 가게로 본다
+  if (d <= 40) return true; // 좌표가 사실상 동일
+  if (na.length >= 2 && nb.length >= 2 && (na.includes(nb) || nb.includes(na))) return d <= 150;
+  return false;
+}
+
+// 앱 카테고리(맛집·카페·디저트·베이커리·가볼곳)로 정규화
+const GROUP_CODE_CATEGORY = {
+  FD6: '맛집', // 음식점
+  CE7: '카페', // 카페
+  AT4: '가볼곳', // 관광명소
+  CT1: '가볼곳', // 문화시설
+  AD5: '가볼곳', // 숙박
+};
+
+const CATEGORY_RULES = [
+  { category: '베이커리', words: ['제과', '베이커리', '빵집', '빵', 'bakery', 'pastry', 'croissant', 'bakeries'] },
+  { category: '디저트', words: ['디저트', '케이크', '아이스크림', '빙수', '도넛', 'dessert', 'cake', 'ice cream', 'donut'] },
+  { category: '카페', words: ['카페', '커피', '로스터리', '찻집', 'cafe', 'coffee', 'tea house', 'roastery'] },
+  {
+    category: '가볼곳',
+    words: ['관광', '명소', '공원', '미술관', '박물관', '전시', '해변', '전망대', 'tourist', 'park', 'museum', 'attraction', 'garden', 'viewpoint'],
+  },
+  {
+    category: '맛집',
+    words: ['음식점', '식당', '한식', '일식', '중식', '양식', '분식', '국밥', '고기', '치킨', '피자', 'restaurant', 'food', 'diner', 'noodle', 'sushi', 'bbq'],
+  },
+];
+
+function mapCategory(rawCategory, groupCode) {
+  const raw = String(rawCategory || '').toLowerCase();
+  const byCode = GROUP_CODE_CATEGORY[String(groupCode || '').toUpperCase()];
+  if (byCode) {
+    // 카카오 코드가 카페/음식점을 정확히 알려 주지만, '제과,베이커리'처럼 더 구체적인 표기는 존중
+    for (const rule of CATEGORY_RULES) {
+      if (rule.words.some((w) => raw.includes(w.toLowerCase()))) return rule.category;
     }
+    return byCode;
+  }
+  for (const rule of CATEGORY_RULES) {
+    if (rule.words.some((w) => raw.includes(w.toLowerCase()))) return rule.category;
+  }
+  return '맛집';
+}
+
+/** '서울 성동구 성수동2가 123-4' → '성수동' 처럼 동네 이름만 뽑습니다. (도로명주소에는 동이 없어 지번주소를 먼저 봅니다) */
+function pickArea(address) {
+  const text = String(address || '');
+  const dong = text.match(/([가-힣]{1,6}(?:동|읍|면))(?:\d+가)?(?:\s|,|$)/);
+  if (dong) return dong[1];
+  const gu = text.match(/([가-힣]{1,6}[구군])(?:\s|,|$)/);
+  return gu ? gu[1] : '';
+}
+
+/**
+ * 엑스포 웹(브라우저) 빌드 여부.
+ * 네이버 지역검색은 응답에 CORS 헤더를 주지 않아 브라우저에서 호출하면 막힙니다(아래 주석 참고).
+ */
+function isWebRuntime() {
+  return typeof window !== 'undefined' && typeof document !== 'undefined';
+}
+
+// ─────────────────────────────────────────────────────────────
+// 어댑터 3-A · 카카오 로컬 (키워드 장소 검색)
+// ─────────────────────────────────────────────────────────────
+export const kakaoLocalAdapter = {
+  id: 'kakao',
+  label: '카카오 로컬',
+  keyEnv: 'EXPO_PUBLIC_KAKAO_REST_API_KEY',
+  isConfigured() {
+    return Boolean(process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY);
+  },
+  /**
+   * GET https://dapi.kakao.com/v2/local/search/keyword.json?query=성수 소금빵집&size=3
+   * 응답 documents[] = { place_name, category_name, category_group_code, phone,
+   *                       address_name, road_address_name, x(경도), y(위도), place_url }
+   * → 도로명주소·위경도·카테고리·카카오맵 Place URL을 그대로 후보로 옮깁니다.
+   */
+  async search({ query, limit = 3 }) {
+    const key = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY;
+    if (!key || !query) return [];
+    const url =
+      KAKAO_KEYWORD_ENDPOINT +
+      '?query=' +
+      encodeURIComponent(query) +
+      '&size=' +
+      clamp(Number(limit) || 3, 1, 15) +
+      '&sort=accuracy';
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: { Authorization: 'KakaoAK ' + key },
+    });
+    if (!res.ok) throw new Error('kakao ' + res.status);
+    const json = await res.json();
+    const docs = (json && json.documents) || [];
+    return docs.map((d, i) => {
+      const address = d.road_address_name || d.address_name || '';
+      return {
+        id: 'kakao-' + (d.id || i),
+        name: d.place_name || '',
+        area: pickArea(d.address_name) || pickArea(d.road_address_name),
+        category: mapCategory(d.category_name, d.category_group_code),
+        rawCategory: d.category_name || '',
+        menuTags: [],
+        address,
+        lat: Number(d.y),
+        lng: Number(d.x),
+        phone: d.phone || '',
+        placeUrl: String(d.place_url || '').replace(/^http:/, 'https:'),
+        provider: 'kakao',
+        manual: false,
+      };
+    });
   },
 };
 
-function stripTags(s) {
-  return String(s || '').replace(/<[^>]*>/g, '');
+// ─────────────────────────────────────────────────────────────
+// 어댑터 3-B · 네이버 지역검색 (지오코딩 보조)
+// ─────────────────────────────────────────────────────────────
+export const naverLocalAdapter = {
+  id: 'naver',
+  label: '네이버 지역검색',
+  keyEnvs: ['EXPO_PUBLIC_NAVER_CLIENT_ID', 'EXPO_PUBLIC_NAVER_CLIENT_SECRET'],
+  isConfigured() {
+    return Boolean(process.env.EXPO_PUBLIC_NAVER_CLIENT_ID && process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET);
+  },
+  /**
+   * GET https://openapi.naver.com/v1/search/local.json?query=성수 소금빵집&display=3
+   * 헤더: X-Naver-Client-Id / X-Naver-Client-Secret
+   * 응답 items[] = { title(<b>태그 포함>), category, address, roadAddress, mapx(경도), mapy(위도) }
+   *
+   * ⚠️ 브라우저 CORS: 네이버 오픈 API는 Access-Control-Allow-Origin을 주지 않습니다.
+   *    → iOS/Android(Expo Go·네이티브 빌드)에서는 그대로 동작하지만,
+   *      `expo start --web` / `expo export --platform web` 브라우저에서는 요청이 차단됩니다.
+   *    그래서 웹 런타임에서는 이 어댑터를 건너뛰고(콘솔 에러 방지) 카카오·구글 결과로 채웁니다.
+   *    웹에서도 네이버 결과가 꼭 필요하면 서버리스 프록시(예: /api/naver-local)를 두고
+   *    그 주소로 fetch하는 방식으로 우회해야 합니다. (키를 브라우저에 노출하지 않는 편이 안전)
+   */
+  async search({ query, limit = 3 }) {
+    const clientId = process.env.EXPO_PUBLIC_NAVER_CLIENT_ID;
+    const clientSecret = process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET;
+    if (!clientId || !clientSecret || !query) return [];
+    if (isWebRuntime()) return []; // 위 CORS 주석 참고 — 웹에서는 조용히 건너뜁니다.
+
+    const url =
+      NAVER_LOCAL_ENDPOINT +
+      '?query=' +
+      encodeURIComponent(query) +
+      '&display=' +
+      clamp(Number(limit) || 3, 1, 5);
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'X-Naver-Client-Id': clientId,
+        'X-Naver-Client-Secret': clientSecret,
+      },
+    });
+    if (!res.ok) throw new Error('naver ' + res.status);
+    const json = await res.json();
+    const items = (json && json.items) || [];
+    return items.map((it, i) => {
+      const name = stripTags(it.title);
+      const address = it.roadAddress || it.address || '';
+      return {
+        id: 'naver-' + i,
+        name,
+        area: pickArea(it.address) || pickArea(address),
+        category: mapCategory(it.category),
+        rawCategory: it.category || '',
+        menuTags: [],
+        address,
+        // 네이버는 mapx/mapy를 소수점 제거한 정수(1e7 스케일)로 줍니다.
+        lat: Number(it.mapy) / 1e7,
+        lng: Number(it.mapx) / 1e7,
+        phone: '',
+        placeUrl: '',
+        provider: 'naver',
+        manual: false,
+      };
+    });
+  },
+};
+
+// ─────────────────────────────────────────────────────────────
+// 어댑터 3-C · 구글 Places (Text Search, 해외·영문/일문 장소 커버)
+// ─────────────────────────────────────────────────────────────
+export const googlePlacesAdapter = {
+  id: 'google',
+  label: '구글 Places',
+  keyEnv: 'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY',
+  isConfigured() {
+    return Boolean(process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+  },
+  /**
+   * POST https://places.googleapis.com/v1/places:searchText
+   * 헤더: X-Goog-Api-Key, X-Goog-FieldMask
+   * 바디: { textQuery, maxResultCount, languageCode }
+   * 응답 places[] = { id, displayName.text, formattedAddress, location{latitude,longitude},
+   *                   primaryTypeDisplayName.text, googleMapsUri, phone }
+   * 해외(이시가키·오키나와 등) 장소는 카카오/네이버에 없으므로 구글이 사실상 주력입니다.
+   */
+  async search({ query, limit = 3, languageCode = 'ko' }) {
+    const key = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!key || !query) return [];
+    const res = await fetch(GOOGLE_TEXT_SEARCH_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask':
+          'places.id,places.displayName,places.formattedAddress,places.location,' +
+          'places.primaryTypeDisplayName,places.googleMapsUri,places.internationalPhoneNumber',
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        maxResultCount: clamp(Number(limit) || 3, 1, 5),
+        languageCode,
+      }),
+    });
+    if (!res.ok) throw new Error('google ' + res.status);
+    const json = await res.json();
+    const places = (json && json.places) || [];
+    return places.map((p, i) => {
+      const address = p.formattedAddress || '';
+      const rawCategory = [p.primaryTypeDisplayName && p.primaryTypeDisplayName.text, address]
+        .filter(Boolean)
+        .join(' ');
+      return {
+        id: 'google-' + (p.id || i),
+        name: (p.displayName && p.displayName.text) || '',
+        area: pickArea(address),
+        category: mapCategory(rawCategory),
+        rawCategory,
+        menuTags: [],
+        address,
+        lat: Number(p.location && p.location.latitude),
+        lng: Number(p.location && p.location.longitude),
+        phone: p.internationalPhoneNumber || '',
+        placeUrl: p.googleMapsUri || '',
+        provider: 'google',
+        manual: false,
+      };
+    });
+  },
+};
+
+export const MAP_PROVIDERS = [kakaoLocalAdapter, naverLocalAdapter, googlePlacesAdapter];
+
+// ─────────────────────────────────────────────────────────────
+// 병렬 조회 + 후보 병합
+// ─────────────────────────────────────────────────────────────
+const PROVIDER_WEIGHT_KO = { kakao: 0.9, naver: 0.86, google: 0.82 };
+const PROVIDER_WEIGHT_LATIN = { kakao: 0.78, naver: 0.74, google: 0.92 };
+
+/** 이름이 검색어와 얼마나 맞는지에 따라 신뢰도를 살짝 올립니다. */
+function nameMatchBonus(itemName, query) {
+  const n = normalizeName(itemName);
+  const q = normalizeName(query);
+  if (!n || !q || n.length < 2) return 0;
+  if (n === q) return 0.08;
+  if (q.includes(n) || n.includes(q)) return 0.05;
+  return 0;
+}
+
+function mergeProviderResults(groups, query) {
+  const latin = !/[가-힣]/.test(String(query || ''));
+  const weights = latin ? PROVIDER_WEIGHT_LATIN : PROVIDER_WEIGHT_KO;
+  const merged = [];
+
+  for (const group of groups) {
+    (group.items || []).forEach((item, index) => {
+      const dup = merged.find((m) => samePlace(m, item));
+      if (dup) {
+        // 두 번째 지도가 같은 가게를 확인해 준 것 → 신뢰도 상승 + 빈 필드 보강
+        dup.providers = Array.from(new Set([...(dup.providers || []), group.provider]));
+        dup.confidence = clamp(Math.max(dup.confidence, (weights[group.provider] || 0.8) - index * 0.05) + 0.04, 0.3, 0.99);
+        if (!dup.address && item.address) dup.address = item.address;
+        if (!dup.placeUrl && item.placeUrl) dup.placeUrl = item.placeUrl;
+        if (!dup.phone && item.phone) dup.phone = item.phone;
+        if (!dup.area && item.area) dup.area = item.area;
+        return;
+      }
+      const confidence = clamp(
+        (weights[group.provider] || 0.8) - index * 0.05 + nameMatchBonus(item.name, query),
+        0.3,
+        0.99
+      );
+      merged.push({ ...item, providers: [group.provider], confidence });
+    });
+  }
+
+  merged.sort((a, b) => b.confidence - a.confidence);
+  return merged.slice(0, MAX_MAP_RESULTS);
+}
+
+/**
+ * 설정된 지도 API(카카오·네이버·구글)를 동시에 조회하고 후보를 합칩니다.
+ * - 한 곳이 실패(401·네트워크·CORS)해도 나머지 결과로 후보를 채웁니다.
+ * - 키가 하나도 없으면 아무 요청도 보내지 않고 빈 결과를 돌려줍니다(→ 오프라인 추출기 폴백).
+ *
+ * @param {{query:string, limit?:number, providers?:string[]}} options
+ * @returns {Promise<{candidates:Array<object>, providersTried:string[], providersUsed:string[],
+ *                    failures:Array<{provider:string,error:string}>, reason?:string}>}
+ */
+export async function searchPlaceProviders({ query, limit = 3, providers } = {}) {
+  const q = String(query || '').trim();
+  const empty = { candidates: [], providersTried: [], providersUsed: [], failures: [] };
+  if (!q) return { ...empty, reason: 'empty-query' };
+
+  const active = MAP_PROVIDERS.filter(
+    (p) => p.isConfigured() && (!providers || providers.includes(p.id))
+  );
+  if (!active.length) return { ...empty, reason: 'no-key' };
+
+  const results = await Promise.all(
+    active.map(async (p) => {
+      try {
+        const items = await p.search({ query: q, limit });
+        return { provider: p.id, ok: true, items: Array.isArray(items) ? items : [] };
+      } catch (e) {
+        return { provider: p.id, ok: false, items: [], error: String((e && e.message) || e) };
+      }
+    })
+  );
+
+  const groups = results.filter((r) => r.items.length).map((r) => ({ provider: r.provider, items: r.items }));
+  const candidates = mergeProviderResults(groups, q);
+
+  return {
+    candidates,
+    providersTried: results.map((r) => r.provider),
+    providersUsed: groups.map((g) => g.provider),
+    failures: results.filter((r) => !r.ok).map((r) => ({ provider: r.provider, error: r.error })),
+    reason: candidates.length ? undefined : 'no-result',
+  };
+}
+
+/** v1.0 호환용: 네이버 로컬 단독 검색 API를 그대로 쓰던 자리 */
+export const localSearchAdapter = {
+  async search({ name, area }) {
+    if (!name) return null;
+    const chain = await searchPlaceProviders({ query: [area, name].filter(Boolean).join(' '), limit: 3 });
+    return chain.candidates.length ? chain.candidates : null;
+  },
+};
+
+// ─────────────────────────────────────────────────────────────
+// 검색어 만들기 — LLM이 있으면 정확하게, 없으면 캡션 첫 문장으로
+// ─────────────────────────────────────────────────────────────
+function deriveQuery(text, llm) {
+  if (llm && llm.name) {
+    return {
+      query: [llm.area, llm.name].filter(Boolean).join(' '),
+      name: llm.name,
+      area: llm.area || '',
+      category: llm.category || '',
+      menuTags: Array.isArray(llm.menuTags) ? llm.menuTags : [],
+    };
+  }
+  // LLM 키가 없을 때의 2차 폴백: 해시태그·링크·이모지를 걷어낸 첫 문장을 검색어로 씁니다.
+  // (구글 Text Search는 자연어 문장도 잘 받아 주고, 카카오/네이버는 앞부분 키워드 위주로 매칭합니다)
+  const cleaned = String(text || '')
+    .replace(/#[^\s#]+/g, ' ')
+    .replace(/@[A-Za-z0-9._]+/g, ' ')
+    .replace(/https?:\/\/\S+/g, ' ')
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const llmExtras = {
+    category: (llm && llm.category) || '',
+    menuTags: llm && Array.isArray(llm.menuTags) ? llm.menuTags : [],
+  };
+  if (!cleaned) return { query: '', name: '', area: '', ...llmExtras };
+  const first = cleaned.split(/[|\n·,]/)[0].trim() || cleaned;
+  return { query: first.slice(0, 40), name: '', area: '', ...llmExtras };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -326,6 +718,7 @@ export function offlineSmartExtract(parsed, caption) {
         lat: area === '검단' ? 37.592 : 37.5445,
         lng: area === '검단' ? 126.69 : 127.0557,
         confidence: 0.32,
+        provider: 'offline',
         manual: true,
       },
     ];
@@ -341,6 +734,7 @@ export function offlineSmartExtract(parsed, caption) {
     lat: x.place.lat,
     lng: x.place.lng,
     confidence: i === 0 ? 0.86 : 0.54,
+    provider: 'offline',
     manual: false,
   }));
 }
@@ -354,7 +748,8 @@ export const EXTRACT_STAGES = ['링크 확인', '캡션 분석', '지도 좌표 
  * @param {string} rawUrl
  * @param {{caption?: string}} options
  * @returns {Promise<{ok:boolean, reason?:string, platform?:string, platformLabel?:string,
- *                    title?: string, candidates?: Array<object>, usedAdapter?: string}>}
+ *                    title?: string, candidates?: Array<object>, usedAdapter?: string,
+ *                    providersTried?: string[], providersUsed?: string[], failures?: Array<object>}>}
  */
 export async function extractPlaces(rawUrl, options = {}) {
   const parsed = parseUrl(rawUrl);
@@ -368,24 +763,37 @@ export async function extractPlaces(rawUrl, options = {}) {
     .filter(Boolean)
     .join('\n');
 
-  // 1) LLM 추출 + 로컬 지오코딩이 가능한 경우
+  // 1) 캡션 분석(LLM) → 검색어 확정
   const llm = await llmAdapter.extractPlaceJson(text);
+  const derived = deriveQuery(text, llm);
+
+  // 2) 카카오·네이버·구글 병렬 조회 + 후보 병합 (설정된 키만)
+  const chain = derived.query
+    ? await searchPlaceProviders({ query: derived.query, limit: 3 })
+    : { candidates: [], providersTried: [], providersUsed: [], failures: [], reason: 'empty-query' };
+
+  if (chain.candidates.length) {
+    const kind = [llm && llm.name ? 'llm' : null, ...chain.providersUsed].filter(Boolean).join('+');
+    return {
+      ok: true,
+      ...parsed,
+      title: chain.candidates[0].name,
+      candidates: chain.candidates.map((c) => ({
+        ...c,
+        // LLM이 분류한 카테고리가 더 구체적이면 그쪽을 우선
+        category: derived.category || c.category || '맛집',
+        menuTags: derived.menuTags && derived.menuTags.length ? derived.menuTags : c.menuTags || [],
+      })),
+      usedAdapter: kind,
+      query: derived.query,
+      providersTried: chain.providersTried,
+      providersUsed: chain.providersUsed,
+      failures: chain.failures,
+    };
+  }
+
+  // 3) 지도 결과는 없지만 LLM이 장소명을 잡은 경우 → 수동 확인 후보
   if (llm && llm.name) {
-    const geo = await localSearchAdapter.search({ name: llm.name, area: llm.area });
-    if (geo && geo.length) {
-      return {
-        ok: true,
-        ...parsed,
-        title: llm.name,
-        candidates: geo.map((g, i) => ({
-          ...g,
-          category: llm.category || g.category || '맛집',
-          menuTags: llm.menuTags || [],
-          confidence: i === 0 ? 0.9 : 0.6,
-        })),
-        usedAdapter: 'llm+local',
-      };
-    }
     return {
       ok: true,
       ...parsed,
@@ -401,21 +809,31 @@ export async function extractPlaces(rawUrl, options = {}) {
           lat: 37.5445,
           lng: 127.0557,
           confidence: 0.7,
+          provider: 'llm',
           manual: true,
         },
       ],
       usedAdapter: 'llm',
+      query: derived.query,
+      providersTried: chain.providersTried,
+      providersUsed: chain.providersUsed,
+      failures: chain.failures,
     };
   }
 
-  // 2) 키가 없거나 실패 → 오프라인 스마트 추출기
+  // 4) 키가 없거나 전부 실패 → 오프라인 스마트 추출기
   const candidates = offlineSmartExtract(parsed, text || options.caption || '');
   return {
     ok: true,
     ...parsed,
     title: candidates[0] ? candidates[0].name : parsed.platformLabel,
     candidates,
-    usedAdapter: 'offline',
+    // 키는 넣었는데 결과가 없었던 경우와, 키 자체가 없는 경우를 구분해 둡니다.
+    usedAdapter: chain.providersTried.length ? 'offline-fallback' : 'offline',
+    query: derived.query || '',
+    providersTried: chain.providersTried,
+    providersUsed: chain.providersUsed,
+    failures: chain.failures,
   };
 }
 

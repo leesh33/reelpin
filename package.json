@@ -10,7 +10,9 @@
     "web": "expo start --web",
     "export:web": "expo export --platform web",
     "build:ios": "eas build --platform ios",
-    "build:android": "eas build --platform android"
+    "build:android": "eas build --platform android",
+    "test": "node test/run-tests.mjs",
+    "test:extract": "node test/run-tests.mjs extract"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

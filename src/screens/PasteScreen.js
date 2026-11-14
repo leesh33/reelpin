@@ -335,7 +335,7 @@ export default function PasteScreen({
               );
             })}
 
-            {meta && meta.usedAdapter === 'offline' && (
+            {meta && String(meta.usedAdapter || '').indexOf('offline') === 0 && (
               <Text style={styles.adapterNote}>
                 오프라인 추출기로 찾은 후보예요. API 키를 연결하면 실제 가게·좌표로 정확도가 올라갑니다.
               </Text>

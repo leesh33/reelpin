@@ -36,13 +36,16 @@ npx expo export --platform web
 
 ---
 
-## 개발 검증 (이번 빌드에서 실제로 돌린 것)
+## 개발 검증 (실제로 돌린 것)
 
 ```bash
-npx expo export --platform web          # 번들 빌드 → 에러 0건
-node test/ssr-smoke.cjs                 # 11개 화면·컴포넌트 렌더 스모크 테스트
-node test/extractor-test.bundle.mjs     # 추출기·딥링크 로직 테스트 17건
+npx expo export --platform web     # 번들 빌드 → 에러 0건 (22 files, dist/)
+npm test                           # 추출기·딥링크 72건 + 화면 렌더 스모크 11건 = 83건 통과
+npm run test:extract               # 추출기 테스트만
 ```
+
+> 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
+> react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
 
 ## 화면 구성
 
@@ -55,7 +58,7 @@ node test/extractor-test.bundle.mjs     # 추출기·딥링크 로직 테스트 
 ### 핵심 파일
 
 - `src/components/MapCanvas.js` — 좌표 → 화면 투영 지도 캔버스(드래그 팬, 핀, 이름표)
-- `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(YouTube Data API / OpenAI / 네이버 로컬) + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
+- `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(YouTube Data API / OpenAI / **카카오 로컬·네이버 지역검색·구글 Places 3사 지도 체인**) + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
 - `src/storage.js` — AsyncStorage 저장/불러오기 (핀·반경·플랜)
 - `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백
 
@@ -67,12 +70,26 @@ node test/extractor-test.bundle.mjs     # 추출기·딥링크 로직 테스트 
 키를 넣으면 실제 캡션 분석·좌표 매칭으로 정확도가 올라갑니다. (`app.json`에는 키를 넣지 않습니다)
 
 ```bash
-# .env.example 참고
-EXPO_PUBLIC_YOUTUBE_API_KEY=...
-EXPO_PUBLIC_OPENAI_API_KEY=...
-EXPO_PUBLIC_NAVER_SEARCH_KEY_ID=...
-EXPO_PUBLIC_NAVER_SEARCH_SECRET=...
+cp .env.example .env     # 그리고 값을 채운 뒤 npx expo start -c 로 재시작
+
+EXPO_PUBLIC_KAKAO_REST_API_KEY=      # 카카오 로컬 — 국내 장소 1순위
+EXPO_PUBLIC_NAVER_CLIENT_ID=         # 네이버 지역검색 — 도로명주소·좌표 보조
+EXPO_PUBLIC_NAVER_CLIENT_SECRET=
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=     # 구글 Places — 해외·영문/일문 장소
+EXPO_PUBLIC_YOUTUBE_API_KEY=         # 쇼츠 제목·설명
+EXPO_PUBLIC_OPENAI_API_KEY=          # 캡션 → 장소 JSON
 ```
+
+### 지도 3사 통합 구조
+
+- **설정된 키만** 골라 카카오·네이버·구글을 **동시에** 조회하고, 결과를 하나의 후보 목록으로 합칩니다.
+  - 같은 가게가 여러 곳에서 잡히면 이름+좌표(300m) 기준으로 **중복을 합치고** 신뢰도를 올립니다.
+  - 한 곳이 401·네트워크 오류로 실패해도 나머지 결과로 후보를 채웁니다.
+  - 영문 검색어(해외 여행지)면 구글 후보가, 한글 검색어(국내)면 카카오 후보가 1순위가 됩니다.
+- 키가 **하나도 없거나 전부 실패**하면 기존 오프라인 스마트 추출기로 자동 폴백합니다(`usedAdapter: 'offline'`).
+- ⚠️ **네이버 지역검색은 브라우저 CORS 로 막힙니다.** iOS/Android 앱에서는 정상 동작하고,
+  웹(`expo start --web`)에서는 그 요청만 건너뛰고 카카오·구글 결과를 씁니다.
+  웹에서도 네이버 결과가 필요하면 키를 브라우저에 두지 말고 서버리스 프록시를 두고 호출하세요.
 
 ---
 
