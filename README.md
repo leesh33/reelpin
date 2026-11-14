@@ -73,12 +73,26 @@ npm run test:extract               # 추출기 테스트만
 cp .env.example .env     # 그리고 값을 채운 뒤 npx expo start -c 로 재시작
 
 EXPO_PUBLIC_KAKAO_REST_API_KEY=      # 카카오 로컬 — 국내 장소 1순위
-EXPO_PUBLIC_NAVER_CLIENT_ID=         # 네이버 지역검색 — 도로명주소·좌표 보조
+EXPO_PUBLIC_NAVER_HUB_CLIENT_ID=     # 네이버 지역검색 (NAVER API HUB, 2026 최신 규격)
+EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET=
+EXPO_PUBLIC_NAVER_CLIENT_ID=         # 네이버 지역검색 (구 개발자센터 — 하위 호환, HUB 키가 있으면 안 씀)
 EXPO_PUBLIC_NAVER_CLIENT_SECRET=
 EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=     # 구글 Places — 해외·영문/일문 장소
 EXPO_PUBLIC_YOUTUBE_API_KEY=         # 쇼츠 제목·설명
 EXPO_PUBLIC_OPENAI_API_KEY=          # 캡션 → 장소 JSON
 ```
+
+### 네이버 지역검색 — 두 가지 규격 지원
+
+2026년 7월 말부터 네이버 개발자센터(`developers.naver.com`)의 검색 API 신규 발급이 끝나고
+네이버 클라우드 플랫폼의 **NAVER API HUB**(`console.ncloud.com`)로 이전했습니다. `naverLocalAdapter`는 두 규격을 모두 처리합니다.
+
+| 키 | 엔드포인트 | 인증 헤더 |
+| --- | --- | --- |
+| `EXPO_PUBLIC_NAVER_HUB_CLIENT_ID` / `_SECRET` (우선) | `https://naverapihub.apigw.ntruss.com/search/v1/local?query=…&display=3&sort=comment&format=json` | `X-NCP-APIGW-API-KEY-ID` / `X-NCP-APIGW-API-KEY` |
+| `EXPO_PUBLIC_NAVER_CLIENT_ID` / `_SECRET` (하위 호환) | `https://openapi.naver.com/v1/search/local.json?query=…&display=3` | `X-Naver-Client-Id` / `X-Naver-Client-Secret` |
+
+HUB 키 두 개가 모두 있을 때만 HUB 규격을 쓰고, 없으면 기존 키로 자동 폴백합니다(키가 하나만 있으면 그 규격은 건너뜀).
 
 ### 지도 3사 통합 구조
 

@@ -112,15 +112,22 @@ globalThis.fetch = async (url, init = {}) => {
 const jsonRes = (data) => ({ ok: true, status: 200, json: async () => data });
 const errRes = (status) => ({ ok: false, status, json: async () => ({}) });
 
-const setKeys = ({ kakao, naver, google } = {}) => {
+const setKeys = ({ kakao, naver, hub, hubIdOnly, google } = {}) => {
   if (kakao) process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY = kakao;
   else delete process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY;
+  // 네이버는 HUB(신규) / 구 개발자센터(legacy) 두 벌의 키가 있습니다.
+  delete process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_ID;
+  delete process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET;
+  delete process.env.EXPO_PUBLIC_NAVER_CLIENT_ID;
+  delete process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET;
+  if (hub) {
+    process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_ID = 'HUB_ID';
+    process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET = 'HUB_SECRET';
+  }
+  if (hubIdOnly) process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_ID = 'HUB_ID';
   if (naver) {
     process.env.EXPO_PUBLIC_NAVER_CLIENT_ID = 'NAVER_ID';
     process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET = 'NAVER_SECRET';
-  } else {
-    delete process.env.EXPO_PUBLIC_NAVER_CLIENT_ID;
-    delete process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET;
   }
   if (google) process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY = google;
   else delete process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
@@ -155,6 +162,93 @@ const n0 = naverOnly.candidates[0];
 check('naver: tags stripped', n0.name === '성수동 소금빵집', n0.name);
 check('naver: lat/lng scaled by 1e7', Math.abs(n0.lat - 37.5445) < 1e-6 && Math.abs(n0.lng - 127.0557) < 1e-6, n0.lat + ',' + n0.lng);
 check('naver: road address', n0.address === '서울 성동구 연무장길 45', n0.address);
+
+// 3-2b. NAVER API HUB 키만 있으면 2026년 최신 규격으로 호출
+const HUB_ITEM = {
+  title: '베통 <b>성수</b>',
+  link: 'http://www.instagram.com/beton.kr',
+  category: '음식점>카페,디저트',
+  description: '',
+  telephone: '',
+  address: '서울특별시 성동구 성수동2가 315-47 베통 성수',
+  roadAddress: '서울특별시 성동구 연무장7가길 8 베통 성수',
+  mapx: '1270552214',
+  mapy: '375429356',
+};
+setKeys({ hub: true });
+calls = [];
+handler = () => jsonRes({ lastBuildDate: '', total: 1, start: 1, display: 3, items: [HUB_ITEM] });
+const hubOnly = await searchPlaceProviders({ query: '성수 소금빵' });
+check('hub: 1 request to naverapihub /search/v1/local', calls.length === 1 && calls[0].url.startsWith('https://naverapihub.apigw.ntruss.com/search/v1/local?'), calls[0].url);
+check('hub: query encoded', calls[0].url.includes('query=' + encodeURIComponent('성수 소금빵')), calls[0].url);
+check('hub: display=3 & sort=comment & format=json', calls[0].url.includes('display=3') && calls[0].url.includes('sort=comment') && calls[0].url.includes('format=json'), calls[0].url);
+check('hub: X-NCP-APIGW-API-KEY-ID / -KEY headers', calls[0].init.headers['X-NCP-APIGW-API-KEY-ID'] === 'HUB_ID' && calls[0].init.headers['X-NCP-APIGW-API-KEY'] === 'HUB_SECRET', JSON.stringify(calls[0].init.headers));
+check('hub: legacy headers not sent', calls[0].init.headers['X-Naver-Client-Id'] === undefined && calls[0].init.headers['X-Naver-Client-Secret'] === undefined, JSON.stringify(calls[0].init.headers));
+check('hub: legacy endpoint not called', !String(calls[0].url).includes('openapi.naver.com'));
+const h0 = hubOnly.candidates[0];
+check('hub: title tags stripped (<b> / <\\/b>)', h0.name === '베통 성수', h0.name);
+check('hub: lat/lng scaled by 1e7', Math.abs(h0.lat - 37.5429356) < 1e-6 && Math.abs(h0.lng - 127.0552214) < 1e-6, h0.lat + ',' + h0.lng);
+check('hub: road address', h0.address === '서울특별시 성동구 연무장7가길 8 베통 성수', h0.address);
+check('hub: area from jibun address', h0.area === '성수동', h0.area);
+check('hub: category mapped (카페/디저트)', ['카페', '디저트'].includes(h0.category), h0.category);
+check('hub: providersUsed = naver', JSON.stringify(hubOnly.providersUsed) === '["naver"]', JSON.stringify(hubOnly.providersUsed));
+
+// 3-2c. HUB 키와 구 키가 둘 다 있으면 HUB가 이김 (요청은 1건만)
+setKeys({ hub: true, naver: true });
+calls = [];
+handler = () => jsonRes({ items: [HUB_ITEM] });
+const bothNaver = await searchPlaceProviders({ query: '성수 소금빵' });
+check('hub priority: single request', calls.length === 1, String(calls.length));
+check('hub priority: hub endpoint wins', calls[0].url.startsWith('https://naverapihub.apigw.ntruss.com/search/v1/local?'), calls[0].url);
+check('hub priority: hub headers win', calls[0].init.headers['X-NCP-APIGW-API-KEY-ID'] === 'HUB_ID', JSON.stringify(calls[0].init.headers));
+check('hub priority: still returns candidates', bothNaver.candidates.length === 1, String(bothNaver.candidates.length));
+
+// 3-2d. HUB 키가 절반만 있으면 HUB를 쓰지 않고 구 규격으로 폴백
+setKeys({ hubIdOnly: true, naver: true });
+calls = [];
+handler = () => jsonRes({ items: [NAVER_ITEM] });
+await searchPlaceProviders({ query: '성수 소금빵' });
+check('half hub key: falls back to legacy endpoint', calls.length === 1 && calls[0].url.includes('openapi.naver.com/v1/search/local.json'), calls[0].url);
+check('half hub key: legacy headers', calls[0].init.headers['X-Naver-Client-Id'] === 'NAVER_ID');
+setKeys({ hubIdOnly: true });
+calls = [];
+const halfHubOnly = await searchPlaceProviders({ query: '성수 소금빵' });
+check('half hub key only: naver not configured → no request', calls.length === 0 && halfHubOnly.reason === 'no-key', String(calls.length));
+
+// 3-2e. buildRequest 단위 (엔드포인트·헤더·파라미터)
+setKeys({ hub: true });
+const hubReq = naverLocalAdapter.buildRequest({ query: '정자동 카페', limit: 9 });
+check('buildRequest hub: mode', hubReq.mode === 'hub', hubReq.mode);
+check('buildRequest hub: display clamped 1~5', hubReq.url.includes('display=5'), hubReq.url);
+check(
+  'buildRequest hub: exact url',
+  hubReq.url ===
+    'https://naverapihub.apigw.ntruss.com/search/v1/local?query=' + encodeURIComponent('정자동 카페') + '&display=5&sort=comment&format=json',
+  hubReq.url
+);
+check('buildRequest hub: header names', JSON.stringify(Object.keys(hubReq.headers)) === '["X-NCP-APIGW-API-KEY-ID","X-NCP-APIGW-API-KEY"]', JSON.stringify(Object.keys(hubReq.headers)));
+setKeys({ naver: true });
+const legacyReq = naverLocalAdapter.buildRequest({ query: '정자동 카페', limit: 9 });
+check('buildRequest legacy: mode', legacyReq.mode === 'legacy', legacyReq.mode);
+check(
+  'buildRequest legacy: exact url (no sort/format)',
+  legacyReq.url === 'https://openapi.naver.com/v1/search/local.json?query=' + encodeURIComponent('정자동 카페') + '&display=5',
+  legacyReq.url
+);
+check('buildRequest legacy: header names', JSON.stringify(Object.keys(legacyReq.headers)) === '["X-Naver-Client-Id","X-Naver-Client-Secret"]', JSON.stringify(Object.keys(legacyReq.headers)));
+setKeys({});
+check('buildRequest: no key → null', naverLocalAdapter.buildRequest({ query: '정자동 카페' }) === null);
+check('buildRequest: empty query → null', (setKeys({ hub: true }), naverLocalAdapter.buildRequest({ query: '' }) === null));
+check('isConfigured: hub keys count as configured', (setKeys({ hub: true }), naverLocalAdapter.isConfigured() === true));
+check('isConfigured: legacy keys count as configured', (setKeys({ naver: true }), naverLocalAdapter.isConfigured() === true));
+
+// 3-2f. HUB 401 → failures 보고 + 카카오로 폴백
+setKeys({ hub: true, kakao: 'KAKAOKEY' });
+calls = [];
+handler = (url) => (url.includes('naverapihub') ? errRes(401) : jsonRes({ documents: [KAKAO_DOC] }));
+const hubFail = await searchPlaceProviders({ query: '성수 소금빵' });
+check('hub fail: failure reported as naver 401', hubFail.failures.length === 1 && hubFail.failures[0].provider === 'naver' && String(hubFail.failures[0].error).includes('401'), JSON.stringify(hubFail.failures));
+check('hub fail: kakao fills candidates', hubFail.candidates.length >= 1 && hubFail.candidates[0].name === '성수동 소금빵집', JSON.stringify(hubFail.candidates.map((c) => c.name)));
 
 // 3-3. 구글 Places (Text Search POST + FieldMask)
 setKeys({ google: 'GOOGLEKEY' });
@@ -265,11 +359,17 @@ const none = await searchPlaceProviders({ query: '성수' });
 check('no key: zero fetch calls', calls.length === 0, String(calls.length));
 check('no key: reason no-key', none.reason === 'no-key');
 
-// 3-10. 정적 데이터: .env.example 6개 키
+// 3-10. 정적 데이터: .env.example 키 목록 (HUB 키 포함 8개)
 const envExample = fs.readFileSync(path.join(process.cwd(), '.env.example'), 'utf8');
-['EXPO_PUBLIC_KAKAO_REST_API_KEY', 'EXPO_PUBLIC_NAVER_CLIENT_ID', 'EXPO_PUBLIC_NAVER_CLIENT_SECRET', 'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY', 'EXPO_PUBLIC_YOUTUBE_API_KEY', 'EXPO_PUBLIC_OPENAI_API_KEY'].forEach((key) => {
+['EXPO_PUBLIC_KAKAO_REST_API_KEY', 'EXPO_PUBLIC_NAVER_HUB_CLIENT_ID', 'EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET', 'EXPO_PUBLIC_NAVER_CLIENT_ID', 'EXPO_PUBLIC_NAVER_CLIENT_SECRET', 'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY', 'EXPO_PUBLIC_YOUTUBE_API_KEY', 'EXPO_PUBLIC_OPENAI_API_KEY'].forEach((key) => {
   check('.env.example has ' + key, new RegExp('^' + key + '=', 'm').test(envExample));
 });
+const envValues = envExample
+  .split('\n')
+  .filter((l) => /^EXPO_PUBLIC_[A-Z0-9_]+=/.test(l))
+  .map((l) => l.split('=')[1].trim());
+check('.env.example: 실제 키 값이 커밋되지 않음(모든 값이 빈칸)', envValues.every((v) => v === ''), envValues.join('|'));
+check('.gitignore: .env 제외', /^\.env$/m.test(fs.readFileSync(path.join(process.cwd(), '.gitignore'), 'utf8')));
 check('.env.example has no legacy NAVER_SEARCH key', !envExample.includes('EXPO_PUBLIC_NAVER_SEARCH_'));
 check('no legacy NAVER_SEARCH env in src', !fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8').includes('EXPO_PUBLIC_NAVER_SEARCH_'));
 
@@ -297,7 +397,14 @@ check('share link', buildShareLink('odol', [{ name: 'A', category: '카페' }], 
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;
-['EXPO_PUBLIC_KAKAO_REST_API_KEY', 'EXPO_PUBLIC_NAVER_CLIENT_ID', 'EXPO_PUBLIC_NAVER_CLIENT_SECRET', 'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY'].forEach((k) => delete process.env[k]);
+[
+  'EXPO_PUBLIC_KAKAO_REST_API_KEY',
+  'EXPO_PUBLIC_NAVER_HUB_CLIENT_ID',
+  'EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET',
+  'EXPO_PUBLIC_NAVER_CLIENT_ID',
+  'EXPO_PUBLIC_NAVER_CLIENT_SECRET',
+  'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY',
+].forEach((k) => delete process.env[k]);
 
 if (fails) { console.log('EXTRACT_FAILED=' + fails); process.exit(1); }
 console.log('EXTRACT_OK');

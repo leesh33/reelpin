@@ -3,7 +3,9 @@
  * ─────────────────────────────────────────────────────────────
  * 릴스/쇼츠 URL → 장소 후보 추출기.
  *
- * 구조 (v1.1 — 카카오·네이버·구글 3사 지도 API 통합)
+ * 구조 (v1.2 — 카카오·네이버(NAVER API HUB + 구 개발자센터)·구글 3사 지도 API 통합)
+ *   · 네이버는 2026년 7월 말 규격 변경(개발자센터 → NAVER API HUB)을 둘 다 지원합니다.
+ *     `EXPO_PUBLIC_NAVER_HUB_CLIENT_ID/SECRET` 가 있으면 HUB를, 없으면 기존 키를 씁니다.
  *   extractPlaces(url)
  *     ├─ parseUrl(url)                    … 플랫폼·ID 파싱
  *     ├─ SourceAdapter.fetchMetadata()    … 유튜브 / 인스타 메타데이터
@@ -178,6 +180,9 @@ export const llmAdapter = {
 // 공통 유틸
 // ─────────────────────────────────────────────────────────────
 const KAKAO_KEYWORD_ENDPOINT = 'https://dapi.kakao.com/v2/local/search/keyword.json';
+/** 2026년 7월 말 이후 네이버 검색 API 신규 규격 — 네이버 클라우드 플랫폼 NAVER API HUB */
+const NAVER_HUB_LOCAL_ENDPOINT = 'https://naverapihub.apigw.ntruss.com/search/v1/local';
+/** 구 개발자센터(developers.naver.com) 규격 — 하위 호환용 */
 const NAVER_LOCAL_ENDPOINT = 'https://openapi.naver.com/v1/search/local.json';
 const GOOGLE_TEXT_SEARCH_ENDPOINT = 'https://places.googleapis.com/v1/places:searchText';
 
@@ -349,16 +354,82 @@ export const kakaoLocalAdapter = {
 export const naverLocalAdapter = {
   id: 'naver',
   label: '네이버 지역검색',
-  keyEnvs: ['EXPO_PUBLIC_NAVER_CLIENT_ID', 'EXPO_PUBLIC_NAVER_CLIENT_SECRET'],
+  // HUB 키 두 개가 있으면 HUB 규격, 없으면 구 개발자센터 키 두 개로 폴백합니다.
+  keyEnvs: [
+    'EXPO_PUBLIC_NAVER_HUB_CLIENT_ID',
+    'EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET',
+    'EXPO_PUBLIC_NAVER_CLIENT_ID',
+    'EXPO_PUBLIC_NAVER_CLIENT_SECRET',
+  ],
+  /**
+   * 어느 규격으로 호출할지 결정합니다. (키가 절반만 있으면 그 규격은 쓰지 않습니다)
+   * @returns {{mode:'hub'|'legacy', endpoint:string, clientId:string, clientSecret:string}|null}
+   */
+  credentials() {
+    const hubId = process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_ID;
+    const hubSecret = process.env.EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET;
+    if (hubId && hubSecret) {
+      return { mode: 'hub', endpoint: NAVER_HUB_LOCAL_ENDPOINT, clientId: hubId, clientSecret: hubSecret };
+    }
+    const legacyId = process.env.EXPO_PUBLIC_NAVER_CLIENT_ID;
+    const legacySecret = process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET;
+    if (legacyId && legacySecret) {
+      return { mode: 'legacy', endpoint: NAVER_LOCAL_ENDPOINT, clientId: legacyId, clientSecret: legacySecret };
+    }
+    return null;
+  },
   isConfigured() {
-    return Boolean(process.env.EXPO_PUBLIC_NAVER_CLIENT_ID && process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET);
+    return Boolean(this.credentials());
   },
   /**
-   * GET https://openapi.naver.com/v1/search/local.json?query=성수 소금빵집&display=3
-   * 헤더: X-Naver-Client-Id / X-Naver-Client-Secret
-   * 응답 items[] = { title(<b>태그 포함>), category, address, roadAddress, mapx(경도), mapy(위도) }
+   * 환경변수 → 요청 URL·헤더. 규격 분기를 테스트에서 그대로 확인하려고 메서드로 분리했습니다.
+   * @returns {{mode:'hub'|'legacy', url:string, headers:object}|null}
+   */
+  buildRequest({ query, limit = 3, credentials } = {}) {
+    const creds = credentials || this.credentials();
+    if (!creds || !query) return null;
+    const display = clamp(Number(limit) || 3, 1, 5); // 두 규격 모두 display 상한이 5입니다.
+    if (creds.mode === 'hub') {
+      return {
+        mode: 'hub',
+        url:
+          NAVER_HUB_LOCAL_ENDPOINT +
+          '?query=' +
+          encodeURIComponent(query) +
+          '&display=' +
+          display +
+          '&sort=comment' +
+          '&format=json',
+        headers: {
+          'X-NCP-APIGW-API-KEY-ID': creds.clientId,
+          'X-NCP-APIGW-API-KEY': creds.clientSecret,
+        },
+      };
+    }
+    return {
+      mode: 'legacy',
+      url: NAVER_LOCAL_ENDPOINT + '?query=' + encodeURIComponent(query) + '&display=' + display,
+      headers: {
+        'X-Naver-Client-Id': creds.clientId,
+        'X-Naver-Client-Secret': creds.clientSecret,
+      },
+    };
+  },
+  /**
+   * 두 규격을 모두 지원합니다. (키가 있는 쪽을 자동 선택)
    *
-   * ⚠️ 브라우저 CORS: 네이버 오픈 API는 Access-Control-Allow-Origin을 주지 않습니다.
+   * 1) NAVER API HUB — 2026년 최신 규격 · 우선 사용
+   *    GET https://naverapihub.apigw.ntruss.com/search/v1/local?query=...&display=3&sort=comment&format=json
+   *    헤더: X-NCP-APIGW-API-KEY-ID(Client ID) / X-NCP-APIGW-API-KEY(Client Secret)
+   *
+   * 2) 구 개발자센터 — 하위 호환 (HUB 키가 없을 때만)
+   *    GET https://openapi.naver.com/v1/search/local.json?query=...&display=3
+   *    헤더: X-Naver-Client-Id / X-Naver-Client-Secret
+   *
+   * 두 규격의 응답 items[] 모양은 같습니다:
+   *    { title(<b>태그 포함>), category, address, roadAddress, mapx(경도), mapy(위도) }
+   *
+   * ⚠️ 브라우저 CORS: 네이버는 두 규격 모두 Access-Control-Allow-Origin을 주지 않습니다(HUB 포함).
    *    → iOS/Android(Expo Go·네이티브 빌드)에서는 그대로 동작하지만,
    *      `expo start --web` / `expo export --platform web` 브라우저에서는 요청이 차단됩니다.
    *    그래서 웹 런타임에서는 이 어댑터를 건너뛰고(콘솔 에러 방지) 카카오·구글 결과로 채웁니다.
@@ -366,24 +437,11 @@ export const naverLocalAdapter = {
    *    그 주소로 fetch하는 방식으로 우회해야 합니다. (키를 브라우저에 노출하지 않는 편이 안전)
    */
   async search({ query, limit = 3 }) {
-    const clientId = process.env.EXPO_PUBLIC_NAVER_CLIENT_ID;
-    const clientSecret = process.env.EXPO_PUBLIC_NAVER_CLIENT_SECRET;
-    if (!clientId || !clientSecret || !query) return [];
+    const req = this.buildRequest({ query, limit });
+    if (!req) return [];
     if (isWebRuntime()) return []; // 위 CORS 주석 참고 — 웹에서는 조용히 건너뜁니다.
 
-    const url =
-      NAVER_LOCAL_ENDPOINT +
-      '?query=' +
-      encodeURIComponent(query) +
-      '&display=' +
-      clamp(Number(limit) || 3, 1, 5);
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'X-Naver-Client-Id': clientId,
-        'X-Naver-Client-Secret': clientSecret,
-      },
-    });
+    const res = await fetch(req.url, { method: 'GET', headers: req.headers });
     if (!res.ok) throw new Error('naver ' + res.status);
     const json = await res.json();
     const items = (json && json.items) || [];
