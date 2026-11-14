@@ -40,7 +40,7 @@ npx expo export --platform web
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건 (22 files, dist/)
-npm test                           # 추출기·딥링크 76건 + 화면 렌더 스모크 11건 = 87건 통과
+npm test                           # 추출기·딥링크 77건 + 화면 렌더 스모크 11건 = 88건 통과
 npm run test:extract               # 추출기 테스트만
 ```
 

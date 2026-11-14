@@ -273,6 +273,16 @@ const envExample = fs.readFileSync(path.join(process.cwd(), '.env.example'), 'ut
 check('.env.example has no legacy NAVER_SEARCH key', !envExample.includes('EXPO_PUBLIC_NAVER_SEARCH_'));
 check('no legacy NAVER_SEARCH env in src', !fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8').includes('EXPO_PUBLIC_NAVER_SEARCH_'));
 
+// 3-11. 검색어 정리: 해시태그·이모지·링크 제거
+setKeys({ kakao: 'KAKAOKEY' });
+calls = [];
+handler = (url) => (url.includes('dapi.kakao.com') ? jsonRes({ documents: [] }) : jsonRes({ items: [], places: [] }));
+await extractPlaces(PRESETS[0].url, {
+  caption: '🍞 성수 소금빵 맛집 #성수맛집 #소금빵 @food https://t.co/x',
+});
+const sentQuery = decodeURIComponent(calls[0].url.split('query=')[1].split('&')[0]);
+check('query: hashtag/emoji/link stripped', sentQuery === '성수 소금빵 맛집', sentQuery);
+
 // ── 4. 오프라인 추출기 단위 ───────────────────────────────────
 const off = offlineSmartExtract({ url: 'https://www.instagram.com/reel/x/', contentId: 'x' }, '검단 아라뱃길 카페');
 check('offline: finds 검단 카페', off[0].name === '아라뱃길 뷰 카페', off[0].name);

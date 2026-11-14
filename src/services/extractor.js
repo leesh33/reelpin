@@ -596,16 +596,19 @@ function deriveQuery(text, llm) {
     .replace(/#[^\s#]+/g, ' ')
     .replace(/@[A-Za-z0-9._]+/g, ' ')
     .replace(/https?:\/\/\S+/g, ' ')
-    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}]/gu, ' ')
-    .replace(/\s+/g, ' ')
+    // 이모지는 서로게이트 쌍으로 지웁니다. (Hermes 등 일부 엔진의 \u{...} 정규식 회피)
+    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ' ')
+    .replace(/[\u2600-\u27BF\u2B00-\u2BFF\uFE0F]/g, ' ')
+    // 줄바꿈은 남겨 두고(문장 구분) 공백만 정리합니다. 이후 '첫 문장'만 검색어로 씁니다.
+    .replace(/[^\S\n]+/g, ' ')
     .trim();
   const llmExtras = {
     category: (llm && llm.category) || '',
     menuTags: llm && Array.isArray(llm.menuTags) ? llm.menuTags : [],
   };
   if (!cleaned) return { query: '', name: '', area: '', ...llmExtras };
-  const first = cleaned.split(/[|\n·,]/)[0].trim() || cleaned;
-  return { query: first.slice(0, 40), name: '', area: '', ...llmExtras };
+  const firstLine = cleaned.split(/[|\n·,]/)[0].replace(/\s+/g, ' ').trim() || cleaned.replace(/\s+/g, ' ');
+  return { query: firstLine.slice(0, 40), name: '', area: '', ...llmExtras };
 }
 
 // ─────────────────────────────────────────────────────────────
