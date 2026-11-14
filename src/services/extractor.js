@@ -302,6 +302,16 @@ export function offlineSmartExtract(parsed, caption) {
     .sort((a, b) => b.score - a.score)
     .slice(0, 2);
 
+  // 후보가 1개뿐이면 같은 동네의 다른 저장 후보를 2번째로 붙여
+  // '라디오로 골라 확정'하는 UX가 항상 성립하게 합니다.
+  if (ranked.length === 1) {
+    const chosen = ranked[0].place;
+    const alt =
+      PLACE_INDEX.find((p) => p !== chosen && p.area === chosen.area) ||
+      PLACE_INDEX.find((p) => p !== chosen);
+    if (alt) ranked.push({ place: alt, score: 0 });
+  }
+
   if (ranked.length === 0) {
     const area = AREA_HINTS.find((a) => haystack.includes(a)) || '';
     const guessName = area ? area + ' 릴스 장소' : '이름 없는 릴스 장소';

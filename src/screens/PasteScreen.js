@@ -264,6 +264,27 @@ export default function PasteScreen({
         </View>
 
         {/* 추출 결과 */}
+        {candidates.length === 0 && !extracting && (
+          <View style={styles.guideCard}>
+            <Text style={styles.guideTitle}>저장은 3초면 끝나요</Text>
+            {[
+              ['릴스 공유 버튼 → 링크 복사', '인스타·유튜브 어디서든'],
+              ['위 칸에 붙여넣고 [장소 추출하기]', '캡션에서 가게·메뉴를 뽑아요'],
+              ['후보 확인 후 [지도에 핀 꽂기]', '그 동네 가면 알려드려요'],
+            ].map((step, i) => (
+              <View key={step[0]} style={styles.guideRow}>
+                <View style={styles.guideNum}>
+                  <Text style={styles.guideNumText}>{i + 1}</Text>
+                </View>
+                <View style={styles.guideTextWrap}>
+                  <Text style={styles.guideText}>{step[0]}</Text>
+                  <Text style={styles.guideSub}>{step[1]}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {candidates.length > 0 && (
           <View style={styles.resultWrap}>
             <View style={styles.resultHead}>
@@ -562,6 +583,48 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0EFF4',
     borderRadius: radius.xl,
     padding: 14,
+  },
+  guideCard: {
+    marginTop: 24,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: 16,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  guideTitle: {
+    ...typography.h3,
+    fontSize: 14,
+  },
+  guideRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  guideNum: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.coralSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  guideNumText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.coralDark,
+  },
+  guideTextWrap: { flex: 1 },
+  guideText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  guideSub: {
+    fontSize: 11,
+    color: colors.textMuted,
+    marginTop: 1,
   },
   resultHead: {
     flexDirection: 'row',

@@ -96,6 +96,12 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
   const projected = pins.map((pin) => ({ pin, ...project(pin.lat, pin.lng, size) }));
   const selected = projected.find((p) => p.pin.id === selectedId);
 
+  // 이름표가 화면 밖으로 나가지 않게 좌우를 잠그고, 꼬리는 핀 위치를 따라가게 합니다.
+  const bubbleLeft = selected
+    ? clamp(selected.x - 92, 8, Math.max(8, size.width - 192))
+    : 0;
+  const bubbleTailLeft = selected ? clamp(selected.x - bubbleLeft - 7, 8, 169) : 0;
+
   return (
     <View style={styles.root} onLayout={onLayout} {...panResponder.panHandlers}>
       <View
@@ -138,7 +144,13 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
             return (
               <Text
                 key={d.name}
-                style={[styles.district, { left: pos.x - 24, top: pos.y }]}
+                style={[
+                  styles.district,
+                  {
+                    left: clamp(pos.x - 78, 4, Math.max(4, size.width - 74)),
+                    top: pos.y + 14,
+                  },
+                ]}
                 numberOfLines={1}
               >
                 {d.name}
@@ -202,7 +214,7 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
         {/* 선택 핀 이름표 */}
         {selected && (
           <View
-            style={[styles.bubble, { left: selected.x - 92, top: selected.y - 92 }]}
+            style={[styles.bubble, { left: bubbleLeft, top: selected.y - 92 }]}
             pointerEvents="none"
           >
             <View style={styles.bubbleInner}>
@@ -213,7 +225,7 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
                 <Text style={styles.bubbleChipText}>{radius >= 1000 ? '1km' : radius + 'm'}</Text>
               </View>
             </View>
-            <View style={styles.bubbleTail} />
+            <View style={[styles.bubbleTail, { left: bubbleTailLeft }]} />
           </View>
         )}
       </View>
@@ -287,11 +299,11 @@ const styles = StyleSheet.create({
   },
   district: {
     position: 'absolute',
-    color: colors.mapText,
+    color: '#5E7194',
     fontSize: 11,
     fontWeight: '700',
     width: 70,
-    textAlign: 'center',
+    textAlign: 'right',
   },
   myLocation: {
     position: 'absolute',
@@ -374,6 +386,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   bubbleTail: {
+    position: 'absolute',
+    bottom: -7,
     width: 0,
     height: 0,
     borderLeftWidth: 7,

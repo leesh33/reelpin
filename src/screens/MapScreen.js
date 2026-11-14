@@ -78,23 +78,27 @@ export default function MapScreen({
         </View>
       </View>
 
-      {/* 저장 개수 표시 */}
-      <View style={[styles.countPill, { bottom: selectedPin ? 372 : 26 }]} pointerEvents="none">
-        <View style={styles.countDot} />
-        <Text style={styles.countText}>
-          {filtered.length} / {pins.length} 핀 표시 중
-        </Text>
-      </View>
+      {/* 저장 개수 표시 — 상세 시트가 열리면 숨깁니다 */}
+      {!selectedPin && (
+        <View style={styles.countPill} pointerEvents="none">
+          <View style={styles.countDot} />
+          <Text style={styles.countText}>
+            {filtered.length} / {pins.length} 핀 표시 중
+          </Text>
+        </View>
+      )}
 
       {/* 현재 위치 / 최근접 핀으로 */}
-      <Pressable
-        style={[styles.fab, { bottom: selectedPin ? 316 : 26 }]}
-        onPress={recenter}
-        accessibilityRole="button"
-        accessibilityLabel="가장 가까운 저장 장소로 이동"
-      >
-        <Ionicons name="locate" size={22} color={colors.white} />
-      </Pressable>
+      {!selectedPin && (
+        <Pressable
+          style={styles.fab}
+          onPress={recenter}
+          accessibilityRole="button"
+          accessibilityLabel="가장 가까운 저장 장소로 이동"
+        >
+          <Ionicons name="locate" size={22} color={colors.white} />
+        </Pressable>
+      )}
 
       {/* 핀 없음 안내 */}
       {pins.length === 0 && (
@@ -138,6 +142,7 @@ const styles = StyleSheet.create({
   countPill: {
     position: 'absolute',
     left: 16,
+    bottom: 26,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -162,6 +167,7 @@ const styles = StyleSheet.create({
   fab: {
     position: 'absolute',
     right: 16,
+    bottom: 26,
     width: 48,
     height: 48,
     borderRadius: 24,

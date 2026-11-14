@@ -3,11 +3,15 @@ import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme';
 
 /** 화면 하단에 잠깐 떠오르는 알림 (Alert 대신 — 웹에서도 동일하게 보임) */
-export default function Toast({ message, tone = 'dark' }) {
+export default function Toast({ message, tone = 'dark', bottomOffset = 96, placement = 'bottom' }) {
   if (!message) return null;
   const isPro = tone === 'pro';
+  const isTop = placement === 'top';
   return (
-    <View style={styles.wrap} pointerEvents="none">
+    <View
+      style={[styles.wrap, isTop ? { top: 152 } : { bottom: bottomOffset }]}
+      pointerEvents="none"
+    >
       <View style={[styles.pill, isPro && styles.pillPro]}>
         <Text style={styles.text}>{message}</Text>
       </View>
@@ -20,7 +24,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 96,
     alignItems: 'center',
     paddingHorizontal: 24,
     zIndex: 50,

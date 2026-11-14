@@ -50,9 +50,7 @@ export default function ProfileScreen({
     <View style={styles.root}>
       <View style={styles.header}>
         <Text style={styles.title}>내 정보</Text>
-        <View style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>{isPro ? 'PRO' : 'FREE'}</Text>
-        </View>
+        <Text style={styles.headerCount}>{count}개 저장됨</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
@@ -101,6 +99,20 @@ export default function ProfileScreen({
           </Text>
         </View>
 
+        {/* 지도 공유 */}
+        <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
+          <View style={styles.shareIcon}>
+            <Ionicons name={copied ? 'checkmark' : 'link'} size={18} color={colors.coral} />
+          </View>
+          <View style={styles.shareText}>
+            <Text style={styles.shareTitle}>
+              {copied ? '복사했어요!' : '내 릴스 지도 링크 복사'}
+            </Text>
+            <Text style={styles.shareSub}>스토리·단톡방에 붙이면 그 자체가 초대장이 됩니다</Text>
+          </View>
+          <Ionicons name="copy-outline" size={17} color={colors.textMuted} />
+        </Pressable>
+
         {/* 지오펜스 반경 */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>지오펜스 알림 반경</Text>
@@ -147,7 +159,7 @@ export default function ProfileScreen({
           </View>
           {PRO_FEATURES.map((f) => (
             <View key={f} style={styles.featureRow}>
-              <Ionicons name="checkmark-circle" size={15} color={colors.coral} />
+              <Ionicons name="checkmark" size={15} color={colors.coral} />
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
@@ -159,20 +171,6 @@ export default function ProfileScreen({
             <Text style={styles.proBtnText}>{isPro ? '프로 플랜 사용 중' : '프로 시작하기'}</Text>
           </Pressable>
         </View>
-
-        {/* 지도 공유 */}
-        <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
-          <View style={styles.shareIcon}>
-            <Ionicons name={copied ? 'checkmark' : 'link'} size={18} color={colors.coral} />
-          </View>
-          <View style={styles.shareText}>
-            <Text style={styles.shareTitle}>
-              {copied ? '복사했어요!' : '내 릴스 지도 링크 복사'}
-            </Text>
-            <Text style={styles.shareSub}>스토리·단톡방에 붙이면 그 자체가 초대장이 됩니다</Text>
-          </View>
-          <Ionicons name="copy-outline" size={17} color={colors.textMuted} />
-        </Pressable>
 
         {/* 앱 정보 */}
         <View style={styles.infoCard}>
@@ -214,6 +212,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
+  },
+  headerCount: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.textMuted,
   },
   headerBadgeText: {
     fontSize: 10,

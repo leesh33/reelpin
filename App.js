@@ -77,12 +77,21 @@ export default function App() {
 
   const handleSaved = useCallback(
     (pin) => {
+      const existing = pins.find(
+        (p) => p.name === pin.name && (p.area || '') === (pin.area || '')
+      );
+      if (existing) {
+        setSelectedPinId(existing.id);
+        setTab('map');
+        showToast('이미 지도에 있는 장소예요 · ' + existing.name);
+        return;
+      }
       setPins((prev) => [pin, ...prev]);
       setSelectedPinId(pin.id);
       setTab('map');
       showToast('지도에 핀을 꽂았어요 · ' + pin.name, 'pro');
     },
-    [showToast]
+    [pins, showToast]
   );
 
   const handleDeletePin = useCallback(
@@ -169,7 +178,12 @@ export default function App() {
         </View>
 
         <TabBar active={tab} onChange={setTab} />
-        <Toast message={toast ? toast.message : null} tone={toast ? toast.tone : 'dark'} />
+        <Toast
+          message={toast ? toast.message : null}
+          tone={toast ? toast.tone : 'dark'}
+          bottomOffset={tab === 'map' && selectedPinId ? 440 : 96}
+          placement={tab === 'map' && selectedPinId ? 'top' : 'bottom'}
+        />
       </View>
     </SafeAreaView>
   );
