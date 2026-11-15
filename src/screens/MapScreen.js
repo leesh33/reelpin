@@ -5,8 +5,10 @@ import { Ionicons } from '@expo/vector-icons';
 import RealMapView from '../components/RealMapView';
 import FilterChips from '../components/FilterChips';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
+// v2.6 — 검색 결과 1곳이면 그 핀으로 지도 이동, 2곳 이상이면 검색창 아래 결과 목록
 import PinSearchBar from '../components/PinSearchBar';
 import PinListView from '../components/PinListView';
+import PinSearchResults from '../components/PinSearchResults';
 import {
   DEFAULT_CATEGORIES,
   countByCategory,
@@ -39,6 +41,15 @@ import {
 import { colors, cardShadow, mapControls, radius, typography } from '../theme';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 import { filterAndSearchPins } from '../utils/searchPins';
+import {
+  SEARCH_DEBOUNCE_MS,
+  mapCoordsOf,
+  pinMapCoords,
+  planSearchNavigation,
+  searchMatches,
+  searchNavigationKey,
+  showSearchResultPanel,
+} from '../utils/searchNav';
 
 export default function MapScreen({
   pins,
@@ -63,6 +74,17 @@ export default function MapScreen({
   //   view  … 'map'(지도) | 'list'(목록)
   const [query, setQuery] = useState('');
   const [view, setView] = useState('map');
+  // navQuery … 디바운스된 검색어 (지도 이동은 이 값으로만 결정 → 한글 조합 중 튐 방지)
+  const [navQuery, setNavQuery] = useState('');
+  // fit … 검색 결과·목록의 핀 여러 곳을 한 화면에 담을 좌표 묶음 (지도에 범위 맞추기 요청)
+  const [fit, setFit] = useState(null);
+  const [fitKey, setFitKey] = useState(0);
+
+  const viewRef = useRef(view);
+  const myCoordsRef = useRef(null);
+  const viewBeforeRef = useRef('map');
+  const searchActiveRef = useRef(false);
+  const navKeyRef = useRef('');
 
   /**
    * v2.2 — 분류를 이름 바꾸거나 지우면 지도 필터도 함께 정리합니다.
@@ -102,6 +124,14 @@ export default function MapScreen({
   useEffect(() => {
     pinsRef.current = pins;
   }, [pins]);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  useEffect(() => {
+    myCoordsRef.current = myCoords;
+  }, [myCoords]);
 
   useEffect(() => {
     toastRef.current = onToast;
@@ -219,12 +249,102 @@ export default function MapScreen({
     };
   }, [locate]);
 
-  /** v2.5 — 지도 ↔ 목록 전환. 목록으로 갈 때는 '주변 500m' 패널을 닫아 겹치지 않게 합니다. */
+  /**
+   * v2.5 — 지도 ↔ 목록 전환. 목록으로 갈 때는 '주변 500m' 패널을 닫아 겹치지 않게 합니다.
+   * v2.6 — 목록에서 지도로 돌아올 때는 지금 보이던 핀이 **모두 한눈에** 들어오게 범위를 맞춥니다.
+   */
   const toggleView = useCallback(() => {
-    const next = view === 'map' ? 'list' : 'map';
-    if (next === 'list') setNearbyOpen(false);
-    setView(next);
-  }, [view]);
+    if (view === 'map') {
+      setNearbyOpen(false);
+      setView('list');
+      return;
+    }
+    const coords = mapCoordsOf(filtered);
+    setView('map');
+    if (coords.length >= 2) {
+      setFit(coords);
+      setFitKey((k) => k + 1);
+    } else if (coords.length === 1) {
+      setFocus({ lat: coords[0].lat, lng: coords[0].lng });
+      setFocusKey((k) => k + 1);
+    }
+  }, [view, filtered]);
+
+  /** v2.6 — 목록·검색 결과에서 핀을 고르면 지도로 돌아가 그 핀을 확대하고 상세 시트를 엽니다. */
+  const openPinFromList = useCallback(
+    (pin) => {
+      const coords = pinMapCoords(pin);
+      if (coords) {
+        setFocus(coords);
+        setFocusKey((k) => k + 1);
+      }
+      setNearbyOpen(false);
+      setView('map');
+      if (typeof onSelectPin === 'function') onSelectPin(pin.id);
+    },
+    [onSelectPin]
+  );
+
+  /** v2.6 — 지도 위 결과 목록의 [전체 N곳] → 목록 보기 */
+  const showAllResults = useCallback(() => {
+    setNearbyOpen(false);
+    setView('list');
+  }, []);
+
+  /** 검색어 지우기 — 300ms 기다리지 않고 바로 원래 지도 상태로 돌아갑니다. */
+  const clearSearch = useCallback(() => {
+    setQuery('');
+    setNavQuery('');
+  }, []);
+
+  // ── v2.6 🔍 검색 결과 → 지도 이동 / 결과 목록 (한글 IME 조합 중에는 기다립니다) ──
+  useEffect(() => {
+    const text = String(query || '').trim();
+    if (!text) {
+      setNavQuery('');
+      return undefined;
+    }
+    const timer = setTimeout(() => setNavQuery(text), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  useEffect(() => {
+    const matches = searchMatches(pins, { filter, query: navQuery });
+    const plan = planSearchNavigation({
+      query: navQuery,
+      matches,
+      view: viewRef.current,
+      viewBefore: viewBeforeRef.current,
+      myCoords: myCoordsRef.current,
+      pins,
+      wasActive: searchActiveRef.current,
+    });
+    // 같은 결과로 지도를 두 번 옮기지 않습니다 (지도를 손으로 옮긴 뒤에도 그대로).
+    const key = searchNavigationKey(plan, navQuery);
+    if (key === navKeyRef.current) return;
+    navKeyRef.current = key;
+    if (plan.mode === 'idle') {
+      searchActiveRef.current = false;
+    } else {
+      if (!searchActiveRef.current) viewBeforeRef.current = viewRef.current;
+      searchActiveRef.current = true;
+    }
+    plan.actions.forEach((action) => {
+      if (action.type === 'view') {
+        setView(action.view);
+      } else if (action.type === 'focus') {
+        setFocus({ lat: action.coords.lat, lng: action.coords.lng });
+        setFocusKey((k) => k + 1);
+        setNearbyOpen(false);
+      } else if (action.type === 'fit') {
+        setFit(action.coords);
+        setFitKey((k) => k + 1);
+        setNearbyOpen(false);
+      } else if (action.type === 'toast') {
+        showToast(action.message);
+      }
+    });
+  }, [navQuery, filter, pins, showToast]);
 
   const focusOnPin = useCallback(
     (pin) => {
@@ -370,6 +490,14 @@ export default function MapScreen({
 
   const nearbyList = myCoords ? nearby : [];
 
+  // v2.6 — 지도 보기에서 검색 결과가 2곳 이상이면 검색창 아래 콤팩트 결과 목록
+  const showResults = showSearchResultPanel({
+    view,
+    query,
+    matches: filtered,
+    selected: Boolean(selectedPin),
+  });
+
   return (
     <View style={styles.root}>
       <RealMapView
@@ -379,6 +507,8 @@ export default function MapScreen({
         myCoords={myCoords}
         focus={focus}
         focusKey={focusKey}
+        fit={fit}
+        fitKey={fitKey}
         radiusMeters={NEARBY_RADIUS_M}
         categories={categories}
       />
@@ -389,13 +519,14 @@ export default function MapScreen({
           pins={filtered}
           query={query}
           onQueryChange={setQuery}
-          onClearQuery={() => setQuery('')}
+          onClearQuery={clearSearch}
           filter={filter}
           onChangeFilter={setFilter}
           counts={counts}
           categories={categories}
           myCoords={myCoords}
           onSelectPin={onSelectPin}
+          onOpenPin={openPinFromList}
           onToggleView={toggleView}
           onGoPaste={onGoPaste}
         />
@@ -451,11 +582,24 @@ export default function MapScreen({
           tone={banner.tone}
         />
         <View style={styles.searchWrap}>
-          <PinSearchBar value={query} onChange={setQuery} onClear={() => setQuery('')} />
+          <PinSearchBar value={query} onChange={setQuery} onClear={clearSearch} />
         </View>
-        <View style={styles.chipWrap}>
-          <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
-        </View>
+        {showResults && (
+          <PinSearchResults
+            pins={filtered}
+            query={query}
+            categories={categories}
+            myCoords={myCoords}
+            onOpenPin={openPinFromList}
+            onShowAll={showAllResults}
+          />
+        )}
+        {/* 검색 결과 목록이 떠 있는 동안에는 분류 칩을 잠시 접어 화면을 비워 둡니다 */}
+        {!showResults && (
+          <View style={styles.chipWrap}>
+            <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
+          </View>
+        )}
         {!!locationError && (
           <Pressable style={styles.errorChip} onPress={() => locate()} accessibilityRole="button">
             <Ionicons name="alert-circle" size={12} color={colors.white} />

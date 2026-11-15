@@ -40,6 +40,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, typography } from '../theme';
 import { getCategoryColor, hexToRgba } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
+import { SEARCH_FOCUS_ZOOM, SEARCH_RESULT_PADDING } from '../utils/searchNav';
 import {
   CLUSTER_THRESHOLD_PX,
   clusterColor,
@@ -446,6 +447,11 @@ function measuredSize(node) {
   return { w, h };
 }
 
+/** v2.6 — fit 으로 넘어온 좌표 목록을 숫자만 남겨 정리 */
+export function normalizeFitPoints(fit) {
+  return (Array.isArray(fit) ? fit : []).map((point) => normalizeCoords(point)).filter(Boolean);
+}
+
 // ═════════════════════════════════════════════════════════════
 // 1) 네이버 지도 (1순위)
 // ═════════════════════════════════════════════════════════════
@@ -456,6 +462,8 @@ function NaverMap({
   myCoords,
   focus,
   focusKey,
+  fit,
+  fitKey,
   radiusMeters = 500,
   initialCenter,
   initialZoom = 13,
@@ -862,6 +870,29 @@ function NaverMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusLat, focusLng, focusKey, ready]);
 
+  // 5) v2.6 — 검색 결과·목록에서 고른 핀들이 **한눈에** 들어오도록 범위 맞추기
+  const fitPoints = useMemo(() => normalizeFitPoints(fit), [fit]);
+  useEffect(() => {
+    const map = mapRef.current;
+    const nv = nvRef.current;
+    if (!map || !nv || !ready || !fitPoints.length) return;
+    if (fitPoints.length === 1) {
+      try {
+        map.morph(new nv.LatLng(fitPoints[0].lat, fitPoints[0].lng), SEARCH_FOCUS_ZOOM, {
+          duration: 500,
+          easing: 'easeOutCubic',
+        });
+      } catch (e) {}
+      return;
+    }
+    try {
+      const bounds = new nv.LatLngBounds();
+      fitPoints.forEach((point) => bounds.extend(new nv.LatLng(point.lat, point.lng)));
+      map.fitBounds(bounds, { ...SEARCH_RESULT_PADDING, maxZoom: SEARCH_FOCUS_ZOOM });
+    } catch (e) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitPoints, fitKey, ready]);
+
   return <View ref={hostRef} style={styles.mapHost} accessibilityLabel="네이버 지도" />;
 }
 
@@ -895,6 +926,8 @@ function LeafletMap({
   myCoords,
   focus,
   focusKey,
+  fit,
+  fitKey,
   radiusMeters = 500,
   initialCenter,
   initialZoom = 13,
@@ -1282,6 +1315,29 @@ function LeafletMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusLat, focusLng, focusKey, ready]);
 
+  // v2.6 — 검색 결과·목록의 핀들이 한눈에 들어오도록 범위 맞추기
+  const fitPoints = useMemo(() => normalizeFitPoints(fit), [fit]);
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!map || !ready || !fitPoints.length) return;
+    try {
+      if (fitPoints.length === 1) {
+        map.flyTo([fitPoints[0].lat, fitPoints[0].lng], SEARCH_FOCUS_ZOOM, { duration: 0.6 });
+        return;
+      }
+      if (L && typeof L.latLngBounds === 'function') {
+        map.flyToBounds(L.latLngBounds(fitPoints.map((point) => [point.lat, point.lng])), {
+          paddingTopLeft: [SEARCH_RESULT_PADDING.left, SEARCH_RESULT_PADDING.top],
+          paddingBottomRight: [SEARCH_RESULT_PADDING.right, SEARCH_RESULT_PADDING.bottom],
+          maxZoom: SEARCH_FOCUS_ZOOM,
+          duration: 0.6,
+        });
+      }
+    } catch (e) {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitPoints, fitKey, ready]);
+
   return <View ref={hostRef} style={styles.mapHost} accessibilityLabel="임시 지도" />;
 }
 
@@ -1295,6 +1351,8 @@ export default function RealMapView({
   myCoords,
   focus,
   focusKey,
+  fit = null,
+  fitKey = 0,
   radiusMeters = 500,
   initialCenter,
   initialZoom = 13,
@@ -1345,6 +1403,8 @@ export default function RealMapView({
     myCoords,
     focus,
     focusKey,
+    fit,
+    fitKey,
     radiusMeters,
     initialCenter,
     initialZoom,

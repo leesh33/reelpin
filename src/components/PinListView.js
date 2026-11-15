@@ -37,6 +37,7 @@ export default function PinListView({
   categories,
   myCoords = null,
   onSelectPin,
+  onOpenPin,
   onToggleView,
   onGoPaste,
 }) {
@@ -97,7 +98,9 @@ export default function PinListView({
                 key={pin.id}
                 style={styles.row}
                 onPress={() => {
-                  if (typeof onSelectPin === 'function') onSelectPin(pin.id);
+                  // v2.6 — 지도로 돌아가 그 핀을 확대하고 상세 시트를 엽니다 (onOpenPin)
+                  if (typeof onOpenPin === 'function') onOpenPin(pin);
+                  else if (typeof onSelectPin === 'function') onSelectPin(pin.id);
                 }}
                 accessibilityRole="button"
                 accessibilityLabel={pin.name + ', ' + category + (place ? ', ' + place : '')}

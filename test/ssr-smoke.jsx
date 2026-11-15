@@ -13,6 +13,7 @@ import CategoryPicker from '../src/components/CategoryPicker';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 import PinSearchBar from '../src/components/PinSearchBar';
 import PinListView from '../src/components/PinListView';
+import PinSearchResults from '../src/components/PinSearchResults';
 import TabBar from '../src/components/TabBar';
 import MapCanvas from '../src/components/MapCanvas';
 import RealMapViewWeb, {
@@ -79,6 +80,15 @@ const SHARED_PINS = [
   { ...SEARCH_PIN, id: 'share-1', name: '공유받은 뚜레쥬르', shared: true, platform: 'share', lat: 37.56, lng: 126.925 },
 ];
 
+// v2.6 — 검색 결과 목록 검사용 핀 ('한성' 으로 두 곳)
+const SEARCH_PINS = [
+  { ...SEARCH_PIN, id: 'sr-1', name: '한성치킨', category: '맛집', area: '검단', lat: 37.58282, lng: 126.71412, menuTags: ['후라이드'] },
+  { ...SEARCH_PIN, id: 'sr-2', name: '한성돈까스', category: '카페', area: '마전동', lat: 37.5825, lng: 126.7131 },
+  { ...SEARCH_PIN, id: 'sr-3', name: '한성곱창', category: '맛집', area: '검단', lat: 37.5831, lng: 126.7155 },
+  { ...SEARCH_PIN, id: 'sr-4', name: '한성냉면', category: '맛집', area: '검단', lat: 37.5842, lng: 126.7161 },
+  { ...SEARCH_PIN, id: 'sr-5', name: '한성왕족발', category: '맛집', area: '검단', lat: 37.5855, lng: 126.7172 },
+];
+
 const cases = [
   ['App(첫 화면 = 스플래시)', <App />, false],
   ['MapScreen', <MapScreen pins={SEED_PINS} selectedPinId={SEED_PINS[0].id} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />],
@@ -129,6 +139,9 @@ const cases = [
   ['PinListView', <PinListView pins={SEED_PINS} categories={['맛집', '카페', '가볼곳', '아이랑']} filter="전체" counts={{ '전체': 4 }} myCoords={{ lat: 37.5828, lng: 126.7141 }} onSelectPin={noop} onToggleView={noop} onChangeFilter={noop} onQueryChange={noop} />],
   ['PinListView(검색 결과 없음)', <PinListView pins={[]} query="없는가게" filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onClearQuery={noop} />],
   ['PinListView(핀 없음 · 위치 없음)', <PinListView pins={[]} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onGoPaste={noop} />],
+  // v2.6 — 검색 결과 2곳 이상이면 지도 위 콤팩트 결과 목록
+  ['PinSearchResults(검색 결과 2곳)', <PinSearchResults pins={SEARCH_PINS} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} />],
+  ['PinSearchResults(최대 4행만)', <PinSearchResults pins={SEARCH_PINS} query="" max={1} onOpenPin={noop} onShowAll={noop} />],
 ];
 
 let failed = 0;
@@ -197,6 +210,9 @@ const contentCases = [
   ['PinListView: 내 위치 없으면 최신순', <PinListView pins={SEED_PINS} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} />, ['최신순']],
   ['PinListView: 검색 결과 없음 안내', <PinListView pins={[]} query="없는가게" filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onClearQuery={noop} />, ['검색 결과가 없어요', '검색어 지우기']],
   ['PinListView: 핀 없음 안내', <PinListView pins={[]} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onGoPaste={noop} />, ['아직 저장한 핀이 없어요', '링크 붙여넣으러 가기']],
+  // v2.6 — 검색 결과 2곳 이상 → 지도 위 결과 목록
+  ['PinSearchResults: 검색어 + N곳 + [전체 N곳]', <PinSearchResults pins={SEARCH_PINS.slice(0, 2)} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} />, ['‘한성’ 검색 · 2곳', '한성치킨', '한성돈까스', '전체 2곳']],
+  ['PinSearchResults: 4행까지만 + 남은 개수 안내', <PinSearchResults pins={SEARCH_PINS} query="한성" myCoords={null} onOpenPin={noop} onShowAll={noop} />, ['전체 5곳', '한성냉면', '외 1곳 더 있어요']],
 ];
 
 for (const [label, element, needles] of contentCases) {
@@ -562,8 +578,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.5.0', pkg.version === '2.5.0', pkg.version],
-  ['버전: app.json 2.5.0', expoConfig.version === '2.5.0', expoConfig.version],
+  ['버전: package.json 2.6.0', pkg.version === '2.6.0', pkg.version],
+  ['버전: app.json 2.6.0', expoConfig.version === '2.6.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
