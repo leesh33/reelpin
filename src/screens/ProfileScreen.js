@@ -335,22 +335,7 @@ export default function ProfileScreen({
           </View>
         </View>
 
-        {/* 계정 · 클라우드 동기화 (v2.1) */}
-        <AccountCard
-          cloudConfigured={cloudConfigured}
-          cloudUser={cloudUser}
-          cloudPinCount={cloudPinCount}
-          cloudBusy={cloudBusy}
-          cloudSyncing={cloudSyncing}
-          cloudMessage={cloudMessage}
-          onSignIn={onSignIn}
-          onSignUp={onSignUp}
-          onMagicLink={onMagicLink}
-          onOAuth={onOAuth}
-          onSignOut={onSignOut}
-          onSyncNow={onSyncNow}
-          onToast={onToast}
-        />
+        {/* 계정 · 클라우드 동기화 (v2.1) — v2.1.3 에서 '내 정보' 맨 아래로 이동 */}
 
         {/* 저장한 핀 카운터 */}
         <View style={styles.card}>
@@ -468,6 +453,23 @@ export default function ProfileScreen({
             </Text>
           </View>
         </View>
+
+        {/* 계정 · 클라우드 동기화 (v2.1) — 자주 쓰는 설정이 먼저 보이도록 맨 아래에 둡니다 */}
+        <AccountCard
+          cloudConfigured={cloudConfigured}
+          cloudUser={cloudUser}
+          cloudPinCount={cloudPinCount}
+          cloudBusy={cloudBusy}
+          cloudSyncing={cloudSyncing}
+          cloudMessage={cloudMessage}
+          onSignIn={onSignIn}
+          onSignUp={onSignUp}
+          onMagicLink={onMagicLink}
+          onOAuth={onOAuth}
+          onSignOut={onSignOut}
+          onSyncNow={onSyncNow}
+          onToast={onToast}
+        />
 
         <Text style={styles.footer}>기획 이상훈 · 개발 오돌</Text>
       </ScrollView>

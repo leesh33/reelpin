@@ -489,6 +489,21 @@ const v213Checks = [
     /if \(!myCoords\) \{\s*return \{ pin: null, empty: false, needsLocation: true, target: null \};/.test(mapCode)],
   ['중복 안내: 칩 아래 locationHint 제거',
     mapSource2.indexOf('locationHint') < 0],
+  // v2.1.3 — 계정 · 클라우드 동기화 카드는 '내 정보' 스크롤 맨 아래로
+  ['내 정보 탭: 계정 카드가 맨 아래(프로필·핀·반경·프로·앱 정보 뒤)',
+    (() => {
+      const html = renderToString(
+        <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} cloudPinCount={0} onSignIn={noop} onSignUp={noop} onMagicLink={noop} onOAuth={noop} onSignOut={noop} onSyncNow={noop} />
+      );
+      const at = html.indexOf('계정 · 클라우드 동기화');
+      return (
+        at > 0 &&
+        at > html.indexOf('저장한 핀') &&
+        at > html.indexOf('지오펜스 알림 반경') &&
+        at > html.indexOf('프로 시작하기') &&
+        at > html.indexOf('번들 ID')
+      );
+    })()],
 ];
 for (const [label, ok, extra] of v213Checks) {
   if (ok) console.log('OK   ' + label);
