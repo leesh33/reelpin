@@ -1,7 +1,8 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v2.0
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v2.1
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
-> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **스택** React Native + Expo SDK 51 · AsyncStorage · **Supabase(로그인·클라우드 동기화)** · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v2.1 (2026-11-15)** **Supabase 계정 로그인**(이메일·비밀번호 / 매직링크 / 카카오·구글·Apple) + **클라우드 핀 동기화**(로그인 시 기기 핀과 자동 병합, 핀 추가·삭제·일괄 저장·공유 지도 가져오기 모두 백그라운드 반영) · **아이폰 사파리 '저장' 탭 진입마다 뜨던 붙여넣기 팝업 제거**(클립보드는 버튼을 누를 때만 읽음)
 > **v2.0 (2026-11-15)** **쇼츠 '맛집 5곳' 여러 가게 한 번에 저장**(후보 체크박스·전체 선택·중복 건너뛰기) · **네이버 지도 링크 → 플레이스 상세 직행**(`naverPlaceId`, `/api/resolve-url` SSRF 화이트리스트) · 상세 시트 **전화 원탭(tel:)·주소 원탭 복사** · **홈 화면 아이콘(PWA)** + **`?share=` 내 맛집 지도 공유 링크**
 > **v1.8 (2026-11-15)** 인앱 모달 **헤더를 다크 차콜(`#1C1C1E`)** 로 — 흰 배경 네이버 플레이스 화면과 한 줄로 붙어 보이던 문제 해결 · 가게명 흰색 · 동네 연회색(`#A1A1AA`) · `[새 창으로 열기]` 반투명 필 · 닫기 흰 `✕`
 > **v1.7 (2026-11-15)** `[매장 정보 보기]` 가 카카오맵 **바깥으로 나가지 않고** 앱 안 **네이버 플레이스 모달**(iframe)로 열림 — 헤더 `[새 창으로 열기]`·`[닫기]`, 차단 감지 시 `[네이버 지도로 열기]` 원탭 폴백
@@ -74,6 +75,7 @@ PC를 켜 둘 필요도, Expo Go를 설치할 필요도 없습니다.
 | `YOUTUBE_API_KEY` | `/api/youtube` (설명글·댓글) | 제목·썸네일만(oEmbed) |
 | `GOOGLE_MAPS_API_KEY` | (아직 없음 — 구글 Places는 네이티브에서 직접 호출) | 구글 결과 없음 |
 | `EXPO_PUBLIC_NAVER_MAP_CLIENT_ID` | **웹 지도(네이버 지도)** — 빌드 시점 주입 | 기본값 `a1mxcz4n34` 사용 |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | **`/api/auth-config`** → 웹 앱이 로그인 설정을 받아 감 | 계정 카드가 '꺼짐'으로 표시되고 **기기 로컬 전용**으로 동작 |
 
 > ⚠️ **`EXPO_PUBLIC_...` 이름으로는 넣지 마세요.** Expo는 그 이름의 값을 **빌드 시점에 JS 번들에 박아 넣습니다.**
 > 그러면 브라우저에서 소스 보기로 키가 보입니다. 서버 함수는 위 표의 **접두사 없는 이름**을 먼저 읽습니다.
@@ -116,15 +118,38 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ---
 
+## 5. Supabase 로그인 · 클라우드 동기화 켜기 (5분)
+
+v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). 아래를 채우면 '내 정보 → 계정 · 클라우드 동기화' 카드가 켜집니다.
+
+1. **[supabase.com](https://supabase.com)** → New project → 생성 후 **Project Settings → API** 에서 두 값을 복사
+   - `Project URL` (예: `https://abcdxyz.supabase.co`)
+   - `anon` `public` key (브라우저에 있어도 되는 **공개 키**입니다)
+2. **SQL Editor** 에 저장소의 [`supabase/schema.sql`](supabase/schema.sql) 을 통째로 붙여 넣고 **Run**
+   - `public.pins` 테이블 + **RLS**(`auth.uid() = user_id`) + `updated_at` 트리거 + 인덱스가 한 번에 만들어집니다. 여러 번 실행해도 안전합니다.
+3. **Authentication → Providers**
+   - **Email**: 그대로 사용(비밀번호 로그인 + 매직링크). 'Confirm email' 을 켜 두면 가입 후 메일함에서 링크를 눌러야 로그인됩니다.
+   - **카카오 / 구글 / Apple**: 각 콘솔에서 OAuth 앱을 만들고 Client ID·Secret 을 넣어 켜면 앱의 소셜 버튼이 동작합니다. (안 켜져 있으면 버튼을 눌렀을 때 '아직 서버에서 켜지지 않았어요' 안내가 뜨고, 앱은 그대로 쓸 수 있습니다)
+   - **Authentication → URL Configuration → Redirect URLs** 에 `https://reelpin.vercel.app/` 와 앱용 `reelpin://auth-callback` 을 추가 (매직링크·소셜 로그인이 돌아올 주소)
+4. **Vercel → Project → Settings → Environment Variables**
+   - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (접미 없는 이름 — `/api/auth-config` 가 읽어 웹 앱에 전달합니다)
+   - ❌ **`SUPABASE_SERVICE_ROLE_KEY` 는 절대 넣지 마세요.** 넣더라도 `/api/auth-config` 는 그 값을 **응답에 담지 않고**, anon 자리에 들어 있으면 503으로 거부합니다.
+   - 휴대폰 Expo Go 로도 쓰려면 로컬 `.env` 에 `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY` 를 넣습니다(빌드 시점 주입).
+5. **확인** — 내 정보 탭 → 계정 카드에 이메일을 넣고 [로그인] → `클라우드 동기화 켜짐 · N개 저장됨` 이 뜨고, 다른 기기에서 같은 계정으로 로그인하면 두 기기의 핀이 **중복 없이 합쳐집니다**.
+
+> **보안**: `anon` key 는 공개 값이고, 실제 문은 **RLS**가 지킵니다(내 핀만 읽고/쓰고/지움).
+> 앱과 `/api/auth-config` 는 **service_role 키를 쓰지 않습니다.**
+
 ## 개발 검증 (실제로 돌린 것)
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 728건 통과 (추출기·딥링크 373 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 911건 통과 (추출기·딥링크 373 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 클라우드 로그인·동기화 147 + 화면 렌더 스모크 158) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
 npm run test:location              # 거리 계산·반경 500m·위치 권한 안내·브라우저 알림
+npm run test:cloud                 # Supabase 설정 해석·로그인·클라우드 핀 병합/동기화 (DB 없이 구조 검사)
 npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+설명글(+댓글, 키 있을 때) → 카카오+네이버 HUB 실검색 (.env 키 필요)
 ```
 
@@ -133,6 +158,40 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v2.1에서 달라진 점 (2026-11-15) — 계정 로그인 · 클라우드 동기화 · 붙여넣기 팝업 제거
+
+상훈 님이 요청한 **“기기를 바꿔도 내 지도가 따라오게”** 를 **한 버전(2.1.0)** 으로 묶었습니다.
+
+### 1. 🔐 내 정보 탭에 **계정 · 클라우드 동기화** 카드
+
+- **비로그인**: `[로그인 | 회원가입]` 전환 + 이메일/비밀번호 + **매직링크(이메일 인증 링크)** + 소셜 **카카오 · 구글 · Apple**
+- **로그인 후**: 이메일 · `클라우드 동기화 켜짐 · N개 저장됨` · `[지금 동기화]` · `[로그아웃]`
+- Supabase 설정이 없으면 카드가 '꺼짐'으로 뜨고, 버튼을 누르면 **안내 토스트**만 나갑니다(앱은 기존처럼 동작).
+
+### 2. ☁️ 핀 자동 동기화 — 데이터를 잃지 않는 방식
+
+- 로그인 순간: 클라우드 핀을 읽어 **로컬 핀과 중복 없이 병합**(같은 id → 최근 값, 다른 id → 네이버 placeId·매장 URL·이름+200m 로 같은 곳 판정) → 빠진 핀만 업로드.
+- 핀 **추가 / 일괄 저장 / 공유 지도 가져오기 / 삭제** 때마다 백그라운드 반영. 화면은 먼저 바뀌고(낙관적 업데이트), 실패해도 **기기 데이터는 그대로** — 토스트로만 알립니다.
+- 병합은 **올리기(upsert)만** 합니다. 다른 기기에서 저장한 핀을 실수로 지우지 않습니다(삭제는 사용자가 지운 그 핀만).
+
+### 3. 📋 아이폰 사파리의 `[붙여넣기 | 🚫]` 팝업 제거 (v2.1.1)
+
+- 원인: '저장' 탭이 열릴 때마다 `Clipboard.getStringAsync()`(= `navigator.clipboard.readText()`)를 **자동으로** 불러, iOS 가 매번 붙여넣기 허용을 물어봤습니다.
+- 수정: **자동 읽기 코드를 삭제**하고, 사용자가 **[클립보드에서 붙여넣기]** 버튼을 누르거나 입력창에 직접 붙여넣을 때만 읽습니다. (자동 감지 배너도 삭제)
+
+### 4. 🗄️ 서버 구조
+
+- `supabase/schema.sql` — `public.pins`(PK `(user_id, id)`) + **RLS 4정책**(`auth.uid() = user_id`) + `updated_at` 트리거 + 목록 인덱스
+- `api/auth-config.js` — 웹 앱에 **공개 설정만** 돌려주는 함수(`SERVICE_ROLE_KEY` 는 절대 미포함, anon 자리에 있으면 503)
+- `src/services/supabase.js` — SSR 안전 클라이언트(import 시 `window`·`localStorage` 미접근, 세션 저장소 실패 시 메모리 폴백, 미설정이면 `null` → 로컬 전용 모드)
+- `src/services/cloudSync.js` — 로그인 6종 · 핀 CRUD 4종 · `mergeLocalAndCloudPins` · `planCloudSync` · 한국어 오류 문구
+
+### 5. ✅ 검증
+
+- `npm test` **911건 통과** (클라우드 로그인·동기화 147 + 화면 렌더 스모크에 계정 카드·붙여넣기 버튼 검사 추가)
+- `npm run export:web` 에러 0건 → `dist/` 삭제
+- 라이브 `https://reelpin.vercel.app` 내 정보 탭에서 로그인 UI 렌더링·기존 기능 회귀 확인
 
 ## v2.0에서 달라진 점 (2026-11-15) — 여러 곳 한 번에 · 네이버 직행 · 홈화면 아이콘 · 공유 링크
 
@@ -334,6 +393,10 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 ### 핵심 파일
 
+- `src/services/supabase.js` — **SSR 안전 Supabase 클라이언트** — `EXPO_PUBLIC_SUPABASE_URL/ANON_KEY` → 웹은 `/api/auth-config` 폴백, 미설정이면 `null`(로컬 전용 모드), 세션 저장소 실패 시 메모리 폴백, `detectSessionInUrl` 은 브라우저에서만
+- `src/services/cloudSync.js` — **로그인·클라우드 핀 동기화** — `signInWithEmail`·`signUpWithEmail`·`signInWithMagicLink`·`signInWithOAuth`(카카오·구글·Apple)·`signOut`·`getSession` / `fetchCloudPins`·`upsertCloudPin(s)`·`deleteCloudPin` / **`mergeLocalAndCloudPins`**(같은 id → 최근 값, 같은 곳 → 네이버 placeId·매장 URL·이름+200m) · `planCloudSync` · 한국어 오류 문구
+- `supabase/schema.sql` — **DB 스키마** — `public.pins`(PK `(user_id, id)`, 18컬럼) + **RLS 4정책**(`auth.uid() = user_id`) + `updated_at` 트리거 + 인덱스 (다시 실행해도 안전)
+- `api/auth-config.js` — 웹 앱에 `SUPABASE_URL`·`SUPABASE_ANON_KEY` 만 돌려주는 함수 (service_role 은 미포함·거부)
 - `src/components/RealMapView.web.js` — **웹 실제 지도** — 1순위 **네이버 지도**(`ncpKeyId`, 핀·내 위치 점·500m 원·`fitBounds`/`morph`/확대축소) + **Leaflet 폴백**(OSM 타일), 둘 다 `useEffect` 안에서만 로드
 - `src/components/RealMapView.js` — 네이티브 폴백(기존 `MapCanvas` 그대로)
 - `src/components/InAppPlaceModal.web.js` — **웹 인앱 네이버 플레이스 모달** — `<iframe src={naverPlaceSearchUrl(pin)}>`, 헤더 `[새 창으로 열기]`·`[닫기]`(ESC), 6초 시간 초과·`about:blank` 차단 감지 → `[네이버 지도로 열기]` 원탭 폴백

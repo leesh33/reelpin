@@ -18,6 +18,21 @@ import { loadPins, loadPro, loadRadius, savePins, savePro, saveRadius } from './
 import { findExistingPin, normalizePins, splitNewPins } from './src/utils/pins';
 import { clearShareFromLocation, readShareFromLocation } from './src/utils/shareMap';
 import { FREE_PIN_LIMIT } from './src/data/seedPins';
+import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
+import {
+  OAUTH_PROVIDERS,
+  deleteCloudPin,
+  fetchCloudPins,
+  getSession,
+  onAuthStateChange,
+  planCloudSync,
+  signInWithEmail,
+  signInWithMagicLink,
+  signInWithOAuth,
+  signOut as signOutCloud,
+  signUpWithEmail,
+  upsertCloudPins,
+} from './src/services/cloudSync';
 import { colors, typography } from './src/theme';
 
 const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
@@ -33,6 +48,18 @@ export default function App() {
   const [sharedPins, setSharedPins] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+
+  // v2.1 — 계정 · 클라우드 동기화 상태
+  const [cloudConfigured, setCloudConfigured] = useState(isSupabaseConfigured());
+  const [cloudUser, setCloudUser] = useState(null);
+  const [cloudPinCount, setCloudPinCount] = useState(0);
+  const [cloudBusy, setCloudBusy] = useState(false);
+  const [cloudSyncing, setCloudSyncing] = useState(false);
+  const [cloudMessage, setCloudMessage] = useState('');
+  const sessionRef = useRef(null);
+  const pinsRef = useRef([]);
+  const syncWarnedRef = useRef(false);
+  const authUnsubRef = useRef(null);
 
   // 최초 1회: 저장된 핀·반경·플랜 불러오기
   useEffect(() => {
@@ -88,6 +115,258 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 2400);
   }, []);
 
+  // ── v2.1 · 클라우드 동기화 ────────────────────────────────
+  // 화면 상태(pins)를 비동기 콜백에서도 최신으로 읽기 위한 거울
+  useEffect(() => {
+    pinsRef.current = pins;
+  }, [pins]);
+
+  const currentUserId = () =>
+    sessionRef.current && sessionRef.current.user ? sessionRef.current.user.id : null;
+
+  /**
+   * 클라우드에서 내 핀을 읽어 로컬과 병합합니다.
+   *   · 로컬 → 화면은 **먼저** 그대로 두고, 병합 결과만 반영 (낙관적 업데이트 유지)
+   *   · 실패하면 로컬 핀을 한 개도 지우지 않고 안내만 합니다.
+   */
+  const syncWithCloud = useCallback(
+    async ({ silent = false } = {}) => {
+      const userId = currentUserId();
+      if (!userId) return;
+      setCloudSyncing(true);
+      try {
+        const fetched = await fetchCloudPins(userId);
+        if (!fetched.ok) {
+          setCloudMessage(fetched.message || '클라우드 핀을 읽지 못했어요 · 기기 저장은 그대로예요');
+          if (!silent) showToast('클라우드 핀을 읽지 못했어요 · 기기 저장은 그대로예요');
+          return;
+        }
+        const plan = planCloudSync(pinsRef.current, fetched.pins);
+        pinsRef.current = plan.merged;
+        setPins(plan.merged);
+        setCloudPinCount(plan.merged.length);
+        let uploadFailed = null;
+        if (plan.toUpload.length) {
+          const pushed = await upsertCloudPins(userId, plan.toUpload);
+          if (!pushed.ok) uploadFailed = pushed.message || '클라우드에 올리지 못했어요';
+        }
+        if (uploadFailed) {
+          setCloudMessage(uploadFailed + ' · 기기에는 저장돼 있어요');
+          if (!syncWarnedRef.current) {
+            syncWarnedRef.current = true;
+            showToast('클라우드에 올리지 못했어요 · 기기에 저장했어요');
+          }
+          return;
+        }
+        syncWarnedRef.current = false;
+        setCloudMessage('');
+        if (!silent) {
+          const added = Math.max(0, plan.merged.length - plan.toUpload.length);
+          showToast(
+            '클라우드와 맞췄어요 · ' + plan.merged.length + '개 저장됨' + (added ? ' (클라우드에서 ' + added + '개 가져옴)' : ''),
+            'pro'
+          );
+        }
+      } finally {
+        setCloudSyncing(false);
+      }
+    },
+    [showToast]
+  );
+
+  /**
+   * 핀을 클라우드에 올립니다 (백그라운드).
+   *   · 화면은 이미 바뀐 상태 — 실패해도 로컬 데이터는 그대로이고 토스트로만 알립니다.
+   */
+  const pushPinsToCloud = useCallback(
+    async (list) => {
+      const userId = currentUserId();
+      const items = (Array.isArray(list) ? list : [list]).filter(Boolean);
+      if (!userId || !items.length) return;
+      try {
+        const res = await upsertCloudPins(userId, items);
+        if (res.ok) {
+          syncWarnedRef.current = false;
+          setCloudPinCount(pinsRef.current.length);
+          setCloudMessage('');
+          return;
+        }
+        setCloudMessage((res.message || '클라우드 저장 실패') + ' · 기기에는 저장했어요');
+        if (!syncWarnedRef.current) {
+          syncWarnedRef.current = true;
+          showToast('클라우드 동기화는 잠시 실패했어요 · 기기에는 저장됐어요');
+        }
+      } catch (e) {
+        setCloudMessage('클라우드 저장 실패 · 기기에는 저장했어요');
+      }
+    },
+    [showToast]
+  );
+
+  const removePinFromCloud = useCallback(async (pinId) => {
+    const userId = currentUserId();
+    if (!userId || !pinId) return;
+    try {
+      const res = await deleteCloudPin(userId, pinId);
+      if (res.ok) {
+        setCloudPinCount(pinsRef.current.length);
+        return;
+      }
+      setCloudMessage((res.message || '클라우드에서 지우지 못했어요') + ' · 기기에서는 지웠어요');
+    } catch (e) {
+      setCloudMessage('클라우드에서 지우지 못했어요 · 기기에서는 지웠어요');
+    }
+  }, []);
+
+  /** 로그인 세션을 앱 상태로 받아들이고, 첫 동기화를 걸어 둡니다. */
+  const adoptCloudSession = useCallback(
+    (session, options = {}) => {
+      const user = session && session.user;
+      if (!user) return;
+      const known =
+        sessionRef.current && sessionRef.current.user && sessionRef.current.user.id === user.id;
+      sessionRef.current = session;
+      setCloudUser({ id: user.id, email: user.email || '' });
+      if (known && options.fromEvent) return;
+      syncWithCloud({ silent: !!options.silent });
+    },
+    [syncWithCloud]
+  );
+
+  const clearCloudSession = useCallback(() => {
+    sessionRef.current = null;
+    setCloudUser(null);
+    setCloudPinCount(0);
+    setCloudMessage('');
+  }, []);
+
+  // 앱이 준비된 뒤: 설정 조회(웹은 /api/auth-config) → 세션 복원 → 로그인 변화 구독
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    (async () => {
+      await loadSupabaseConfig();
+      if (cancelled) return;
+      const configured = isSupabaseConfigured();
+      setCloudConfigured(configured);
+      if (!configured) return;
+      const res = await getSession();
+      if (cancelled) return;
+      if (res.ok && res.session) adoptCloudSession(res.session, { silent: true });
+      const unsubscribe = onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+          clearCloudSession();
+          return;
+        }
+        if (session) adoptCloudSession(session, { fromEvent: true, silent: true });
+      });
+      authUnsubRef.current = unsubscribe;
+    })();
+    return () => {
+      cancelled = true;
+      if (authUnsubRef.current) {
+        authUnsubRef.current();
+        authUnsubRef.current = null;
+      }
+    };
+  }, [ready, adoptCloudSession, clearCloudSession]);
+
+  // ── 로그인 · 회원가입 · 매직링크 · 소셜 ───────────────────
+  const handleSignIn = useCallback(
+    async (email, password) => {
+      setCloudBusy(true);
+      setCloudMessage('');
+      const res = await signInWithEmail(email, password);
+      setCloudBusy(false);
+      if (!res.ok) {
+        setCloudMessage(res.message || '로그인에 실패했어요');
+        showToast(res.message || '로그인에 실패했어요');
+        return;
+      }
+      if (res.session) {
+        showToast('로그인했어요');
+        adoptCloudSession(res.session);
+      } else {
+        setCloudMessage('메일함에서 인증 링크를 먼저 눌러 주세요');
+      }
+    },
+    [adoptCloudSession, showToast]
+  );
+
+  const handleSignUp = useCallback(
+    async (email, password) => {
+      setCloudBusy(true);
+      setCloudMessage('');
+      const res = await signUpWithEmail(email, password);
+      setCloudBusy(false);
+      if (!res.ok) {
+        setCloudMessage(res.message || '가입에 실패했어요');
+        showToast(res.message || '가입에 실패했어요');
+        return;
+      }
+      if (res.session) {
+        showToast('가입하고 로그인했어요');
+        adoptCloudSession(res.session);
+        return;
+      }
+      setCloudMessage('인증 메일을 보냈어요 · 메일함에서 링크를 눌러 주세요');
+      showToast('메일함을 확인해 주세요');
+    },
+    [adoptCloudSession, showToast]
+  );
+
+  const handleMagicLink = useCallback(
+    async (email) => {
+      setCloudBusy(true);
+      setCloudMessage('');
+      const res = await signInWithMagicLink(email);
+      setCloudBusy(false);
+      if (!res.ok) {
+        setCloudMessage(res.message || '매직링크를 보내지 못했어요');
+        showToast(res.message || '매직링크를 보내지 못했어요');
+        return;
+      }
+      setCloudMessage('매직링크를 보냈어요 · 메일함에서 링크를 눌러 주세요');
+      showToast('매직링크를 보냈어요 · 메일함 확인');
+    },
+    [showToast]
+  );
+
+  const handleOAuth = useCallback(
+    async (provider) => {
+      setCloudBusy(true);
+      setCloudMessage('');
+      const res = await signInWithOAuth(provider);
+      setCloudBusy(false);
+      if (!res.ok) {
+        setCloudMessage(res.message || '로그인 창을 열지 못했어요');
+        showToast(res.message || '로그인 창을 열지 못했어요');
+        return;
+      }
+      const label = (OAUTH_PROVIDERS.find((p) => p.id === provider) || {}).label || provider;
+      showToast(label + ' 로그인 창을 열었어요');
+    },
+    [showToast]
+  );
+
+  const handleSignOut = useCallback(async () => {
+    setCloudBusy(true);
+    const res = await signOutCloud();
+    setCloudBusy(false);
+    if (!res.ok) {
+      showToast(res.message || '로그아웃하지 못했어요');
+      return;
+    }
+    clearCloudSession();
+    showToast('로그아웃했어요 · 핀은 기기에 그대로 있어요');
+  }, [clearCloudSession, showToast]);
+
+  const handleSyncNow = useCallback(() => {
+    if (cloudSyncing) return;
+    syncWithCloud({ silent: false });
+  }, [cloudSyncing, syncWithCloud]);
+
+
   const handleSaved = useCallback(
     (pin) => {
       // 매장 정보 URL 또는 이름+동네가 같으면 같은 장소 — 중복 핀을 만들지 않습니다.
@@ -102,8 +381,10 @@ export default function App() {
       setSelectedPinId(pin.id);
       setTab('map');
       showToast('지도에 핀을 꽂았어요 · ' + pin.name, 'pro');
+      // v2.1 — 로그인 상태면 클라우드에도 백그라운드로 (실패해도 로컬은 그대로)
+      pushPinsToCloud([pin]);
     },
-    [pins, showToast]
+    [pins, pushPinsToCloud, showToast]
   );
 
   /**
@@ -142,8 +423,9 @@ export default function App() {
       if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
       if (overLimit > 0) parts.push('무료 한도로 ' + overLimit + '곳은 못 넣었어요');
       showToast(parts.join(' · '), 'pro');
+      pushPinsToCloud(allowed);
     },
-    [isPro, pins, showToast]
+    [isPro, pins, pushPinsToCloud, showToast]
   );
 
   /** 공유받은 지도를 내 지도에 합칩니다. (중복은 건너뛰고, 주소창의 share 는 지움) */
@@ -162,7 +444,8 @@ export default function App() {
     if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
     if (fresh.length - allowed.length > 0) parts.push('무료 한도로 ' + (fresh.length - allowed.length) + '곳은 못 넣었어요');
     showToast(parts.join(' · ') || '추가할 곳이 없어요', allowed.length ? 'pro' : 'dark');
-  }, [isPro, pins, sharedPins, showToast]);
+    if (allowed.length) pushPinsToCloud(allowed);
+  }, [isPro, pins, pushPinsToCloud, sharedPins, showToast]);
 
   const handleDismissShared = useCallback(() => {
     setSharedPins([]);
@@ -174,8 +457,9 @@ export default function App() {
       setPins((prev) => prev.filter((p) => p.id !== pinId));
       setSelectedPinId((current) => (current === pinId ? null : current));
       showToast('핀을 삭제했어요');
+      removePinFromCloud(pinId);
     },
-    [showToast]
+    [removePinFromCloud, showToast]
   );
 
   const handleChangeRadius = useCallback(
@@ -231,7 +515,6 @@ export default function App() {
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
             <PasteScreen
-              active={tab === 'paste'}
               pinCount={pins.length}
               isPro={isPro}
               onSaved={handleSaved}
@@ -252,6 +535,18 @@ export default function App() {
               onStartPro={handleStartPro}
               onGoPaste={() => setTab('paste')}
               onToast={showToast}
+              cloudConfigured={cloudConfigured}
+              cloudUser={cloudUser}
+              cloudPinCount={cloudPinCount}
+              cloudBusy={cloudBusy}
+              cloudSyncing={cloudSyncing}
+              cloudMessage={cloudMessage}
+              onSignIn={handleSignIn}
+              onSignUp={handleSignUp}
+              onMagicLink={handleMagicLink}
+              onOAuth={handleOAuth}
+              onSignOut={handleSignOut}
+              onSyncNow={handleSyncNow}
             />
           </View>
         </View>

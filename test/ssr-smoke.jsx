@@ -66,6 +66,10 @@ const cases = [
   ['PasteScreen(가게명 찾기)', <PasteScreen active pinCount={4} isPro={false} initialMode="search" onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />],
   ['PasteScreen(limit)', <PasteScreen active pinCount={10} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />],
   ['ProfileScreen', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} />],
+  // v2.1 — 계정 · 클라우드 동기화 카드 (비로그인 / 로그인)
+  ['ProfileScreen(로그인 전)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} cloudPinCount={0} onSignIn={noop} onSignUp={noop} onMagicLink={noop} onOAuth={noop} onSignOut={noop} onSyncNow={noop} />],
+  ['ProfileScreen(로그인 후)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'andy@example.com' }} cloudPinCount={4} cloudSyncing={false} cloudMessage="" onSignIn={noop} onSignUp={noop} onMagicLink={noop} onOAuth={noop} onSignOut={noop} onSyncNow={noop} />],
+  ['ProfileScreen(로그인 후·동기화 중)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'andy@example.com' }} cloudPinCount={4} cloudSyncing cloudMessage="클라우드에 올리지 못했어요 · 기기에는 저장돼 있어요" onSignIn={noop} onSignUp={noop} onMagicLink={noop} onOAuth={noop} onSignOut={noop} onSyncNow={noop} />],
   ['PinDetailSheet', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />],
   ['PinDetailSheet(매장정보·배지)', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={500} onClose={noop} onDelete={noop} onToast={noop} />],
   ['PinDetailSheet(매장정보 없음)', <PinDetailSheet pin={{ ...SEARCH_PIN, placeUrl: '', providers: [] }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />],
@@ -134,6 +138,16 @@ const contentCases = [
   ['PinDetailSheet: naverPlaceId 있으면 상세 페이지 표기', <PinDetailSheet pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['네이버 플레이스 상세']],
   ['PinDetailSheet: 공유받은 핀은 삭제 대신 안내', <PinDetailSheet pin={SHARED_PINS[0]} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly />, ['공유받은 맛집이에요']],
   ['InAppPlaceModal.web: placeId 있으면 상세 페이지 직행', <InAppPlaceModalWeb pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} onClose={noop} onToast={noop} />, ['m.place.naver.com/place/1736095566/home']],
+  // v2.1 — 계정 · 클라우드 동기화 카드
+  ['ProfileScreen: 계정 카드 + 로그인/회원가입 전환', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} onSignIn={noop} onSignUp={noop} onMagicLink={noop} onOAuth={noop} onSignOut={noop} onSyncNow={noop} />, ['계정 · 클라우드 동기화', '로그인', '회원가입']],
+  ['ProfileScreen: 매직링크 안내', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} onMagicLink={noop} />, ['매직링크']],
+  ['ProfileScreen: 소셜 로그인 3개(카카오·구글·Apple)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} onOAuth={noop} />, ['카카오', '구글', 'Apple']],
+  ['ProfileScreen(미설정): 기기 안에만 저장 안내', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured={false} cloudUser={null} />, ['지금은 기기 안에만 저장돼요', 'SUPABASE_URL']],
+  ['ProfileScreen(로그인 후): 이메일·동기화 켜짐·N개', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'andy@example.com' }} cloudPinCount={7} onSyncNow={noop} onSignOut={noop} />, ['andy@example.com', '클라우드 동기화 켜짐', '개 저장됨', '지금 동기화', '로그아웃', '기기 + 클라우드(Supabase)']],
+  ['ProfileScreen(로그인 후): 동기화 실패 안내', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'a@b.com' }} cloudPinCount={3} cloudMessage="클라우드 저장 실패 · 기기에는 저장돼 있어요" />, ['기기에는 저장돼 있어요']],
+  // v2.1.1 — 클립보드는 사용자가 버튼을 눌렀을 때만 (아이폰 사파리 붙여넣기 팝업 방지)
+  ['PasteScreen: [클립보드에서 붙여넣기] 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['클립보드에서 붙여넣기']],
+  ['PasteScreen: 링크 입력 + 붙여넣기 버튼 렌더', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 · 쇼츠 링크', '클립보드에서 붙여넣기']],
 ];
 
 for (const [label, element, needles] of contentCases) {
@@ -272,6 +286,60 @@ for (const [label, ok] of v2Checks) {
   }
 }
 
+// ── v2.1: Supabase 로그인 · 클라우드 동기화 배선 ──────────────────
+const cloudSyncSource = fs.readFileSync(path.join(process.cwd(), 'src/services/cloudSync.js'), 'utf8');
+const supabaseSource = fs.readFileSync(path.join(process.cwd(), 'src/services/supabase.js'), 'utf8');
+const authConfigSource = fs.readFileSync(path.join(process.cwd(), 'api/auth-config.js'), 'utf8');
+const schemaSource = fs.readFileSync(path.join(process.cwd(), 'supabase/schema.sql'), 'utf8');
+
+const v21Checks = [
+  ['ProfileScreen: 계정 카드 컴포넌트', profileSource.indexOf('function AccountCard') > 0 && profileSource.indexOf('계정 · 클라우드 동기화') > 0],
+  ['ProfileScreen: 미설정이면 안내 토스트만', profileSource.indexOf('Supabase 설정이 아직 없어요') > 0],
+  ['ProfileScreen: 로그인 후 [지금 동기화]·[로그아웃]', profileSource.indexOf('지금 동기화') > 0 && profileSource.indexOf('로그아웃') > 0],
+  ['App: 로그인 세션 복원·구독', appSource.indexOf('getSession') > 0 && appSource.indexOf('onAuthStateChange') > 0],
+  ['App: 로컬·클라우드 병합', appSource.indexOf('planCloudSync') > 0 && appSource.indexOf('syncWithCloud') > 0],
+  ['App: 핀 저장/일괄/공유/삭제 → 백그라운드 sync', ['pushPinsToCloud', 'removePinFromCloud'].every((k) => appSource.indexOf(k) > 0) && (appSource.match(/pushPinsToCloud\(/g) || []).length >= 3],
+  ['App: 설정 조회는 ready 뒤에 (웹 /api/auth-config)', appSource.indexOf('loadSupabaseConfig()') > 0 && /if \(!ready\) return;[\s\S]{0,80}loadSupabaseConfig/.test(appSource)],
+  ['cloudSync: 로그인 4종 + 세션', ['signInWithEmail', 'signUpWithEmail', 'signInWithMagicLink', 'signInWithOAuth', 'signOut', 'getSession'].every((k) => cloudSyncSource.indexOf('export async function ' + k) > 0)],
+  ['cloudSync: 핀 CRUD 4종', ['fetchCloudPins', 'upsertCloudPin', 'upsertCloudPins', 'deleteCloudPin'].every((k) => cloudSyncSource.indexOf('export async function ' + k) > 0)],
+  ['cloudSync: mergeLocalAndCloudPins 공개', cloudSyncSource.indexOf('export function mergeLocalAndCloudPins') > 0],
+  ['cloudSync: 삭제는 user_id + id 두 조건', /\.delete\(\)\s*\.eq\('user_id', userId\)\s*\.eq\('id'/.test(cloudSyncSource)],
+  ['supabase: window·localStorage 를 import 시점에 읽지 않음', !/^\s*(const|let|var)\s+\w+\s*=\s*window\./m.test(supabaseSource) && supabaseSource.indexOf('typeof window') > 0],
+  ['supabase: detectSessionInUrl 은 브라우저에서만', supabaseSource.indexOf('detectSessionInUrl: isBrowser()') > 0],
+  ['supabase: 미설정이면 null (로컬 전용 모드)', supabaseSource.indexOf('if (!cfg.url || !cfg.anonKey) return null') > 0],
+  ['api/auth-config: service_role 은 반환하지 않음', authConfigSource.indexOf('SERVICE_ROLE') > 0 && /refusing/.test(authConfigSource) && authConfigSource.indexOf('service_role":') < 0],
+  ['스키마: public.pins + RLS 4정책', schemaSource.indexOf('create table if not exists public.pins') > 0 && (schemaSource.match(/create policy /g) || []).length === 4],
+  ['README: v2.1 안내', fs.readFileSync(path.join(process.cwd(), 'README.md'), 'utf8').indexOf('v2.1') > 0],
+];
+
+for (const [label, ok] of v21Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label);
+  }
+}
+
+// ── v2.1.1: 탭 진입 시 자동 클립보드 읽기 제거 (아이폰 사파리 붙여넣기 팝업) ──
+// 주석은 빼고 '실제 코드'만 검사합니다. (설명 주석에 적힌 옛 코드 때문에 오탐하지 않게)
+const pasteCode = pasteSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const v211Checks = [
+  ['PasteScreen: readClipboard 호출은 사용자 버튼(applyPaste) 한 곳뿐', (pasteCode.match(/readClipboard\(\)/g) || []).length === 1, String((pasteCode.match(/readClipboard\(\)/g) || []).length)],
+  ['PasteScreen: useEffect 로 클립보드를 읽지 않음', !/useEffect\([\s\S]{0,120}readClipboard/.test(pasteCode) && pasteCode.indexOf('if (active && !isSearch)') < 0],
+  ['PasteScreen: navigator.clipboard.readText 직접 호출 없음', pasteCode.indexOf('readText(') < 0],
+  ['PasteScreen: 클립보드 읽기(getStringAsync)는 한 곳뿐', (pasteCode.match(/getStringAsync\(/g) || []).length === 1, String((pasteCode.match(/getStringAsync\(/g) || []).length)],
+  ['PasteScreen: [클립보드에서 붙여넣기] 버튼', pasteSource.indexOf('클립보드에서 붙여넣기') > 0],
+  ['PasteScreen: 자동 감지 배너 문구 제거', pasteSource.indexOf('방금 복사한 링크가 있어요') < 0],
+  ['App: PasteScreen 에 active(자동 읽기 트리거) 미전달', /<PasteScreen[\s\S]{0,120}?active=/.test(appSource) === false],
+];
+for (const [label, ok, extra] of v211Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 // PWA: index.html 메타 주입 (Expo 기본 템플릿에 실제로 들어가는지)
 const EXPO_TEMPLATE =
   '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
@@ -318,8 +386,9 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.0.0', pkg.version === '2.0.0', pkg.version],
-  ['버전: app.json 2.0.0', expoConfig.version === '2.0.0', expoConfig.version],
+  ['버전: package.json 2.1.0', pkg.version === '2.1.0', pkg.version],
+  ['버전: app.json 2.1.0', expoConfig.version === '2.1.0', expoConfig.version],
+  ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
 ];
@@ -338,6 +407,8 @@ const total =
   mapChecks.length +
   placeChecks.length +
   v2Checks.length +
+  v21Checks.length +
+  v211Checks.length +
   pwaChecks.length +
   assetChecks.length +
   2;

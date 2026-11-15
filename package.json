@@ -1,6 +1,6 @@
 {
   "name": "reelpin",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "릴스핀(ReelPin) — 릴스·쇼츠에서 본 맛집을 내 지도에 핀으로 저장하고, 그 동네에 도착하면 알려 주는 앱",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -18,20 +18,23 @@
     "test:location": "node test/run-tests.mjs location",
     "test:api": "node test/run-tests.mjs api",
     "web:html": "node scripts/patch-web-html.mjs",
-    "test:ssr": "node test/run-tests.mjs ssr"
+    "test:ssr": "node test/run-tests.mjs ssr",
+    "test:cloud": "node test/run-tests.mjs cloud"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",
     "@expo/vector-icons": "^14.0.2",
+    "@opentelemetry/api": "^1.10.0",
     "@react-native-async-storage/async-storage": "1.23.1",
+    "@supabase/supabase-js": "^2.109.0",
     "expo": "~51.0.39",
     "expo-clipboard": "~6.0.3",
+    "expo-font": "~12.0.10",
     "expo-status-bar": "~1.12.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "react-native": "0.74.5",
-    "react-native-web": "~0.19.10",
-    "expo-font": "~12.0.10"
+    "react-native-web": "~0.19.10"
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",

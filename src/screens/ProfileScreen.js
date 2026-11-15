@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { FREE_PIN_LIMIT } from '../data/seedPins';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
+import { OAUTH_PROVIDERS } from '../services/cloudSync';
+import { SUPABASE_SETUP_HINT } from '../services/supabase';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 const RADIUS_OPTIONS = [
@@ -18,6 +20,238 @@ const PRO_FEATURES = [
   '친구와 함께 쓰는 공동 편집 지도',
 ];
 
+/**
+ * v2.1 — 계정 · 클라우드 동기화 카드.
+ *
+ *   · 비로그인: 이메일/비밀번호 로그인·회원가입 전환 + 매직링크 + 소셜(카카오·구글·Apple)
+ *   · 로그인  : 이메일 · `클라우드 동기화 켜짐 · N개 저장됨` · [지금 동기화] · [로그아웃]
+ *   · Supabase 설정이 없으면 입력은 그대로 보이되, 누르면 안내 토스트만 뜨고 아무 것도 보내지 않습니다.
+ */
+function AccountCard({
+  cloudConfigured,
+  cloudUser,
+  cloudPinCount,
+  cloudBusy,
+  cloudSyncing,
+  cloudMessage,
+  onSignIn,
+  onSignUp,
+  onMagicLink,
+  onOAuth,
+  onSignOut,
+  onSyncNow,
+  onToast,
+}) {
+  const [mode, setMode] = useState('signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const signedIn = !!(cloudUser && (cloudUser.email || cloudUser.id));
+  const busy = !!cloudBusy;
+  const toast = (m) => onToast && onToast(m);
+
+  const guardOffline = () => {
+    if (cloudConfigured) return false;
+    toast('Supabase 설정이 아직 없어요 — 지금은 기기에만 저장됩니다');
+    return true;
+  };
+
+  const submit = () => {
+    if (busy) return;
+    if (guardOffline()) return;
+    if (!email.trim()) {
+      toast('이메일을 먼저 적어 주세요');
+      return;
+    }
+    if (!password) {
+      toast('비밀번호를 적어 주세요');
+      return;
+    }
+    const fn = mode === 'signup' ? onSignUp : onSignIn;
+    if (fn) fn(email.trim(), password);
+  };
+
+  const magic = () => {
+    if (busy) return;
+    if (guardOffline()) return;
+    if (!email.trim()) {
+      toast('매직링크를 받을 이메일을 적어 주세요');
+      return;
+    }
+    if (onMagicLink) onMagicLink(email.trim());
+  };
+
+  const social = (provider) => {
+    if (busy) return;
+    if (guardOffline()) return;
+    if (onOAuth) onOAuth(provider);
+  };
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHead}>
+        <Text style={styles.cardTitle}>계정 · 클라우드 동기화</Text>
+        <View style={[styles.syncChip, signedIn && styles.syncChipOn]}>
+          <Ionicons
+            name={signedIn ? 'cloud-done' : 'cloud-offline-outline'}
+            size={11}
+            color={signedIn ? colors.coralDark : colors.textMuted}
+          />
+          <Text style={[styles.syncChipText, signedIn && styles.syncChipTextOn]}>
+            {signedIn ? '켜짐' : '꺼짐'}
+          </Text>
+        </View>
+      </View>
+
+      {signedIn ? (
+        <>
+          <View style={styles.accountRow}>
+            <View style={styles.accountAvatar}>
+              <Ionicons name="person" size={16} color={colors.white} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.accountEmail} numberOfLines={1}>
+                {cloudUser.email || '로그인됨'}
+              </Text>
+              <Text style={styles.accountSub}>
+                클라우드 동기화 켜짐 · {cloudPinCount || 0}개 저장됨
+              </Text>
+            </View>
+          </View>
+          <View style={styles.accountBtnRow}>
+            <Pressable
+              style={[styles.syncBtn, cloudSyncing && styles.syncBtnBusy]}
+              onPress={() => !cloudSyncing && onSyncNow && onSyncNow()}
+              accessibilityRole="button"
+            >
+              {cloudSyncing ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Ionicons name="sync" size={14} color={colors.white} />
+              )}
+              <Text style={styles.syncBtnText}>{cloudSyncing ? '동기화 중…' : '지금 동기화'}</Text>
+            </Pressable>
+            <Pressable
+              style={styles.signOutBtn}
+              onPress={() => !busy && onSignOut && onSignOut()}
+              accessibilityRole="button"
+            >
+              <Text style={styles.signOutBtnText}>{busy ? '로그아웃 중…' : '로그아웃'}</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.cardHint}>
+            다른 기기에서 저장한 핀도 로그인하면 이 지도에 합쳐져요. 기기에 저장된 핀은 로그아웃해도 그대로 남습니다.
+          </Text>
+        </>
+      ) : (
+        <>
+          <View style={styles.authToggle}>
+            {['signin', 'signup'].map((key) => {
+              const on = mode === key;
+              return (
+                <Pressable
+                  key={key}
+                  style={[styles.authToggleItem, on && styles.authToggleItemOn]}
+                  onPress={() => setMode(key)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Text style={[styles.authToggleText, on && styles.authToggleTextOn]}>
+                    {key === 'signin' ? '로그인' : '회원가입'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="이메일 (you@example.com)"
+            placeholderTextColor={colors.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            textContentType="emailAddress"
+            editable={!busy}
+            accessibilityLabel="이메일"
+          />
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder={mode === 'signup' ? '비밀번호 (6자 이상)' : '비밀번호'}
+            placeholderTextColor={colors.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            editable={!busy}
+            onSubmitEditing={submit}
+            accessibilityLabel="비밀번호"
+          />
+
+          <Pressable
+            style={[styles.authPrimary, busy && styles.authPrimaryBusy]}
+            onPress={submit}
+            accessibilityRole="button"
+          >
+            {busy ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <Text style={styles.authPrimaryText}>{mode === 'signup' ? '회원가입' : '로그인'}</Text>
+            )}
+          </Pressable>
+
+          <Pressable onPress={magic} hitSlop={6} accessibilityRole="button">
+            <Text style={styles.magicLink}>비밀번호 없이 매직링크(이메일 인증 링크) 받기</Text>
+          </Pressable>
+
+          <View style={styles.orRow}>
+            <View style={styles.orLine} />
+            <Text style={styles.orText}>또는</Text>
+            <View style={styles.orLine} />
+          </View>
+
+          <View style={styles.socialRow}>
+            {OAUTH_PROVIDERS.map((p) => (
+              <Pressable
+                key={p.id}
+                style={[styles.socialBtn, { backgroundColor: p.color }]}
+                onPress={() => social(p.id)}
+                accessibilityRole="button"
+                accessibilityLabel={p.label + ' 로 로그인'}
+              >
+                <Ionicons
+                  name={p.icon}
+                  size={15}
+                  color={p.id === 'kakao' ? colors.kakaoText : p.id === 'apple' ? colors.white : colors.textSub}
+                />
+                <Text
+                  style={[
+                    styles.socialLabel,
+                    p.id === 'kakao' && { color: colors.kakaoText },
+                    p.id === 'apple' && { color: colors.white },
+                  ]}
+                >
+                  {p.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.cardHint}>
+            {cloudConfigured
+              ? '로그인하면 핀이 클라우드에 저장돼 아이폰·아이패드 어디서든 같은 지도를 봅니다. 비밀번호는 앱에 저장하지 않아요.'
+              : SUPABASE_SETUP_HINT}
+          </Text>
+        </>
+      )}
+
+      {cloudMessage ? <Text style={styles.cloudMessage}>{cloudMessage}</Text> : null}
+    </View>
+  );
+}
+
 export default function ProfileScreen({
   name,
   handle,
@@ -28,6 +262,18 @@ export default function ProfileScreen({
   onStartPro,
   onGoPaste,
   onToast,
+  cloudConfigured,
+  cloudUser,
+  cloudPinCount,
+  cloudBusy,
+  cloudSyncing,
+  cloudMessage,
+  onSignIn,
+  onSignUp,
+  onMagicLink,
+  onOAuth,
+  onSignOut,
+  onSyncNow,
 }) {
   const [copied, setCopied] = useState(false);
   const count = pins.length;
@@ -88,6 +334,23 @@ export default function ProfileScreen({
             </Text>
           </View>
         </View>
+
+        {/* 계정 · 클라우드 동기화 (v2.1) */}
+        <AccountCard
+          cloudConfigured={cloudConfigured}
+          cloudUser={cloudUser}
+          cloudPinCount={cloudPinCount}
+          cloudBusy={cloudBusy}
+          cloudSyncing={cloudSyncing}
+          cloudMessage={cloudMessage}
+          onSignIn={onSignIn}
+          onSignUp={onSignUp}
+          onMagicLink={onMagicLink}
+          onOAuth={onOAuth}
+          onSignOut={onSignOut}
+          onSyncNow={onSyncNow}
+          onToast={onToast}
+        />
 
         {/* 저장한 핀 카운터 */}
         <View style={styles.card}>
@@ -190,7 +453,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.0.0</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.1.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>
@@ -200,7 +463,9 @@ export default function ProfileScreen({
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>데이터 저장</Text>
-            <Text style={styles.infoValue}>기기 내부 (AsyncStorage)</Text>
+            <Text style={styles.infoValue}>
+              {cloudUser && (cloudUser.email || cloudUser.id) ? '기기 + 클라우드(Supabase)' : '기기 내부 (AsyncStorage)'}
+            </Text>
           </View>
         </View>
 
@@ -345,6 +610,193 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSub,
     lineHeight: 17,
+  },
+  // ── v2.1 계정 · 클라우드 동기화 카드 ──────────────────────
+  syncChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.mutedBadge,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  syncChipOn: {
+    backgroundColor: colors.coralSoft,
+  },
+  syncChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.mutedBadgeText,
+  },
+  syncChipTextOn: {
+    color: colors.coralDark,
+  },
+  accountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    padding: 12,
+  },
+  accountAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: colors.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  accountEmail: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  accountSub: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textSub,
+    marginTop: 2,
+  },
+  accountBtnRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  syncBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: radius.md,
+    backgroundColor: colors.coral,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  syncBtnBusy: {
+    backgroundColor: colors.coralSoft2,
+  },
+  syncBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  signOutBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  signOutBtnText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  authToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.lineSoft,
+    borderRadius: radius.md,
+    padding: 3,
+    gap: 3,
+  },
+  authToggleItem: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: radius.sm,
+    alignItems: 'center',
+  },
+  authToggleItemOn: {
+    backgroundColor: colors.card,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  authToggleText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  authToggleTextOn: {
+    color: colors.text,
+  },
+  input: {
+    height: 42,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 12,
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  authPrimary: {
+    height: 42,
+    borderRadius: radius.md,
+    backgroundColor: colors.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authPrimaryBusy: {
+    backgroundColor: colors.navyCard,
+  },
+  authPrimaryText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  magicLink: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.coral,
+    textAlign: 'center',
+    paddingVertical: 2,
+  },
+  orRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  orLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: colors.line,
+  },
+  orText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  socialRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  socialBtn: {
+    flex: 1,
+    height: 40,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  socialLabel: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  cloudMessage: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.coralDark,
+    lineHeight: 16,
   },
   segment: {
     flexDirection: 'row',
