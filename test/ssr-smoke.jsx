@@ -187,7 +187,7 @@ const placeChecks = [
   ['모달 주소: m.place.naver.com/place/list', linksSource.indexOf('m.place.naver.com/place/list?query=') > 0],
   ['웹 모달: iframe 으로 네이버 플레이스 렌더', webModalSource.indexOf("'iframe'") > 0 && webModalSource.indexOf('naverPlaceSearchUrl') > 0],
   ['웹 모달: 헤더 [새 창으로 열기]·[닫기]', webModalSource.indexOf('새 창으로 열기') > 0 && webModalSource.indexOf('accessibilityLabel="닫기"') > 0],
-  ['웹 모달: 외부 열기는 http(s) 만 정리해 열기', webModalSource.indexOf('openExternalUrl') > 0],
+  ['웹 모달: 외부 열기는 진짜 링크(target=_blank)', webModalSource.indexOf("target: '_blank'") > 0 && webModalSource.indexOf('rel: \'noopener noreferrer\'') > 0],
   ['웹 모달: 차단 감지(about:blank + 시간 초과)', webModalSource.indexOf('about:blank') > 0 && IFRAME_LOAD_TIMEOUT_MS >= 3000],
   ['웹 모달: 차단 안내 문구 + 원탱 폴백', BLOCKED_NOTICE.indexOf('열리지 않아요') > 0 && BLOCKED_HINT.indexOf('네이버 지도로 열기') > 0],
   ['웹 모달: ESC 로 닫기', webModalSource.indexOf("'Escape'") > 0],

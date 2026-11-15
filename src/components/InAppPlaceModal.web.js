@@ -17,7 +17,7 @@ import { createPortal } from 'react-dom';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, typography } from '../theme';
-import { naverMapWebUrl, naverPlaceSearchUrl, openExternalUrl } from '../utils/links';
+import { naverMapWebUrl, naverPlaceSearchUrl } from '../utils/links';
 
 /** iframe 이 이 시간(ms) 안에 onLoad 를 못 주면 차단으로 간주합니다. */
 export const IFRAME_LOAD_TIMEOUT_MS = 6000;
@@ -55,7 +55,31 @@ export function placeModalTitle(pin) {
   return [pin.name, pin.area].filter(Boolean).join(' · ');
 }
 
-export default function InAppPlaceModal({ pin, onClose, onToast }) {
+/**
+ * 웹 전용 진짜 링크. Pressable + window.open 은 팝업 차단에 걸릴 수 있어,
+ * 외부로 나가는 버튼은 <a target="_blank"> 로 그립니다(새 탭·가운데 클릭 모두 동작).
+ */
+function ExternalLink({ href, label, style, children }) {
+  return React.createElement(
+    'a',
+    {
+      href,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      'aria-label': label,
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 4,
+        textDecoration: 'none',
+        ...(style || {}),
+      },
+    },
+    children
+  );
+}
+
+export default function InAppPlaceModal({ pin, onClose }) {
   const url = pin ? naverPlaceSearchUrl(pin) : '';
   const [loaded, setLoaded] = useState(false);
   const [blocked, setBlocked] = useState(false);
@@ -139,23 +163,10 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
     verifyTimer.current = setTimeout(() => verifyFrame(false), 1200);
   }, [verifyFrame]);
 
-  const openExternal = useCallback(async () => {
-    const result = await openExternalUrl(url);
-    if (!result.opened && onToast) {
-      onToast('새 창을 열 수 없어요. 잠시 후 다시 시도해 주세요');
-      return;
-    }
-    if (onToast) onToast('네이버 플레이스로 열었어요');
-  }, [url, onToast]);
-
-  const openNaverMap = useCallback(async () => {
-    const result = await openExternalUrl(naverMapWebUrl(pin || {}));
-    if (onToast) {
-      onToast(result.opened ? '네이버 지도로 열었어요' : '지도를 열 수 없어요. 잠시 후 다시 시도해 주세요');
-    }
-  }, [pin, onToast]);
-
   if (!pin) return null;
+
+  const placeUrl = url;
+  const mapUrl = naverMapWebUrl(pin);
 
   const modal = (
     <View style={styles.overlay}>
@@ -176,15 +187,10 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
               {[pin.area, '네이버 플레이스'].filter(Boolean).join(' · ')}
             </Text>
           </View>
-          <Pressable
-            style={styles.externalBtn}
-            onPress={openExternal}
-            accessibilityRole="link"
-            accessibilityLabel="새 창으로 열기"
-          >
+          <ExternalLink href={placeUrl} label="새 창으로 열기" style={styles.externalBtn}>
             <Ionicons name="open-outline" size={13} color={colors.coralDark} />
             <Text style={styles.externalText}>새 창으로 열기</Text>
-          </Pressable>
+          </ExternalLink>
           <Pressable
             style={styles.closeBtn}
             onPress={onClose}
@@ -204,14 +210,9 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
               <Text style={styles.blockTitle}>{BLOCKED_NOTICE}</Text>
               <Text style={styles.blockHint}>{BLOCKED_HINT}</Text>
             </View>
-            <Pressable
-              style={styles.blockBtn}
-              onPress={openNaverMap}
-              accessibilityRole="link"
-              accessibilityLabel="네이버 지도로 열기"
-            >
+            <ExternalLink href={mapUrl} label="네이버 지도로 열기" style={styles.blockBtn}>
               <Text style={styles.blockBtnText}>네이버 지도로 열기</Text>
-            </Pressable>
+            </ExternalLink>
           </View>
         )}
 
@@ -247,15 +248,10 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
           <Text style={styles.footerText} numberOfLines={1}>
             화면이 비어 있으면
           </Text>
-          <Pressable
-            style={styles.footerBtn}
-            onPress={openNaverMap}
-            accessibilityRole="link"
-            accessibilityLabel="네이버 지도로 열기"
-          >
+          <ExternalLink href={mapUrl} label="네이버 지도로 열기" style={styles.footerBtn}>
             <Text style={styles.footerBtnText}>네이버 지도로 열기</Text>
             <Ionicons name="chevron-forward" size={11} color={colors.coralDark} />
-          </Pressable>
+          </ExternalLink>
         </View>
       </View>
     </View>
