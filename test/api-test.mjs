@@ -295,6 +295,16 @@ const root = process.cwd(); // run-tests.mjs 가 프로젝트 루트에서 실�
 // server/http.js 공용 모듈이 api 밖에 있는지 (Vercel 함수로 배포되지 않도록)
 check('server/http.js 분리', fs.existsSync(path.join(root, 'server', 'http.js')));
 
+// ── 9. vercel.json 배포 설정 ──────────────────────────────
+const vercel = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
+check('vercel.json: 빌드 명령', vercel.buildCommand === 'npx expo export --platform web', vercel.buildCommand);
+check('vercel.json: 출력 폴더 dist', vercel.outputDirectory === 'dist', vercel.outputDirectory);
+check('vercel.json: api/*.js 함수 설정', Object.keys(vercel.functions || {}).indexOf('api/*.js') >= 0, JSON.stringify(Object.keys(vercel.functions || {})));
+const rewrite = (vercel.rewrites || [])[0] || {};
+check('vercel.json: SPA rewrite → index.html', rewrite.destination === '/index.html', JSON.stringify(rewrite));
+check('vercel.json: /api 는 rewrite 제외', String(rewrite.source).indexOf('(?!api/)') > 0, String(rewrite.source));
+check('vercel.json: 확장자 있는 파일(js·png) 은 rewrite 제외', String(rewrite.source).indexOf('(?!.*\\.)') > 0, String(rewrite.source));
+
 if (fails) {
   console.log('\nAPI_TEST_FAILED (' + fails + ')');
   process.exit(1);

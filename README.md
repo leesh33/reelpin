@@ -109,7 +109,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
-npm test                           # 단위·통합 394건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 59 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 400건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 65 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -135,7 +135,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 4. **웹에서 카카오 로컬도 프록시로** — `kakaoLocalAdapter` 웹 경로 추가(직접 호출은 CORS 로 막힘).
 5. **웹에서 유튜브 설명글·댓글까지** — `EXPO_PUBLIC_YOUTUBE_API_KEY` 가 없으면 `/api/youtube` 를 먼저 시도하고,
    실패하면 oEmbed 제목으로 폴백합니다. `titleStatus` 는 여전히 `video`.
-6. **검증** — `npm test` 394건 통과 · **키 없는 상태로 `expo export` → `dist/` 안 실제 키 값 0건**(스크립트로 확인) · `vercel.json` 필드(framework·buildCommand·outputDirectory·functions·rewrites)를 Vercel 스키마 정의와 대조 확인.
+6. **검증** — `npm test` 400건 통과 · **키 없는 상태로 `expo export` → `dist/` 안 실제 키 값 0건**(스크립트로 확인) · `vercel.json` 필드(framework·buildCommand·outputDirectory·functions·rewrites)를 Vercel 스키마 정의와 대조 확인.
 
 ## v1.3에서 달라진 점 (2026-11-15)
 
