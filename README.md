@@ -1,8 +1,9 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.2
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.3
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web
-> **v1.2 (2026-11-15)** 유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기 추가
+> **v1.3 (2026-11-15)** 유튜브 **설명글(description)·댓글(고정/상위)** 파싱 · 동네 판별(`연동`)·업종 단어·불용어 보강 · `연동 엄마손횟집` 회귀 케이스
+> v1.2 유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기
 
 릴스·쇼츠에서 본 맛집과 장소를 **링크 한 번**으로 내 지도에 핀으로 꽂아 두고,
 그 동네에 도착하면 **"반경 300m 앞, 저장한 맛집이 있어요"** 로 알려 주는 앱입니다.
@@ -41,9 +42,9 @@ npx expo export --platform web
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건
-npm test                           # 단위·통합 239건 통과 (추출기 211 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 297건 통과 (추출기 269 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
-npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed → 카카오+네이버 HUB 실검색 (.env 키 필요)
+npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+설명글(+댓글, 키 있을 때) → 카카오+네이버 HUB 실검색 (.env 키 필요)
 ```
 
 > `npm run test:live` 는 `.env`의 실제 키로 **진짜 네트워크 호출**을 합니다.
@@ -51,6 +52,32 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed 
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v1.3에서 달라진 점 (2026-11-15)
+
+상훈 님이 테스트한 `https://youtube.com/shorts/2QZPPEle9IY` 에서 실제 가게(`제주시 연동 “엄마손횟집”`) 대신
+`제주한달살기 아리아오션뷰펜션`이 나오던 문제를 고친 버전입니다.
+
+1. **유튜브 설명글(description) 자동 파싱** — oEmbed는 **제목만** 주고, 이 영상의 실제 상호명은 설명글 첫머리에만 있습니다.
+   그래서 `sourceAdapters.youtube.fetchMetadata`가 키가 없어도 **네이티브(iOS/Android)에서 영상 페이지 HTML을 3.5초 타임아웃**으로 한 번 더 읽습니다.
+   - 데스크톱 웹: `ytInitialPlayerResponse.attributedDescription`(또는 `shortDescription`)
+   - 모바일 웹: `ytInitialData.attributedDescriptionBodyText` — 따옴표·중괄호가 `\x22`·`\x7b`로, 줄바꿈이 `\\n`으로 이중 이스케이프돼 와서 **두 단계까지 풀어서** 읽습니다.
+   - 둘 다 없으면 `og:description`(유튜브가 넣는 사이트 소개 문구는 걸러냄) → 실패하면 조용히 oEmbed 결과만 씁니다.
+   - oEmbed와 페이지 HTML은 **동시에** 요청해 체감 지연을 늘리지 않습니다. `EXPO_PUBLIC_YOUTUBE_API_KEY`가 있으면 Data API를 우선 씁니다.
+2. **검색어 순서** — 설명글이 있으면 `title + '\n' + description`으로 뽑고, 상호·지역은 **앞부분(500자·8줄)** 에서 먼저 찾습니다.
+   이 케이스에서는 첫 검색어가 **`연동 엄마손횟집`** → 카카오가 `엄마손횟집`(제주시 연동3길 35)을 바로 돌려줍니다.
+3. **동네 판별 보강** — `제주시 연동`처럼 **주소형**일 때 한 글자 동네(`연동`)도 잡습니다.
+   대신 `운동·이동·화면·드리면` 같은 일반명사는 지역명으로 쓰지 않게 막았습니다.
+4. **불용어·업종 단어 보강** — `한달` `두달` `일주일` `특별한` `자연산` `무슨맛일까` `수준` `미친` 등과
+   `35만원짜리` 같은 **금액+짜리** 토큰을 걸러냅니다. 업종은 `횟집` `초밥집` `이자카야` `포차` `오마카세` `스시`
+   `해산물` `삼겹살` `곱창` `돈까스` `쌀국수` `피자` `버거` 등을 추가했습니다.
+5. **유튜브 댓글(고정·상위 댓글) 읽기** — `EXPO_PUBLIC_YOUTUBE_API_KEY`가 있을 때 `videos`(설명글)와
+   `commentThreads?part=snippet&order=relevance&maxResults=5&textFormat=plainText`를 **동시에** 호출합니다(3.5초 타임아웃).
+   - YouTube API는 '고정 댓글' 플래그를 주지 않으므로, **업로더 채널(`videos.snippet.channelId`)이 쓴 댓글을 맨 앞**에 두고 나머지를 이어 붙입니다.
+   - 댓글은 잡담이 섞이기 쉬워서 **제목·설명글에서 상호명을 못 잡았을 때만** 검색어에 씁니다.
+     예) 제목 `평균리뷰 1000개 이상, 성수동 카페추천!` + 업로더 댓글 `여기 성수동 카모플라쥬에요!` → 첫 검색어 **`성수동 카모플라쥬`**
+   - 댓글 비허용(403)·네트워크 오류는 조용히 빈 배열로 폴백해 기존 제목·설명글 추출은 그대로 동작합니다.
+6. **제목만 있을 때의 회귀 테스트** — `"제주 한달"`이 절대 나오지 않고 **`제주 횟집` → `제주 돌돔`** 순으로 나오는지 단위 테스트로 고정했습니다.
 
 ## v1.2에서 달라진 점 (2026-11-15)
 
@@ -80,8 +107,10 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed 
 | 문구+링크 혼합(`성수동 소금빵 맛집 베통 …`) | (링크의 유튜브 제목) | 성수동 베통 | **베통 성수** 카카오+네이버 병합 1건 |
 | 일반 웹 문서(`icandoit-1.tistory.com/191`) | 서울 성수동 소금빵 맛집 베통 웨이팅 🥐ㅣ 기본 소금빵 (og:title) | 성수동 베통 | **베통 성수** 카카오+네이버 병합 1건 |
 | 인스타 릴스(로그인 월) | (없음) — `blocked` | — | 조용히 폴백 + `인스타는 보안상 제목을 못 읽어와요` 안내와 [가게명으로 찾기] 버튼 |
+| `youtube.com/shorts/2QZPPEle9IY` (v1.3) | 한달 전 예약 필수인 제주도 정말 특별한 횟집… + **설명글** `제주시 연동 “엄마손횟집”` | **연동 엄마손횟집** | **엄마손횟집** (제주특별자치도 제주시 연동3길 35) — 카카오 |
 
-> `npm run test:live` 총 6케이스 중 5케이스에서 실제 지도 후보가 나왔고(카카오 9건·네이버 6건), 남은 1건은 의도한 인스타 차단 경로입니다.
+> `npm run test:live` 총 7케이스 중 6케이스에서 실제 지도 후보가 나왔고(카카오 11건·네이버 5건), 남은 1건은 의도한 인스타 차단 경로입니다.
+> v1.3에서 추가한 ⑦ 케이스는 **검색어 `연동 엄마손횟집` · 후보 `엄마손횟집`** 기대값 검증까지 통과했습니다.
 
 ## v1.1에서 달라진 점 (2026-11-15)
 
@@ -106,7 +135,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed 
 - `src/components/MapCanvas.js` — 좌표 → 화면 투영 지도 캔버스(드래그 팬, 핀, 이름표)
 - `src/components/ProviderBadge.js` — 카카오·네이버·구글 출처 배지 (`providerIds()`로 후보의 providers를 정리)
 - `src/components/ExtractedTitleNote.js` — 결과 상단 `읽어온 제목: "..."` + 인스타 안내·[가게명으로 찾기] 원탭 버튼
-- `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(**유튜브 무인증 oEmbed** + Data API 설명 보강 / 인스타 공유 캡션·OG / **카카오 로컬·네이버 지역검색·구글 Places 3사 지도 체인**) + `splitSharedText()` · `fetchPageMeta()` · `extractSearchQueries()` + `searchPlacesDirect()`(가게명 직접 검색) + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
+- `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(**유튜브 무인증 oEmbed + 설명글(description) 파싱** + Data API 설명 보강 / 인스타 공유 캡션·OG / **카카오 로컬·네이버 지역검색·구글 Places 3사 지도 체인**) + `splitSharedText()` · `fetchPageMeta()` · `parseYouTubePageMeta()` · `extractSearchQueries()` + `searchPlacesDirect()`(가게명 직접 검색) + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
 - `src/utils/pins.js` — 후보 → 핀 변환(`buildPin`), v1.0 핀 마이그레이션(`normalizePins`), 중복 판정(`findExistingPin`)
 - `src/storage.js` — AsyncStorage 저장/불러오기 (핀·반경·플랜)
 - `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백, `openPlace()`(매장 정보 열기)
@@ -127,7 +156,7 @@ EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET=
 EXPO_PUBLIC_NAVER_CLIENT_ID=         # 네이버 지역검색 (구 개발자센터 — 하위 호환, HUB 키가 있으면 안 씀)
 EXPO_PUBLIC_NAVER_CLIENT_SECRET=
 EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=     # 구글 Places — 해외·영문/일문 장소
-EXPO_PUBLIC_YOUTUBE_API_KEY=         # (선택) 유튜브 설명까지 — 제목은 oEmbed로 키 없이도 읽습니다
+EXPO_PUBLIC_YOUTUBE_API_KEY=         # (선택) 유튜브 설명까지 — 제목·설명글은 키 없이도 읽습니다(oEmbed + 페이지 HTML)
 EXPO_PUBLIC_OPENAI_API_KEY=          # 캡션 → 장소 JSON
 ```
 

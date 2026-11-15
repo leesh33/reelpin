@@ -31,11 +31,20 @@ const CASES = [
     label: '⑥ 인스타 릴스 — 로그인 월 → 우아한 폴백 + 가게명 찾기 안내',
     input: 'https://www.instagram.com/reel/C8xSg2BpQ1K/',
   },
+  {
+    // v1.3 회귀 케이스 — 제목엔 상호가 없고 설명글 첫머리에만 `제주시 연동 “엄마손횟집”`
+    label: '⑦ 유튜브 쇼츠 — 설명글에서 상호 읽기(엄마손횟집)',
+    input: 'https://youtube.com/shorts/2QZPPEle9IY?si=2yBVStX4xuIMSeN2',
+    expectQuery: '연동 엄마손횟집',
+    expectName: '엄마손횟집',
+  },
 ];
 
 let withResults = 0;
 let kakaoHits = 0;
 let naverHits = 0;
+let expectedHits = 0;
+let expectedTotal = 0;
 
 for (const c of CASES) {
   console.log('\n══ ' + c.label + ' ══');
@@ -50,8 +59,16 @@ for (const c of CASES) {
   }
   console.log('  플랫폼      : ' + result.platformLabel + ' (' + result.platform + ')');
   console.log('  읽어온 제목 : ' + (result.sourceTitle || '(없음)') + ' [' + result.titleStatus + ']');
+  if (result.sourceDescription) {
+    console.log('  읽어온 설명 : ' + String(result.sourceDescription).replace(/\s+/g, ' ').slice(0, 120) + '…');
+  }
+  if (result.sourceComments) {
+    console.log('  읽어온 댓글 : ' + String(result.sourceComments).replace(/\s+/g, ' ').slice(0, 120) + '…');
+  }
   if (result.titleNotice) console.log('  화면 안내    : ' + result.titleNotice);
-  const kw = extractSearchQueries((result.sourceTitle || '') + ' ' + (result.suggestedQuery || ''));
+  const kw = extractSearchQueries(
+    [result.sourceTitle || '', result.sourceDescription || ''].filter(Boolean).join('\n')
+  );
   console.log('  정제 결과   : 지역=' + (kw.area || '-') + ' / 상호=' + (kw.storeName || '-') + ' / 키워드=' + kw.keywords.join(','));
   console.log('  검색어 후보 : ' + result.queryList.join('  →  '));
   (result.attempts || []).forEach((a) => {
@@ -65,6 +82,18 @@ for (const c of CASES) {
   if (result.candidates && result.candidates.length) {
     // 실제 지도에서 확인된 후보가 있을 때만 '결과 있음'으로 셉니다(오프라인 수동 후보 제외).
     if (result.candidates.some((c) => (c.providers || []).length)) withResults += 1;
+    if (c.expectQuery) {
+      expectedTotal += 1;
+      const okQuery = (result.queryList || []).indexOf(c.expectQuery) >= 0;
+      const okName = (result.candidates || []).some(
+        (x) => String(x.name || '').indexOf(c.expectName) >= 0
+      );
+      if (okQuery && okName) expectedHits += 1;
+      console.log(
+        '  기대값 확인 : 검색어 "' + c.expectQuery + '" ' + (okQuery ? '✓' : '✗') +
+          ' / 후보 "' + c.expectName + '" ' + (okName ? '✓' : '✗')
+      );
+    }
     result.candidates.slice(0, 3).forEach((cand, i) => {
       const prov = (cand.providers || [cand.provider]).join('+');
       console.log(
@@ -85,9 +114,16 @@ for (const c of CASES) {
 console.log('\n── 요약 ──');
 console.log('  실제 지도 결과가 나온 케이스: ' + withResults + '/' + CASES.length);
 console.log('  카카오 출처 후보: ' + kakaoHits + '건 · 네이버 출처 후보: ' + naverHits + '건');
+if (expectedTotal) {
+  console.log('  기대 상호·검색어 일치: ' + expectedHits + '/' + expectedTotal);
+}
 
 if (withResults === 0) {
   console.log('LIVE_E2E_FAILED (실제 결과 0건 — 키/네트워크를 확인하세요)');
+  process.exit(1);
+}
+if (expectedTotal && expectedHits < expectedTotal) {
+  console.log('LIVE_E2E_FAILED (기대한 상호/검색어가 나오지 않음)');
   process.exit(1);
 }
 if (naverHits === 0) {

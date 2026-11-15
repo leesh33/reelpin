@@ -23,6 +23,16 @@ import {
   PAGE_META_TIMEOUT_MS,
   findStoreName,
   cleanCaptionText,
+  // v1.3 — 유튜브 설명글(description) 파싱 · 동네 판별 보강
+  parseYouTubePageMeta,
+  fetchYouTubePageMeta,
+  fetchYouTubeComments,
+  orderYouTubeComments,
+  commentsToText,
+  YOUTUBE_COMMENTS_MAX,
+  findAreaFromText,
+  leadingText,
+  isSpecificCategory,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -712,6 +722,327 @@ check('재시도: 첫 시도는 결과 0건', retry.attempts[0].resultCount === 
 // 9-10. 링크가 없는 입력은 안내 문구로 거절
 const noUrl = await extractPlaces('성수동 소금빵 맛집 베통');
 check('입력: 링크 없으면 안내', noUrl.ok === false && String(noUrl.reason).includes('링크'), noUrl.reason);
+
+// ── 10. v1.3: 유튜브 설명글(description) 파싱 → '연동 엄마손횟집' ──────
+// 상훈 님이 실제로 테스트한 영상(youtube.com/shorts/2QZPPEle9IY).
+// 제목에는 상호가 없고, 설명글 첫머리에만 `제주시 연동 “엄마손횟집”` 이 있습니다.
+const KEUM_TITLE =
+  '한달 전 예약 필수인 제주도 정말 특별한 횟집. 35만원짜리 자연산 돌돔은 무슨맛일까..? #제주도 #제주도맛집';
+const KEUM_DESC =
+  '자연산 돌돔을 먹을 수 있는 정말 특별한 횟집?\n\n제주시 연동 “엄마손횟집”\n\n결론적으로 말씀 드리면 비쌉니다..\n엄마손횟집!!';
+
+// 10-1. 데스크톱 웹: ytInitialPlayerResponse.attributedDescription
+const YT_HTML_DESKTOP =
+  '<html><head><title>' +
+  KEUM_TITLE +
+  ' - YouTube</title></head><body><script>var ytInitialPlayerResponse = {' +
+  '"playabilityStatus":{"status":"OK"},"attributedDescription":{"content":"' +
+  KEUM_DESC.replace(/\n/g, '\\n') +
+  '","styleRuns":[{"startIndex":0,"length":20}]}};</script></body></html>';
+const deskMeta = parseYouTubePageMeta(YT_HTML_DESKTOP);
+check('설명글: 데스크톱 플레이어 응답에서 읽기', deskMeta.description.includes('엄마손횟집'), deskMeta.description.slice(0, 60));
+check(
+  '설명글: 줄바꿈(\\n) 복원',
+  deskMeta.description.split('\n').filter(Boolean)[1] === '제주시 연동 “엄마손횟집”',
+  JSON.stringify(deskMeta.description.slice(0, 40))
+);
+check('설명글: <title>의 " - YouTube" 꼬리표 제거', deskMeta.title === KEUM_TITLE, deskMeta.title);
+
+// 10-2. 짧은 설명글은 shortDescription 으로도 옵니다.
+const ytShort = parseYouTubePageMeta(
+  '<script>var ytInitialPlayerResponse = {"videoDetails":{"shortDescription":"성수동 소금빵 맛집 베통"}};</script>'
+);
+check('설명글: shortDescription 읽기', ytShort.description === '성수동 소금빵 맛집 베통', ytShort.description);
+
+// 10-3. 모바일 웹: ytInitialData.attributedDescriptionBodyText (따옴표가 \x22 로 이스케이프 + 두 번 이스케이프된 \n)
+const YT_HTML_MOBILE =
+  '<html><body><script>var ytInitialData = {"contents":"' +
+  '\\x22attributedDescriptionBodyText\\x22:\\x7b\\x22content\\x22:\\x7b\\x22content\\x22:\\x22' +
+  '자연산 돌돔을 먹을 수 있는 정말 특별한 횟집?\\\\n\\\\n제주시 연동 “엄마손횟집”' +
+  '\\x22\\x7d\\x7d"};</script></body></html>';
+const mobMeta = parseYouTubePageMeta(YT_HTML_MOBILE);
+check('설명글: 모바일(\x22 이스케이프) 형태도 읽기', mobMeta.description.includes('엄마손횟집'), mobMeta.description.slice(0, 60));
+check('설명글: 두 번 이스케이프된 줄바꿈도 복원', mobMeta.description.includes('\n제주시 연동'), JSON.stringify(mobMeta.description.slice(0, 40)));
+check('설명글: HTML 없으면 빈 값(예외 없음)', parseYouTubePageMeta('').description === '' && parseYouTubePageMeta(null).title === '');
+
+// 10-4. 유튜브가 넣는 사이트 소개 문구·껍데기 제목은 설명글·제목으로 안 씁니다.
+check(
+  '설명글: 사이트 소개 문구는 걸러냄',
+  parseYouTubePageMeta(
+    '<meta property="og:description" content="친구, 가족을 비롯해 전 세계 사람들과 동영상 공유">'
+  ).description === '',
+  parseYouTubePageMeta('<meta property="og:description" content="친구, 가족을 비롯해 전 세계 사람들과 동영상 공유">').description
+);
+check('설명글: <title>YouTube</title> 껍데기 제목 버림', parseYouTubePageMeta('<title>YouTube</title>').title === '');
+check(
+  '설명글: 진짜 제목은 og:title 로 살림',
+  parseYouTubePageMeta('<meta property="og:title" content="베통 성수">').title === '베통 성수'
+);
+
+// 10-5. 영상 페이지 요청은 네이티브에서만 (테스트 스텁 Platform.OS='ios' → 네이티브)
+const ytPageParsed = parseUrl('https://youtube.com/shorts/2QZPPEle9IY?si=2yBVStX4xuIMSeN2');
+check('설명글: shorts 공유 링크에서 영상 ID', ytPageParsed.contentId === '2QZPPEle9IY', ytPageParsed.contentId);
+
+// 10-6. 링크 전체 흐름: oEmbed 제목 + 페이지 설명글 → 카카오 실검색어
+setKeys({ kakao: 'KAKAOKEY' });
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+const KEUM_DOC = {
+  id: '999001',
+  place_name: '엄마손횟집',
+  category_name: '음식점 > 한식 > 해물,생선 > 회',
+  category_group_code: 'FD6',
+  phone: '064-000-0000',
+  address_name: '제주특별자치도 제주시 연동 262-9',
+  road_address_name: '제주특별자치도 제주시 연동3길 35',
+  x: '126.5312',
+  y: '33.4890',
+  place_url: 'http://place.map.kakao.com/999001',
+};
+const htmlRes = (html) => ({
+  ok: true,
+  status: 200,
+  url: '',
+  json: async () => ({}),
+  text: async () => html,
+});
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: KEUM_TITLE, author_name: '호키도리' });
+  if (u.includes('youtube.com/watch')) return htmlRes(YT_HTML_DESKTOP);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q === '연동 엄마손횟집' ? [KEUM_DOC] : [] });
+  }
+  return jsonRes({ items: [], places: [] });
+};
+const keum = await extractPlaces('https://youtube.com/shorts/2QZPPEle9IY?si=2yBVStX4xuIMSeN2');
+check(
+  '설명글: 영상 페이지를 실제로 요청',
+  calls.some((c) => String(c.url).includes('youtube.com/watch?v=2QZPPEle9IY')),
+  calls.map((c) => String(c.url)).join(' | ').slice(0, 200)
+);
+check('설명글: 결과에 설명글 담기', String(keum.sourceDescription).includes('엄마손횟집'), String(keum.sourceDescription).slice(0, 60));
+check('설명글: 첫 검색어 = 연동 엄마손횟집', keum.queryList[0] === '연동 엄마손횟집', keum.queryList.join(' / '));
+check('설명글: 실제 후보가 엄마손횟집', (keum.candidates[0] || {}).name === '엄마손횟집', JSON.stringify(keum.candidates[0] && keum.candidates[0].name));
+check('설명글: 펜션으로 새지 않음', !keum.queryList.some((q) => q.indexOf('한달') >= 0), keum.queryList.join(' / '));
+check('설명글: titleStatus=video 유지', keum.titleStatus === 'video', keum.titleStatus);
+
+// 10-7. 제목만 있을 때(설명글 못 읽음): '제주 한달' 대신 '제주 횟집' → '제주 돌돔'
+const keumTitleOnly = extractSearchQueries(KEUM_TITLE);
+check('정제(제목만): 지역 = 제주', keumTitleOnly.area === '제주', keumTitleOnly.area);
+check('정제(제목만): 업종 = 횟집', keumTitleOnly.category === '횟집', keumTitleOnly.category);
+check('정제(제목만): 1순위 = 제주 횟집', keumTitleOnly.queries[0] === '제주 횟집', keumTitleOnly.queries.join(' / '));
+check('정제(제목만): 2순위 = 제주 돌돔', keumTitleOnly.queries[1] === '제주 돌돔', keumTitleOnly.queries.join(' / '));
+check(
+  '정제(제목만): "제주 한달" 은 절대 안 나옴',
+  !keumTitleOnly.queries.some((q) => q.indexOf('한달') >= 0),
+  keumTitleOnly.queries.join(' / ')
+);
+check(
+  '정제(제목만): 기간·수식어 불용어',
+  ['한달', '특별한', '자연산', '무슨맛일까', '수준', '미친'].every((w) => keumTitleOnly.keywords.indexOf(w) < 0),
+  keumTitleOnly.keywords.join(',')
+);
+check(
+  '정제(제목만): 금액(35만원짜리) 걸러냄',
+  keumTitleOnly.keywords.indexOf('35만원짜리') < 0 && !keumTitleOnly.queries.join(' ').includes('35만원'),
+  keumTitleOnly.keywords.join(',')
+);
+
+// 10-8. 동네 판별: '연동'은 잡고('제주시 연동'), '운동·화면'은 안 잡습니다.
+check('동네: 주소형 "제주시 연동" → 연동', findAreaFromText(cleanCaptionText('제주시 연동 “엄마손횟집”')) === '연동', findAreaFromText(cleanCaptionText('제주시 연동 “엄마손횟집”')));
+check('동네: "연동 맛집" → 연동', findAreaFromText('연동 맛집') === '연동', findAreaFromText('연동 맛집'));
+check('동네: "운동"은 동네 아님', findAreaFromText('운동 좋아하는 사람') === '', findAreaFromText('운동 좋아하는 사람'));
+check('동네: "화면"은 동네 아님', findAreaFromText('화면 가득한 풍경') === '', findAreaFromText('화면 가득한 풍경'));
+check('동네: "성수역"은 역명만', findAreaFromText('성수역 3번 출구') === '성수', findAreaFromText('성수역 3번 출구'));
+check('동네: 못 찾으면 빈 값', findAreaFromText('') === '' && findAreaFromText('정말 맛있는 집') === '', findAreaFromText('정말 맛있는 집'));
+check('상호: 제목+설명글에서 따옴표 상호', findStoreName(KEUM_TITLE + '\n' + KEUM_DESC, '연동') === '엄마손횟집', findStoreName(KEUM_TITLE + '\n' + KEUM_DESC, '연동'));
+check('앞부분만 보기: 줄 수 제한', leadingText('a\nb\nc', 500, 2) === 'a\nb', leadingText('a\nb\nc', 500, 2));
+check('업종 구체성: 횟집은 구체적, 맛집은 일반적', isSpecificCategory('횟집') === true && isSpecificCategory('맛집') === false);
+
+// ── 11. v1.3: 유튜브 댓글(commentThreads) — 업로더 고정 댓글에만 있는 상호 ──
+const CAMO_DOC = {
+  id: '555001',
+  place_name: '카모플라쥬 성수',
+  category_name: '카페,디저트',
+  category_group_code: 'CE7',
+  phone: '',
+  address_name: '서울 성동구 성수동2가 315-54',
+  road_address_name: '서울 성동구 연무장길 110',
+  x: '127.0560',
+  y: '37.5432',
+  place_url: 'http://place.map.kakao.com/555001',
+};
+const UPLOADER_ID = 'UC_uploader_hokidori';
+const CAMO_TITLE = '평균리뷰 1000개 이상, 성수동 카페추천! ☕️';
+const CAMO_THREADS = {
+  items: [
+    {
+      snippet: {
+        topLevelComment: {
+          snippet: {
+            textDisplay: '요즘 여기 많이 가요',
+            authorChannelId: { value: 'UC_fan_1' },
+            likeCount: '12',
+          },
+        },
+      },
+    },
+    {
+      snippet: {
+        topLevelComment: {
+          snippet: {
+            textDisplay: '여기 성수동 카모플라쥬에요!',
+            authorChannelId: { value: UPLOADER_ID },
+            likeCount: '3',
+          },
+        },
+      },
+    },
+  ],
+};
+
+// 11-1. 댓글 정렬·텍스트 단위
+check(
+  '댓글: 업로더(고정) 댓글을 맨 앞으로',
+  orderYouTubeComments(
+    [
+      { text: '요즘 여기 많이 가요', authorChannelId: 'UC_fan_1' },
+      { text: '여기 성수동 카모플라쥬에요!', authorChannelId: UPLOADER_ID },
+    ],
+    UPLOADER_ID
+  )[0].text === '여기 성수동 카모플라쥬에요!'
+);
+check(
+  '댓글: 업로더 정보 없으면 API 순서 유지',
+  orderYouTubeComments(
+    [
+      { text: '첫 댓글', authorChannelId: 'a' },
+      { text: '둘째 댓글', authorChannelId: 'b' },
+    ],
+    ''
+  )[0].text === '첫 댓글'
+);
+check(
+  '댓글: 텍스트 한 덩어리로 합치기',
+  commentsToText(
+    [
+      { text: '요즘 여기 많이 가요', authorChannelId: 'UC_fan_1' },
+      { text: '여기 성수동 카모플라쥬에요!', authorChannelId: UPLOADER_ID },
+    ],
+    UPLOADER_ID
+  ).indexOf('카모플라쥬') >= 0
+);
+check('댓글: 최대 5개', YOUTUBE_COMMENTS_MAX === 5, String(YOUTUBE_COMMENTS_MAX));
+
+// 11-2. 키가 없으면 댓글 요청 자체를 보내지 않습니다.
+setKeys({ kakao: 'KAKAOKEY' });
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+calls = [];
+handler = (url) =>
+  String(url).includes('youtube.com/oembed') ? jsonRes({ title: CAMO_TITLE }) : jsonRes({ documents: [] });
+await extractPlaces('https://www.youtube.com/shorts/EKbeq6BnREI');
+check(
+  '댓글: 키 없으면 commentThreads 호출 안 함',
+  !calls.some((c) => String(c.url).includes('commentThreads')),
+  calls.map((c) => String(c.url)).join(' | ').slice(0, 160)
+);
+check(
+  '댓글: fetchYouTubeComments 는 키 없으면 빈 배열',
+  (await fetchYouTubeComments(parseUrl('https://youtu.be/9Xk2mQpLz7A'))).length === 0
+);
+
+// 11-3. 키가 있을 때: 제목·설명글에 상호가 없고 업로더 댓글에만 상호가 있는 경우
+setKeys({ kakao: 'KAKAOKEY' });
+process.env.EXPO_PUBLIC_YOUTUBE_API_KEY = 'YTKEY';
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: CAMO_TITLE, author_name: '호키도리' });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({
+      items: [
+        {
+          snippet: {
+            title: CAMO_TITLE,
+            description: '이번 주에 다녀온 카페 모음입니다. 다들 어디 가세요?',
+            channelId: UPLOADER_ID,
+            thumbnails: { high: { url: 'https://i.ytimg.com/h.jpg' } },
+          },
+        },
+      ],
+    });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) return jsonRes(CAMO_THREADS);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q === '성수동 카모플라쥬' ? [CAMO_DOC] : [] });
+  }
+  return jsonRes({ items: [], places: [] });
+};
+const camo = await extractPlaces('https://www.youtube.com/shorts/EKbeq6BnREI');
+const commentCall = calls.find((c) => String(c.url).includes('commentThreads'));
+check('댓글: commentThreads 호출함', !!commentCall, calls.map((c) => String(c.url)).join(' | ').slice(0, 200));
+check(
+  '댓글: videoId·order=relevance·maxResults=5·plainText',
+  !!commentCall &&
+    commentCall.url.includes('videoId=EKbeq6BnREI') &&
+    commentCall.url.includes('order=relevance') &&
+    commentCall.url.includes('maxResults=5') &&
+    commentCall.url.includes('textFormat=plainText'),
+  commentCall && commentCall.url
+);
+check('댓글: sourceComments 에 업로더 댓글 먼저', String(camo.sourceComments).indexOf('카모플라쥬') === 0 || String(camo.sourceComments).startsWith('여기 성수동 카모플라쥬'), String(camo.sourceComments));
+check('댓글: 첫 검색어 = 성수동 카모플라쥬', camo.queryList[0] === '성수동 카모플라쥬', camo.queryList.join(' / '));
+check('댓글: 실제 후보 = 카모플라쥬 성수', (camo.candidates[0] || {}).name === '카모플라쥬 성수', JSON.stringify(camo.candidates[0] && camo.candidates[0].name));
+
+// 11-4. 제목·설명글에서 상호를 잡았으면 댓글 잡담은 검색어에 섞지 않습니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: '성수동 소금빵 맛집 베통' });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({
+      items: [{ snippet: { title: '성수동 소금빵 맛집 베통', description: '', channelId: UPLOADER_ID } }],
+    });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) return jsonRes(CAMO_THREADS);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q === '성수동 베통' ? [KAKAO_DOC] : [] });
+  }
+  return jsonRes({ items: [], places: [] });
+};
+const noLeak = await extractPlaces('https://youtu.be/9Xk2mQpLz7A');
+check('댓글: 상호를 이미 잡았으면 첫 검색어는 제목 기준', noLeak.queryList[0] === '성수동 베통', noLeak.queryList.join(' / '));
+check(
+  '댓글: 상호가 있으면 댓글 후보를 섞지 않음',
+  !noLeak.queryList.some((q) => q.indexOf('카모플라쥬') >= 0),
+  noLeak.queryList.join(' / ')
+);
+check('댓글: 결과에는 댓글을 남겨 둠', String(noLeak.sourceComments).indexOf('카모플라쥬') >= 0, noLeak.sourceComments);
+
+// 11-5. 댓글 비하는 영상(403) — 제목·설명글 추출은 그대로 동작해야 합니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: '성수동 소금빵 맛집 베통' });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({
+      items: [{ snippet: { title: '성수동 소금빵 맛집 베통', description: '연무장길 골목', channelId: UPLOADER_ID } }],
+    });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) return errRes(403);
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [KAKAO_DOC] });
+  return jsonRes({ items: [], places: [] });
+};
+const noComment = await extractPlaces('https://youtu.be/9Xk2mQpLz7A');
+check('댓글 403: 예외 없이 결과', noComment.ok === true, JSON.stringify(noComment).slice(0, 120));
+check('댓글 403: 제목으로 정상 검색', noComment.queryList[0] === '성수동 베통', noComment.queryList.join(' / '));
+check('댓글 403: sourceComments 빈 값', noComment.sourceComments === '', noComment.sourceComments);
+check('댓글 403: 후보도 정상', (noComment.candidates[0] || {}).name === '성수동 소금빵집');
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;

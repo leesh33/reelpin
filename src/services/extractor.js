@@ -187,6 +187,245 @@ export async function fetchYouTubeOembed(parsed, options = {}) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// v1.3 · 유튜브 설명글(description) — 영상 페이지 HTML 에서 읽기
+//   oEmbed 는 **제목만** 줍니다. 실제 상호명은 설명글 첫머리에만 있는 경우가 많아서
+//   (예: `제주시 연동 “엄마손횟집”`), 네이티브에서는 영상 페이지 HTML 을 한 번 더 읽습니다.
+//   · 데스크톱 웹   : ytInitialPlayerResponse 의 "attributedDescription"(또는 "shortDescription")
+//   · 모바일 웹     : ytInitialData 의 "attributedDescriptionBodyText"
+//                    (따옴표·중괄호가 \x22·\x7b 로 이스케이프돼 옵니다 → 한 번 풀어서 읽음)
+//   · 둘 다 없으면  : og:description (유튜브가 넣는 사이트 소개 문구는 걸러냄)
+// ─────────────────────────────────────────────────────────────
+export const YOUTUBE_PAGE_TIMEOUT_MS = PAGE_META_TIMEOUT_MS;
+
+/** 유튜브가 설명글 대신 넣는 '사이트 소개' 문구 — 상호·지역과 무관하므로 버립니다. */
+const YOUTUBE_GENERIC_TEXTS = [
+  '친구, 가족을 비롯해 전 세계 사람들과 동영상 공유',
+  'YouTube에서 마음에 드는 동영상',
+  '동영상과 음악을 감상',
+  '전 세계 사람들과 콘텐츠를 공유',
+  '친구, 가족뿐 아니라',
+  'Enjoy the videos and music you love',
+  'Share your videos with friends, family, and the world',
+];
+
+function isGenericYouTubeText(value) {
+  const v = String(value || '').trim();
+  if (!v) return true;
+  return YOUTUBE_GENERIC_TEXTS.some((g) => v.indexOf(g) >= 0);
+}
+
+/** `\x22` 같은 16진 이스케이프를 실제 문자로 풉니다. (모바일 유튜브 HTML 대응) */
+function decodeHexEscapes(text) {
+  if (String(text || '').indexOf('\\x') < 0) return '';
+  return String(text).replace(/\\x([0-9a-fA-F]{2})/g, (m, h) =>
+    String.fromCharCode(parseInt(h, 16))
+  );
+}
+
+/** JSON 문자열 리터럴의 본문을 따옴표 전까지 그대로 읽습니다. (이스케이프는 보존) */
+export function readEscapedJsonString(text, start) {
+  const src = String(text || '');
+  let out = '';
+  let i = Math.max(0, Number(start) || 0);
+  while (i < src.length) {
+    const ch = src[i];
+    if (ch === '\\') {
+      out += ch + (src[i + 1] || '');
+      i += 2;
+      continue;
+    }
+    if (ch === '"') break;
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
+/** `\n`·`\"`·`\uXXXX` 같은 JSON 이스케이프를 실제 문자로 풉니다. */
+export function decodeJsonEscapes(raw) {
+  const src = String(raw || '');
+  if (src.indexOf('\\') < 0) return src;
+  try {
+    return JSON.parse('"' + src + '"');
+  } catch (e) {
+    return src
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\//g, '/')
+      .replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)))
+      .replace(/\\\\/g, '\\');
+  }
+}
+
+/**
+ * 한 번 더 감싸인 이스케이프까지 풉니다.
+ * 모바일 유튜브는 설명글을 두 번 이스케이프해서(`\\n`) 넣기 때문에, 남은 `\n`·`\"` 를 마저 풉니다.
+ */
+function decodeFully(raw) {
+  let value = decodeJsonEscapes(raw).trim();
+  for (let i = 0; i < 2 && /\\[nrt"u/]/.test(value); i += 1) {
+    value = decodeJsonEscapes(value).trim();
+  }
+  return value;
+}
+
+/** 설명글이 들어 있는 JSON 키 — 앞에 오는 것부터 우선합니다. */
+const YOUTUBE_DESCRIPTION_MARKERS = [
+  '"shortDescription"',
+  '"attributedDescription"',
+  '"attributedDescriptionBodyText"',
+];
+
+/** 유튜브 HTML 한 벌에서 설명글 문자열 1건을 뽑습니다. (없으면 '') */
+function readYouTubeDescription(text) {
+  const src = String(text || '');
+  for (const marker of YOUTUBE_DESCRIPTION_MARKERS) {
+    const idx = src.indexOf(marker);
+    if (idx < 0) continue;
+    const valueStart = idx + marker.length;
+    const window = src.slice(valueStart, Math.min(src.length, valueStart + 600));
+    const re = marker === '"shortDescription"' ? /^\s*:\s*"/ : /"content"\s*:\s*"/;
+    const m = re.exec(window);
+    if (!m) continue;
+    const value = decodeJsonEscapes(
+      readEscapedJsonString(src, valueStart + m.index + m[0].length)
+    );
+    const cleaned = decodeFully(value);
+    if (cleaned) return cleaned;
+  }
+  return '';
+}
+
+/**
+ * 유튜브 HTML → { title, description }
+ * 봇 차단(로그인 요구) 페이지여도 설명글이 ytInitialData 에 남아 있는 경우가 있어
+ * 플레이어 응답 → 이스케이프 해제본 → og:description 순서로 시도합니다.
+ * @returns {{title:string, description:string}}
+ */
+export function parseYouTubePageMeta(html) {
+  const text = String(html || '');
+  const og = parseHtmlMeta(text);
+  const description =
+    readYouTubeDescription(text) ||
+    readYouTubeDescription(decodeHexEscapes(text)) ||
+    (isGenericYouTubeText(og.description) ? '' : og.description);
+  let title = og.title && !og.loginWall && !isGenericYouTubeText(og.title) ? og.title.trim() : '';
+  // 페이지 <title> 은 '영상 제목 - YouTube' 형태 — 꼬리표를 떼고, 남는 게 없으면 버립니다.
+  title = title.replace(/\s*-\s*YouTube\s*$/i, '').trim();
+  if (isGenericYouTubeText(title)) title = '';
+  return { title, description: String(description || '').trim().slice(0, 3000) };
+}
+
+/**
+ * 네이티브에서만 유튜브 영상 페이지를 3.5초 안에 읽어 설명글을 가져옵니다.
+ * (웹 빌드는 CORS 로 막혀 있어 조용히 건너뜁니다)
+ * @returns {Promise<{title:string, description:string, source:string}|null>}
+ */export async function fetchYouTubePageMeta(parsed, options = {}) {
+  const watchUrl = youtubeWatchUrlOf(parsed);
+  if (!watchUrl) return null;
+  if (!isNativeRuntime()) return null;
+  const timeoutMs = options.timeoutMs == null ? YOUTUBE_PAGE_TIMEOUT_MS : options.timeoutMs;
+  const res = await fetchWithTimeout(
+    watchUrl,
+    {
+      method: 'GET',
+      headers: { Accept: 'text/html,application/xhtml+xml', 'Accept-Language': 'ko-KR,ko;q=0.9' },
+    },
+    timeoutMs
+  );
+  if (!res || !res.ok || typeof res.text !== 'function') return null;
+  let html = '';
+  try {
+    html = String(await res.text());
+  } catch (e) {
+    return null;
+  }
+  const meta = parseYouTubePageMeta(html);
+  if (!meta.description && !meta.title) return null;
+  return { ...meta, source: 'youtube-page' };
+}
+
+// ─────────────────────────────────────────────────────────────
+// v1.3 · 유튜브 댓글(commentThreads) — API 키가 있을 때만 읽는 보조 단서
+//   상호명이 제목·설명글에 없고 **영상 업로더가 단 댓글**(주로 고정 댓글)에만 있는 경우가 있습니다.
+//   (예: 업로더 댓글 “여기 성수동 카모플라쥬에요!”)
+//   댓글은 잡담이 섞이기 쉬워서 fetchMetadata 는 항상 `comments` 로 돌려만 주고,
+//   검색어에 쓸지는 extractPlaces 가 '제목·설명글에 상호가 없을 때'만 결정합니다.
+// ─────────────────────────────────────────────────────────────
+export const YOUTUBE_COMMENTS_MAX = 5;
+export const YOUTUBE_COMMENT_MAX_CHARS = 300;
+export const YOUTUBE_COMMENTS_ENDPOINT = 'https://www.googleapis.com/youtube/v3/commentThreads';
+
+/**
+ * 업로더가 쓴 댓글을 맨 앞으로, 나머지는 API 가 준 '관련도(인기)' 순서를 유지합니다.
+ * (YouTube API 는 '고정 댓글' 플래그를 따로 주지 않아, 업로더 댓글을 고정 댓글로 간주합니다)
+ * @param {Array<{text:string, authorChannelId:string, likeCount:number}>} list
+ * @param {string} uploaderChannelId videos.snippet.channelId
+ * @returns {Array<object>}
+ */
+export function orderYouTubeComments(list, uploaderChannelId) {
+  const items = Array.isArray(list) ? list.filter((c) => c && String(c.text || '').trim()) : [];
+  const owner = String(uploaderChannelId || '').trim();
+  if (!owner) return items;
+  const mine = [];
+  const rest = [];
+  items.forEach((c) => {
+    if (String(c.authorChannelId || '').trim() === owner) mine.push(c);
+    else rest.push(c);
+  });
+  return mine.concat(rest);
+}
+
+/** 댓글 목록 → 검색어 추출에 쓰는 텍스트 한 덩어리 (업로더 댓글 먼저) */
+export function commentsToText(list, uploaderChannelId) {
+  const ordered = orderYouTubeComments(list, uploaderChannelId);
+  return ordered
+    .map((c) => String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, YOUTUBE_COMMENT_MAX_CHARS))
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 1200);
+}
+
+/**
+ * GET https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=…&order=relevance&maxResults=5&textFormat=plainText&key=…
+ * 실패(403 댓글 비허용 · 404 · 네트워크 · 타임아웃)는 예의 없이 **빈 배열**입니다.
+ * @returns {Promise<Array<{text:string, authorChannelId:string, likeCount:number}>>}
+ */
+export async function fetchYouTubeComments(parsed, options = {}) {
+  const key = options.key || process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+  const videoId = String((parsed && parsed.contentId) || '').trim();
+  if (!key || !videoId) return [];
+  const url =
+    YOUTUBE_COMMENTS_ENDPOINT +
+    '?part=snippet&videoId=' +
+    encodeURIComponent(videoId) +
+    '&order=relevance&maxResults=' +
+    YOUTUBE_COMMENTS_MAX +
+    '&textFormat=plainText&key=' +
+    encodeURIComponent(key);
+  const res = await fetchWithTimeout(url, { method: 'GET' }, options.timeoutMs);
+  if (!res || !res.ok || typeof res.json !== 'function') return [];
+  try {
+    const json = await res.json();
+    const items = (json && json.items) || [];
+    return items
+      .map((it) => {
+        const s = (it && it.snippet && it.snippet.topLevelComment && it.snippet.topLevelComment.snippet) || {};
+        return {
+          text: String(s.textDisplay || s.textOriginal || '').trim(),
+          authorChannelId: String((s.authorChannelId && s.authorChannelId.value) || ''),
+          likeCount: Number(s.likeCount) || 0,
+        };
+      })
+      .filter((c) => c.text);
+  } catch (e) {
+    return [];
+  }
+}
+
 const META_ATTR_RE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
 
 function decodeEntities(s) {
@@ -241,7 +480,7 @@ export function parseHtmlMeta(html) {
   const title = ogTitle || twitterTitle || titleTag;
   // 로그인 월이거나, 브랜드 이름만 남은 껍데기 제목('Instagram' 등)은 읽은 것으로 치지 않습니다.
   const loginWall = /(^|\s)(로그인|login|sign in)/i.test(title);
-  const genericTitle = /^(instagram|insta|tiktok|login|log in|sign in|facebook|로그인|페이스북)$/i.test(
+  const genericTitle = /^(instagram|insta|tiktok|youtube|login|log in|sign in|facebook|로그인|페이스북)$/i.test(
     String(title).trim()
   );
   return { title, description, ogTitle, titleTag, loginWall: loginWall || genericTitle };
@@ -327,13 +566,32 @@ export const CAPTION_STOPWORDS = [
   '다녀왔어요', '다녀왔습니다', '다녀옴', '가봤어요', '먹어봤어요', '먹고', '시켜', '먹었어요',
   '가는', '오는', '있는', '없는', '하는', '정도', '이런', '그런', '저런', '요즘', '최근',
   '이번주', '다음주', '주말에', '평일에도', '진짜로', '완전히', '너무나',
+  // v1.3 — 기간·수식어·감상 표현 (지도 검색에 도움이 안 됨)
+  '한달', '두달', '세달', '네달', '몇달', '한달살기', '일주일', '이틀', '사흘', '몇주',
+  '특별한', '특별', '무슨맛', '무슨맛일까', '무슨', '어떤맛', '자연산', '수준', '미친', '미쳐',
+  '결론', '결론적으로', '말씀', '드리면', '비싸', '비쌉니다', '엄청', '어마어마', '먹킷리스트',
+  '당일', '전날', '첫번째', '두번째', '마무리', '추천드려요', '궁금하면', '보세요', '거예요',
+  // 댓글에서 흔한 군더더기
+  '많이', '거의', '아주', '조금', '그냥', '완전', '계속', '다들', '저도', '제가',
 ];
 
 /** 카테고리 단어는 지우지 않고 '지역 + 카테고리' 검색어 재료로 씁니다. */
 export const CAPTION_CATEGORY_WORDS = [
   '맛집', '카페', '디저트', '베이커리', '빵집', '식당', '분식', '국밥', '고기집', '술집',
   '브런치', '레스토랑', '케이크', '파스타', '초밥', '라멘', '우동', '칼국수', '냉면', '치킨',
+  // v1.3 — 핵심 외식 업종 보강 (제목만 있을 때 '지역 + 업종' 검색어가 나오게)
+  '횟집', '초밥집', '이자카야', '포차', '오마카세', '스시', '고기', '해산물', '해물',
+  '삼겹살', '곱창', '돈까스', '쌀국수', '피자', '버거', '한식', '일식', '중식', '양식',
+  '참치', '장어', '대게', '떡볶이', '마라탕', '쭈꾸미', '닭갈비', '족발', '보쌈', '덮밥',
 ];
+
+/** '지역 + 카테고리'를 키워드보다 먼저 쓸 만큼 구체적인 업종인지 */
+const GENERIC_CATEGORY_WORDS = ['맛집', '식당', '카페', '디저트', '술집', '레스토랑'];
+
+export function isSpecificCategory(word) {
+  const w = String(word || '').trim();
+  return Boolean(w) && CAPTION_CATEGORY_WORDS.indexOf(w) >= 0 && GENERIC_CATEGORY_WORDS.indexOf(w) < 0;
+}
 
 /** 영어권 해시태그 잔여물 */
 const ENGLISH_NOISE = [
@@ -353,14 +611,15 @@ const TOKEN_SUFFIXES = [
 
 /** 조사(까지·에서·의·과…)를 떼어 냽니다. 짧은 지명('이태원')은 건드리지 않습니다. */
 const PARTICLE_RE =
-  /(까지|부터|에서|으로|하고|이랑|한테|께서|에는|에도|이나|거나|인데|지만|면서|니까|처럼|보다|만큼|마다|조차|밖에|라는|이라고|이라는|의|은|는|이|가|을|를|와|과|도|만|랑|에|로|들|고)$/;
+  /(이에요|었어요|였어요|입니다|에요|예요|까지|부터|에서|으로|하고|이랑|한테|께서|에는|에도|이나|거나|인데|지만|면서|니까|처럼|보다|만큼|마다|조차|밖에|라는|이라고|이라는|의|은|는|이|가|을|를|와|과|도|만|랑|에|로|들|고)$/;
 
 function stripParticles(token) {
   let t = String(token || '');
   for (let i = 0; i < 2; i += 1) {
     const m = t.match(PARTICLE_RE);
     if (!m) break;
-    if (t.length < 4 || t.length - m[0].length < 2) break;
+    // '돌돔은 → 돌돔'처럼 세 글자도 조사 하나는 떼되, 두 글자는 지킵니다('고기' 보존).
+    if (t.length < 3 || t.length - m[0].length < 2) break;
     t = t.slice(0, t.length - m[0].length);
   }
   return t;
@@ -402,6 +661,10 @@ export function cleanCaptionText(text) {
     .trim();
 }
 
+/** 서술어 꼬리(‘있고·나오는·해요’)를 가진 말은 지명·메뉴가 아니므로 걸러냅니다. */
+const PREDICATE_TAIL_RE =
+  /(습니다|입니다|해요|예요|이에요|했어요|했음|됐다|됐어요|되었|있었|없었|나옴|나오고|나오는|갔더니|맞춰|드렸고|해서|했는지|인데|는데|더니|지만|면서|니까|려고|도록|같음|같은|있고|없고|했던|하며|가요|네요|군요|데요|어요|지요|나요|래요|죠)$/;
+
 /** 자주 쓰이는 동네·지역 이름 (동/역 접미사 없이 쓰이는 곳) */
 export const KNOWN_AREAS = [
   '성수', '연남', '망원', '홍대', '합정', '상수', '이태원', '명동', '강남', '역삼', '잠실',
@@ -412,21 +675,63 @@ export const KNOWN_AREAS = [
 
 const AREA_SUFFIX_BLOCK = ['특별시', '광역시', '특별자치시', '특별자치도', '자치구', '자치동', '특별', '광역', '자치'];
 
-function findAreaFromText(cleaned) {
-  const hits = [];
-  const re = /([가-힣]{2,5})(동|읍|면|역|구|시)(?=\s|$|[^가-힣])/g;
+/** '운동·이동·화면'처럼 동네가 아닌 말이 '동/읍/면'으로 끝나는 경우 — 지역명으로 쓰지 않습니다. */
+const DONG_NOUN_BLOCK = [
+  '운동', '활동', '이동', '공동', '자동', '노동', '행동', '부동', '변동', '진동', '충동',
+  '유동', '소동', '작동', '가동', '발동', '합동', '혼동', '동조', '동참', '동원', '동의',
+  '화면', '장면', '표면', '이면', '측면', '단면', '전면', '후면', '평면', '수면', '지면',
+  '근면', '안면', '회면', '막면', '양면',
+  '동네', '동안', '동생', '동시', '동일', '동물', '동부', '동쪽', '동해', '동전', '동화',
+];
+
+function isPlaceLikeDong(name) {
+  const v = String(name || '');
+  if (v.length < 2) return false;
+  if (DONG_NOUN_BLOCK.indexOf(v) >= 0) return false;
+  return true;
+}
+
+/**
+ * 글에서 '동네'를 골라냅니다. (v1.3)
+ *   1순위: 주소형 — '제주시 연동' / '성동구 성수동'처럼 시·도 이름 바로 뒤의 동네
+ *          → 짧은 이름('연동')도 여기서는 확실한 동네로 봅니다.
+ *   2순위: '동'으로 끝나는 말 (한 글자 + 동도 허용, 단 '운동·화면' 같은 일반명사는 제외)
+ *   3순위: '★역 / ★구 / ★시' → 역명·구명만
+ *   4순위: 널리 쓰이는 지명 목록(KNOWN_AREAS)
+ */
+export function findAreaFromText(cleaned) {
+  const text = String(cleaned || '');
+  if (!text) return '';
   let m;
-  while ((m = re.exec(cleaned))) {
+
+  // 1) 주소형 '제주시 연동' · '성동구 성수동'
+  const addressRe = /([가-힣]{2,6}(?:시|도|군|구))[\s,]*([가-힣]{1,4}(?:동|읍|면))(?=\s|$|[^가-힣])/g;
+  while ((m = addressRe.exec(text))) {
+    if (isPlaceLikeDong(m[2]) && AREA_SUFFIX_BLOCK.indexOf(m[2]) < 0) return m[2];
+  }
+
+  // 2) '동'으로 끝나는 말 (한 글자 + 동도 허용: '연동'). '읍/면'은 '하면·드리면' 같은
+  //    서술어와 구분이 안 돼서 주소형(1번)에서만 인정합니다.
+  const dongRe = /([가-힣]{1,5}동)(?=\s|$|[^가-힣])/g;
+  while ((m = dongRe.exec(text))) {
+    if (!isPlaceLikeDong(m[1])) continue;
+    if (AREA_SUFFIX_BLOCK.indexOf(m[1]) >= 0) continue;
+    return m[1];
+  }
+
+  // 3) '성수역' → '성수' / '성동구' → '성동' / '제주시' → '제주'
+  const hits = [];
+  const re = /([가-힣]{2,5})(역|구|시)(?=\s|$|[^가-힣])/g;
+  while ((m = re.exec(text))) {
     const full = m[1] + m[2];
     if (AREA_SUFFIX_BLOCK.indexOf(full) >= 0 || AREA_SUFFIX_BLOCK.indexOf(m[1]) >= 0) continue;
-    const name = m[2] === '역' || m[2] === '구' || m[2] === '시' ? m[1] : full;
-    hits.push({ area: name, kind: m[2] });
+    hits.push({ area: m[1], kind: m[2] });
   }
-  const dong = hits.find((h) => h.kind === '동' || h.kind === '읍' || h.kind === '면');
-  if (dong) return dong.area;
   if (hits.length) return hits[0].area;
+
+  // 4) 널리 쓰이는 지명
   for (const name of KNOWN_AREAS) {
-    if (cleaned.indexOf(name) >= 0) return name;
+    if (text.indexOf(name) >= 0) return name;
   }
   return '';
 }
@@ -437,6 +742,15 @@ const STORE_KEYWORD_RE =
 const VERB_TAIL_RE = /(어요|아요|여요|습니다|입니다|했다|한다|하는|했어|왔어|가요|해요|되요|돼요|같아요|주세요)$/;
 
 export function findStoreName(rawText, area) {
+  const full = String(rawText || '');
+  const head = leadingText(full);
+  const fromHead = findStoreNameInText(head, area);
+  if (fromHead) return fromHead;
+  if (!head || head.length >= full.length) return '';
+  return findStoreNameInText(full, area);
+}
+
+function findStoreNameInText(rawText, area) {
   const raw = String(rawText || '')
     .replace(URL_IN_TEXT, ' ')
     .replace(EMOJI_RE, ' ');
@@ -454,7 +768,7 @@ export function findStoreName(rawText, area) {
     const first = cleaned.split(' ')[0] || '';
     const name = stripTokenSuffixes(stripParticles(first));
     if (!name || name.length < 2 || name.length > 15) continue;
-    if (stopSet.has(name.toLowerCase())) continue;
+    if (isStopToken(name, stopSet)) continue;
     if (CAPTION_CATEGORY_WORDS.indexOf(name) >= 0) continue;
     if (VERB_TAIL_RE.test(name)) continue;
     if (area && (name === area || name.indexOf(area) === 0)) continue;
@@ -462,6 +776,40 @@ export function findStoreName(rawText, area) {
     return name;
   }
   return '';
+}
+
+/**
+ * 설명글 전체를 다 보면 뒷부분의 무관한 문장·해시태그가 섞입니다. 앞부분(기본 500자·8줄)만 봅니다.
+ * @param {string} text
+ * @param {number} [maxChars]
+ * @param {number} [maxLines]
+ */
+export function leadingText(text, maxChars = 500, maxLines = 8) {
+  const lines = String(text == null ? '' : text)
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!lines.length) return '';
+  let head = lines.slice(0, maxLines).join('\n');
+  if (head.length > maxChars) head = head.slice(0, maxChars);
+  return head;
+}
+
+/**
+ * 불용어 판정·'필수인'·'특별한'처럼 불용어 + 조사·접미사까지 막습니다.
+ * @param {string} token
+ * @param {Set<string>} stopSet
+ */
+function isStopToken(token, stopSet) {
+  const t = String(token || '').toLowerCase();
+  if (!t) return true;
+  if (stopSet.has(t)) return true;
+  if (t.length >= 3) {
+    const stem = t.replace(/(인|한|된|될|함|들|가|임)$/, '');
+    if (stem !== t && stem.length >= 2 && stopSet.has(stem)) return true;
+  }
+  return false;
 }
 
 /**
@@ -475,9 +823,15 @@ export function findStoreName(rawText, area) {
 export function extractSearchQueries(text) {
   const raw = String(text || '');
   const cleaned = cleanCaptionText(raw);
-  const rawTokens = cleaned ? cleaned.split(' ').filter(Boolean) : [];
+  // 설명글(description)이 길 때는 앞부분 → 뒷부분 순으로 씨알을 뽑아, 앞쪽 단서가 먼저 오게 합니다.
+  const head = leadingText(raw);
+  const headCleaned = head && head !== raw ? cleanCaptionText(head) : '';
+  const allTokens = cleaned ? cleaned.split(' ').filter(Boolean) : [];
+  const headTokens = headCleaned ? headCleaned.split(' ').filter(Boolean) : [];
+  const headTokenSet = new Set(headTokens);
+  const rawTokens = headTokens.concat(allTokens.filter((t) => !headTokenSet.has(t)));
 
-  let area = findAreaFromText(cleaned);
+  let area = (headCleaned && findAreaFromText(headCleaned)) || findAreaFromText(cleaned);
   let category = '';
   const keywords = [];
   const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
@@ -488,18 +842,31 @@ export function extractSearchQueries(text) {
   rawTokens.forEach((rawTok) => {
     const bare = String(rawTok).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
     // 걷어낼 말은 원형 그대로 먼저 걸러냅니다. (단 '맛집'·'카페'는 카테고리 재료로 남깁니다)
-    if (bare && stopSet.has(bare.toLowerCase()) && CAPTION_CATEGORY_WORDS.indexOf(bare) < 0) return;
+    if (bare && isStopToken(bare, stopSet) && CAPTION_CATEGORY_WORDS.indexOf(bare) < 0) return;
+    // '떡볶이'처럼 조사처럼 끝나는 업종 단어는 그대로 카테고리로 남깁니다.
+    if (bare && CAPTION_CATEGORY_WORDS.indexOf(bare) >= 0) {
+      if (!category) category = bare;
+      return;
+    }
     let tok = stripTokenSuffixes(stripParticles(bare));
     if (!tok) return;
     if (/^[0-9]+(개|곳|분|초|원|년|월|일|명|위|차|인)?$/.test(tok)) return;
+    // '35만원짜리' · '350,000원' 같은 금액·수량 표현은 지도 검색어가 되지 않습니다.
+    if (/^[0-9][0-9,.]*\s*(만|천|억|백)?\s*(원|만원|천원|억원)?\s*(짜리|정도|이상|미만|부터|까지)?$/.test(tok)) return;
     if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
-    if (CITY_NOISE.indexOf(tok) >= 0) return;
+    if (PREDICATE_TAIL_RE.test(tok)) return;
+    if (CITY_NOISE.indexOf(tok) >= 0) {
+      // '제주도'·'경기도'처럼 시·도 이름만 있어도, 아는 지명이면 지역으로 살립니다. (제목만 있을 때)
+      const base = tok.replace(/(특별자치시|특별자치도|특별시|광역시|도)$/, '');
+      if (!area && base && base !== tok && KNOWN_AREAS.indexOf(base) >= 0) area = base;
+      return;
+    }
     // 카테고리 단어('맛집'·'카페'…)는 지우지 않고 검색어 재료로 남깁니다.
     if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) {
       if (!category) category = tok;
       return;
     }
-    if (stopSet.has(tok.toLowerCase())) return;
+    if (isStopToken(tok, stopSet)) return;
 
     // 지역명: '성수동' / '성수동맛집'(→성수동) / '이태원브런치'(→이태원 + 브런치)
     const suffixArea = tok.match(/^([가-힣]{2,5})(동|읍|면|역|구|시)$/);
@@ -537,9 +904,9 @@ export function extractSearchQueries(text) {
 
   const storeName = findStoreName(raw, area);
   // 상호명은 이미 첫 검색어('지역 + 상호')로 들어가므로 키워드 목록에서는 뺍니다.
-  const keywordList = keywords.filter(
-    (k) => !storeName || normalizeName(k) !== normalizeName(storeName)
-  );
+  const keywordList = keywords
+    .filter((k) => !storeName || normalizeName(k) !== normalizeName(storeName))
+    .slice(0, 8); // 설명글이 길어도 검색어 후보가 후미의 무관한 단어로 넘치지 않게
 
   const queries = [];
   const pushQuery = (parts) => {
@@ -555,8 +922,11 @@ export function extractSearchQueries(text) {
     if (area) pushQuery([area, storeName]);
     pushQuery([storeName]);
   }
+  // 구체적인 업종('횟집'·'초밥집' 등)은 메뉴 키워드보다 먼저 '지역 + 업종'으로 찾습니다.
+  const categoryFirst = isSpecificCategory(category);
+  if (area && category && categoryFirst) pushQuery([area, category]);
   if (area && keywordList.length) pushQuery([area, keywordList[0]]);
-  if (area && category) pushQuery([area, category]);
+  if (area && category && !categoryFirst) pushQuery([area, category]);
   if (area && keywordList.length > 1) pushQuery([area, keywordList[0], keywordList[1]]);
   if (area) pushQuery([area]);
   if (!area && keywordList.length) pushQuery([keywordList[0]]);
@@ -582,41 +952,66 @@ export const sourceAdapters = {
     /**
      * 1) **무인증 oEmbed** — 키 없이 제목·썸네일을 읽습니다. (v1.2)
      *    GET https://www.youtube.com/oembed?url=<영상 URL>&format=json
-     * 2) EXPO_PUBLIC_YOUTUBE_API_KEY 가 있으면 Data API v3 로 설명(description)까지 덧붙입니다.
+     * 2) **영상 페이지 HTML** — 네이티브에서는 설명글(description)까지 읽습니다. (v1.3)
+     *    실제 상호명은 제목이 아니라 설명글 첫머리에만 있는 경우가 많아서,
+     *    설명글이 있을 때만 `title + '\n' + description` 으로 검색어를 뽑습니다.
+     * 3) EXPO_PUBLIC_YOUTUBE_API_KEY 가 있으면 Data API v3 로 설명글을 더 정확히 읽습니다.
      * @returns {Promise<{title:string, description:string, thumbnail?:string, source:string}|null>}
      */
     async fetchMetadata(parsed) {
-      const oembed = await fetchYouTubeOembed(parsed);
-      const base = oembed
-        ? {
-            title: oembed.title,
-            description: '',
-            thumbnail: oembed.thumbnail,
-            authorName: oembed.authorName || '',
-            source: 'youtube-oembed',
-          }
-        : null;
       const key = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
-      if (!key) return base; // 키가 없어도 oEmbed 제목으로 충분합니다.
+      // 키가 없으면 oEmbed 와 페이지 HTML 을 동시에 읽습니다. (한 번에 기다려 체감 지연을 줄임)
+      const [oembed, page] = await Promise.all([
+        fetchYouTubeOembed(parsed),
+        key ? Promise.resolve(null) : fetchYouTubePageMeta(parsed),
+      ]);
+      const base = {
+        title: (oembed && oembed.title) || (page && page.title) || '',
+        description: (page && page.description) || '',
+        thumbnail: oembed ? oembed.thumbnail : null,
+        authorName: (oembed && oembed.authorName) || '',
+        source: page && page.description ? 'youtube-oembed+page' : 'youtube-oembed',
+      };
+      if (!key && !base.title && !base.description) return null;
+      if (!key) return base; // 키가 없어도 oEmbed 제목(+페이지 설명글)으로 충분합니다.
       try {
         const endpoint =
           'https://www.googleapis.com/youtube/v3/videos?part=snippet&id=' +
           encodeURIComponent(parsed.contentId) +
           '&key=' +
           encodeURIComponent(key);
-        const res = await fetch(endpoint);
-        if (!res || !res.ok) return base;
+        // 설명글(videos)과 댓글(commentThreads)을 **동시에** 가져와 기다리는 시간을 합치지 않습니다.
+        const [res, commentList] = await Promise.all([
+          fetch(endpoint),
+          fetchYouTubeComments(parsed, { key }),
+        ]);
+        if (!res || !res.ok) {
+          // 설명글은 못 읽었어도 댓글이 있으면 댓글만 살립니다. (업로더 순서는 모르니 받은 순서)
+          const fallbackText = commentsToText(commentList, '');
+          return fallbackText ? { ...base, comments: fallbackText, source: base.source } : base;
+        }
         const json = await res.json();
         const item = json && json.items && json.items[0];
-        if (!item) return base;
+        if (!item) {
+          const fallbackText = commentsToText(commentList, '');
+          return fallbackText ? { ...base, comments: fallbackText } : base;
+        }
         const snippet = item.snippet || {};
+        let description = snippet.description || base.description || '';
+        if (!description) {
+          // 키는 있지만 Data API 가 설명을 주지 못한 경우 → 네이티브면 페이지에서 한 번 더 시도
+          const fallbackPage = await fetchYouTubePageMeta(parsed);
+          description = (fallbackPage && fallbackPage.description) || '';
+        }
         return {
-          title: (base && base.title) || snippet.title || '',
-          description: snippet.description || '',
+          title: base.title || snippet.title || '',
+          description,
+          // 업로더(고정) 댓글을 맨 앞에 둔 상위 댓글 텍스트 — 없으면 빈 문자열
+          comments: commentsToText(commentList, snippet.channelId),
           thumbnail:
-            (base && base.thumbnail) ||
+            base.thumbnail ||
             (snippet.thumbnails && snippet.thumbnails.high ? snippet.thumbnails.high.url : null),
-          source: base ? 'youtube-oembed+api' : 'youtube-api',
+          source: base.title ? 'youtube-oembed+api' : 'youtube-api',
         };
       } catch (e) {
         return base;
@@ -1463,7 +1858,16 @@ export async function extractPlaces(rawInput, options = {}) {
   const meta = adapter ? await adapter.fetchMetadata(parsed, sharedCaption) : null;
   const sourceTitle = String((meta && meta.title) || '').trim();
   const description = String((meta && meta.description) || '').trim();
-  const text = [sourceTitle, description, sharedCaption].filter(Boolean).join('\n');
+  const comments = String((meta && meta.comments) || '').trim();
+  const primaryText = [sourceTitle, description, sharedCaption].filter(Boolean).join('\n');
+  // 댓글은 잡담이 섞이기 쉬우므로, 제목·설명글에서 **상호를 잡았으면** 검색어에 쓰지 않습니다.
+  // (확인용으로 결과에는 sourceComments 로 내려 보냅니다)
+  const useComments = Boolean(comments) && !extractSearchQueries(primaryText).storeName;
+  const text = (useComments ? [primaryText, comments].filter(Boolean).join('\n') : primaryText) || '';
+  // 댓글에서만 나오는 상호·동네(예: 업로더 댓글 “여기 성수동 카모플라쥬에요!”)를 앞세운 후보
+  const commentQueries = useComments
+    ? extractSearchQueries([sourceTitle, comments].filter(Boolean).join('\n')).queries
+    : [];
 
   // 제목·캡션을 못 읽은 경우를 화면에 그대로 알려 줍니다. (인스타 로그인 월 등)
   const blocked = !sourceTitle && BLOCKED_PLATFORMS.indexOf(parsed.platform) >= 0;
@@ -1488,13 +1892,19 @@ export async function extractPlaces(rawInput, options = {}) {
   const llm = await llmAdapter.extractPlaceJson(text);
   const derived = deriveQuery(text, llm);
   const limitQueries = Math.max(1, Number(options.maxQueries) || 2);
-  const queryList = (
+  // 댓글에서 나온 후보(구체적인 상호)를 맨 앞에, 그 뒤에 제목·설명글 후보를 붙입니다.
+  const derivedList =
     derived.queryList && derived.queryList.length
       ? derived.queryList
       : derived.query
       ? [derived.query]
-      : []
-  ).slice(0, limitQueries);
+      : [];
+  const mergedList = [];
+  commentQueries.concat(derivedList).forEach((q) => {
+    const v = String(q || '').trim();
+    if (v && mergedList.indexOf(v) < 0) mergedList.push(v);
+  });
+  const queryList = mergedList.slice(0, limitQueries);
 
   // 2) 후보 검색어를 순서대로 조회 + 후보 병합 (첫 후보로 결과가 없으면 다음 후보로 자동 재시도)
   let chain = {
@@ -1536,6 +1946,8 @@ export async function extractPlaces(rawInput, options = {}) {
     ok: true,
     ...parsed,
     sourceTitle,
+    sourceDescription: description.slice(0, 500),
+    sourceComments: comments.slice(0, 300),
     titleStatus,
     titleNotice,
     suggestedQuery,
