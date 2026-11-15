@@ -5,6 +5,7 @@ import PasteScreen from '../src/screens/PasteScreen';
 import ProfileScreen from '../src/screens/ProfileScreen';
 import PinDetailSheet from '../src/components/PinDetailSheet';
 import ProviderBadges from '../src/components/ProviderBadge';
+import ExtractedTitleNote from '../src/components/ExtractedTitleNote';
 import GeofenceBanner from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
 import TabBar from '../src/components/TabBar';
@@ -42,6 +43,9 @@ const cases = [
   ['PinDetailSheet(매장정보·배지)', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={500} onClose={noop} onDelete={noop} onToast={noop} />],
   ['PinDetailSheet(매장정보 없음)', <PinDetailSheet pin={{ ...SEARCH_PIN, placeUrl: '', providers: [] }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />],
   ['ProviderBadges(2곳)', <ProviderBadges item={SEARCH_PIN} />],
+  ['ExtractedTitleNote(읽어온 제목)', <ExtractedTitleNote title="성수동 소금빵 맛집 베통" />],
+  ['ExtractedTitleNote(인스타 안내)', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요 — 가게명으로 바로 찾아보세요." onSearchByName={noop} />],
+  ['ExtractedTitleNote(없음)', <ExtractedTitleNote />, true],
   ['ProviderBadges(없음)', <ProviderBadges item={{ name: 'x' }} />, true],
   ['GeofenceBanner', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={1000} onPress={noop} />],
   ['GeofenceBanner(empty)', <GeofenceBanner pin={null} radiusMeters={300} onPress={noop} empty />],
@@ -69,6 +73,9 @@ const contentCases = [
   ['PinDetailSheet: 링크 핀에는 원본 릴스 행', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['인스타 릴스', 'instagram.com/reel']],
   ['PasteScreen: 모드 전환 버튼', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 링크', '가게명으로 찾기']],
   ['PasteScreen(가게명 찾기): 검색 입력·버튼', <PasteScreen active pinCount={4} isPro={false} initialMode="search" onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['가게명 · 동네', '가게 찾기', '성수동 소금빵']],
+  ['PasteScreen: 혼합 붙여넣기 안내', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['문구를 통째로 붙여넣어도 돼요', '유튜브는 제목을']],
+  ['ExtractedTitleNote: 읽어온 제목 표기', <ExtractedTitleNote title="성수동 소금빵 맛집 베통" />, ['읽어온 제목:', '성수동 소금빵 맛집 베통']],
+  ['ExtractedTitleNote: 인스타 안내 + 원탭 버튼', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요" onSearchByName={noop} />, ['인스타는 보안상 제목을 못 읽어와요', '가게명으로 찾기']],
 ];
 
 for (const [label, element, needles] of contentCases) {

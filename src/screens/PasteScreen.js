@@ -17,9 +17,11 @@ import {
   isSupportedUrl,
   parseUrl,
   searchPlacesDirect,
+  splitSharedText,
 } from '../services/extractor';
 import { FREE_PIN_LIMIT } from '../data/seedPins';
 import ProviderBadges from '../components/ProviderBadge';
+import ExtractedTitleNote from '../components/ExtractedTitleNote';
 import { buildPin } from '../utils/pins';
 import { cardShadow, colors, radius, typography } from '../theme';
 
@@ -50,6 +52,7 @@ export default function PasteScreen({
   const [url, setUrl] = useState('');
   const [query, setQuery] = useState('');
   const [clipboardUrl, setClipboardUrl] = useState(null);
+  const [clipboardCaption, setClipboardCaption] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [stage, setStage] = useState(0);
   const [candidates, setCandidates] = useState([]);
@@ -65,10 +68,12 @@ export default function PasteScreen({
   const readClipboard = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
-      const trimmed = (text || '').trim();
-      if (trimmed && isSupportedUrl(trimmed)) {
-        setClipboardUrl(trimmed);
-        return trimmed;
+      // v1.2: 공유 시트에서 복사한 건 "문구 + 링크" 덩어리입니다. 그 안에서 링크만 골라 씁니다.
+      const shared = splitSharedText(text || '');
+      if (shared.url && isSupportedUrl(shared.url)) {
+        setClipboardUrl(shared.url);
+        setClipboardCaption(shared.caption || '');
+        return shared.url;
       }
     } catch (e) {
       // 웹 브라우저에서는 권한이 없으면 읽기가 막힙니다 — 조용히 넘어갑니다.
@@ -115,8 +120,14 @@ export default function PasteScreen({
       setError('릴스·쇼츠 링크를 먼저 붙여넣어 주세요.');
       return;
     }
-    if (!isSupportedUrl(value)) {
-      setError('인스타 릴스·유튜브 쇼츠·틱톡 링크만 인식할 수 있어요.');
+    // "성수동 소금빵 맛집 베통 https://..." 처럼 문구와 링크가 붙어 있어도 링크만 골라 씁니다.
+    const shared = splitSharedText(value);
+    if (!shared.url) {
+      setError('링크가 들어 있지 않아요. 공유 문구와 함께 링크를 붙여넣어 주세요.');
+      return;
+    }
+    if (!isSupportedUrl(shared.url)) {
+      setError('http:// 또는 https:// 로 시작하는 링크를 넣어 주세요.');
       return;
     }
     setError('');
@@ -126,7 +137,7 @@ export default function PasteScreen({
 
     const stageTimer = startProgress();
 
-    const preset = PRESETS.find((p) => p.url === value);
+    const preset = PRESETS.find((p) => p.url === shared.url);
     try {
       const result = await extractPlaces(value, { caption: preset ? preset.caption : '' });
       // 최소 로딩 시간을 줘서 '분석 중' 단계가 눈에 보이게 합니다.
@@ -146,6 +157,10 @@ export default function PasteScreen({
         usedAdapter: result.usedAdapter,
         query: result.query || '',
         sources: result.providersUsed || [],
+        sourceTitle: result.sourceTitle || '',
+        titleStatus: result.titleStatus || 'none',
+        titleNotice: result.titleNotice || '',
+        suggestedQuery: result.suggestedQuery || '',
       });
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
@@ -200,6 +215,22 @@ export default function PasteScreen({
 
   const runPrimary = () => (isSearch ? runSearch() : runExtract());
 
+  /**
+   * 제목을 못 읽어온 링크에서 [가게명으로 찾기] 한 번으로 검색 모드로 넘어가고,
+   * 추출해 둔 '동네 + 키워드'로 바로 조회합니다. (v1.2)
+   */
+  const switchToSearch = (suggested) => {
+    const nextQuery = String(suggested || '').trim();
+    setMode('search');
+    setError('');
+    setCandidates([]);
+    setSelectedId(null);
+    setMeta(null);
+    setStage(0);
+    setQuery(nextQuery);
+    if (nextQuery.length >= 2) runSearch(nextQuery);
+  };
+
   const usePreset = (preset) => {
     setUrl(preset.url);
     setError('');
@@ -215,6 +246,7 @@ export default function PasteScreen({
     setSelectedId(null);
     setMeta(null);
     setClipboardUrl(null);
+    setClipboardCaption('');
   };
 
   const savePin = () => {
@@ -296,6 +328,7 @@ export default function PasteScreen({
             <View style={styles.clipTextWrap}>
               <Text style={styles.clipTitle}>방금 복사한 링크가 있어요</Text>
               <Text style={styles.clipSub} numberOfLines={1}>
+                {clipboardCaption ? '“' + clipboardCaption.slice(0, 60) + '” · ' : ''}
                 {clipboardUrl}
               </Text>
               <Pressable style={styles.clipBtn} onPress={applyPaste}>
@@ -365,6 +398,10 @@ export default function PasteScreen({
                 <Ionicons name="clipboard-outline" size={18} color={colors.coral} />
               </Pressable>
             </View>
+            <Text style={styles.helper}>
+              공유할 때 복사된 문구를 통째로 붙여넣어도 돼요. (예: “성수동 소금빵 맛집 베통
+              https://...”) 유튜브는 제목을, 네이버 블로그는 페이지 제목을 읽어 가게를 찾아요.
+            </Text>
           </>
         )}
 
@@ -466,6 +503,13 @@ export default function PasteScreen({
                 </Text>
               </View>
             )}
+
+            {/* 읽어온 제목 · 인스타처럼 못 읽은 경우의 원탭 안내 (v1.2) */}
+            <ExtractedTitleNote
+              title={meta && meta.mode === 'link' ? meta.sourceTitle : ''}
+              notice={meta && meta.mode === 'link' ? meta.titleNotice : ''}
+              onSearchByName={() => switchToSearch(meta && meta.suggestedQuery)}
+            />
 
             <View style={styles.heroCard}>
               <View style={styles.heroTile}>

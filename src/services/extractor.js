@@ -19,7 +19,17 @@
  *   3. 키는 app.json extra가 아니라 EXPO_PUBLIC_* 환경변수로만 넣습니다. (.env.example 참고)
  *      → Expo는 `process.env.EXPO_PUBLIC_XXX` 를 빌드 시점에 문자열로 치환하므로
  *        반드시 아래처럼 **직접 표기**해야 합니다. (`process.env[name]` 동적 접근은 치환되지 않음)
+ *
+ * v1.2 (2026-11-15) — 유료 키 없이도 '실제 URL'에서 가게명·동네를 뽑습니다.
+ *   · 유튜브는 **무인증 oEmbed**(youtube.com/oembed)로 제목을 읽습니다. 키가 필요 없습니다.
+ *   · 공유 시트에서 복사한 `"성수동 소금빵 맛집 베통 https://instagram.com/reel/..."` 같은
+ *     **텍스트+URL 혼합 입력**을 링크와 캡션으로 나눠 둘 다 힌트로 씁니다.
+ *   · 네이티브(iOS/Android)에서는 일반 웹·네이버 블로그의 og:title/og:description도
+ *     3.5초 타임아웃으로 읽습니다. (인스타 로그인 월은 조용히 폴백)
+ *   · 캡션에서 이모지·해시태그 기호·상투적 수식어를 걷어낸 **검색어 후보 여러 개**를 만들어
+ *     첫 후보로 결과가 없으면 다음 후보로 자동 재시도합니다.
  */
+import { Platform } from 'react-native';
 
 export const PLATFORMS = {
   instagram: { label: '인스타 릴스', host: 'instagram.com' },
@@ -64,9 +74,499 @@ export function parseUrl(raw) {
   return { ok: true, url, platform: 'unknown', platformLabel: host, contentId: '', host };
 }
 
+/**
+ * v1.2: 인스타·유튜브뿐 아니라 **일반 웹 페이지(네이버 블로그·가게 홈페이지)** 도
+ * 제목을 읽어 추출에 쓰기 때문에, 'http(s) 링크인가'만 판단합니다.
+ */
 export function isSupportedUrl(raw) {
-  const parsed = parseUrl(raw);
-  return parsed.ok && parsed.platform !== 'unknown';
+  return parseUrl(raw).ok;
+}
+
+// ─────────────────────────────────────────────────────────────
+// v1.2 · 공유 텍스트 ↔ URL 분리
+// ─────────────────────────────────────────────────────────────
+const URL_IN_TEXT = /https?:\/\/[^\s<>"'`]+/gi;
+const URL_TAIL = /[)\].,!?:;'"’”»…]+$/;
+
+/** 문장 끝에 붙어 온 괄호·마침표를 URL에서 떼어 냅니다. (`...reel/abc/,` → `...reel/abc/`) */
+export function trimUrlTail(raw) {
+  let u = String(raw == null ? '' : raw).trim();
+  for (let i = 0; i < 4 && URL_TAIL.test(u); i += 1) u = u.replace(URL_TAIL, '');
+  return u;
+}
+
+/**
+ * 인스타·유튜브 공유 시트에서 복사한 문자열은 링크 하나만 오지 않습니다.
+ *   "성수동 소금빵 맛집 베통 https://www.instagram.com/reel/C8xSg2... 더 보기"
+ * 이런 문자열에서 **첫 URL**과 **주변 문구(캡션)**를 나눠 둘 다 추출 힌트로 씁니다.
+ *
+ * @param {string} raw
+ * @returns {{url:string, urls:string[], caption:string, hasText:boolean}}
+ */
+export function splitSharedText(raw) {
+  const text = String(raw == null ? '' : raw).replace(/\r\n?/g, '\n');
+  const urls = [];
+  const rest = text.replace(URL_IN_TEXT, (hit) => {
+    const url = trimUrlTail(hit);
+    if (url && urls.indexOf(url) < 0) urls.push(url);
+    return ' ';
+  });
+  const caption = rest
+    .replace(/[ \t]+/g, ' ')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+  return { url: urls[0] || '', urls, caption, hasText: Boolean(caption) };
+}
+
+// ─────────────────────────────────────────────────────────────
+// v1.2 · 네트워크 도우미 — 짧은 타임아웃 · 무인증 YouTube oEmbed · OG 메타
+// ─────────────────────────────────────────────────────────────
+/** OG 메타를 기다리는 시간. 인스타처럼 응답이 느린 페이지에서 앱이 멈추지 않게 3.5초로 고정합니다. */
+export const PAGE_META_TIMEOUT_MS = 3500;
+export const YOUTUBE_OEMBED_ENDPOINT = 'https://www.youtube.com/oembed';
+/** 캡션·제목을 밖에서 못 읽는 플랫폼(로그인 월) — 화면에서 '가게명으로 찾기' 안내를 띄웁니다. */
+export const BLOCKED_PLATFORMS = ['instagram', 'tiktok'];
+
+/** AbortController 로 ms 뒤에 끊는 fetch. 실패·타임아웃은 예외 없이 null. */
+async function fetchWithTimeout(url, init = {}, timeoutMs = PAGE_META_TIMEOUT_MS) {
+  if (typeof fetch !== 'function') return null;
+  const ms = Number(timeoutMs) > 0 ? Number(timeoutMs) : PAGE_META_TIMEOUT_MS;
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  let timer = null;
+  if (controller) {
+    timer = setTimeout(() => {
+      try {
+        controller.abort();
+      } catch (e) {
+        /* 이미 끝난 요청 */
+      }
+    }, ms);
+  }
+  try {
+    return await fetch(url, controller ? { ...init, signal: controller.signal } : init);
+  } catch (e) {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+/** oEmbed에는 watch 주소를 넣어야 shorts·youtu.be 모두 같은 응답을 줍니다. */
+export function youtubeWatchUrlOf(parsed) {
+  const id = String((parsed && parsed.contentId) || '').trim();
+  if (!id) return '';
+  return 'https://www.youtube.com/watch?v=' + id;
+}
+
+/**
+ * GET https://www.youtube.com/oembed?url=<encoded>&format=json  (키 없음, 웹/모바일 모두 동작)
+ * → { title, author_name, thumbnail_url }
+ * @returns {Promise<{title:string, authorName:string, thumbnail:string|null, source:string}|null>}
+ */
+export async function fetchYouTubeOembed(parsed, options = {}) {
+  const watchUrl = youtubeWatchUrlOf(parsed);
+  if (!watchUrl) return null;
+  const endpoint =
+    YOUTUBE_OEMBED_ENDPOINT + '?url=' + encodeURIComponent(watchUrl) + '&format=json';
+  const res = await fetchWithTimeout(endpoint, { method: 'GET' }, options.timeoutMs);
+  if (!res || !res.ok || typeof res.json !== 'function') return null;
+  try {
+    const json = await res.json();
+    const title = stripTags(json && json.title);
+    if (!title) return null;
+    return {
+      title,
+      authorName: String((json && json.author_name) || ''),
+      thumbnail: (json && json.thumbnail_url) || null,
+      source: 'youtube-oembed',
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+const META_ATTR_RE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+
+function decodeEntities(s) {
+  return String(s || '')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (m, d) => String.fromCharCode(Number(d)))
+    .replace(/&#x([0-9a-f]+);/gi, (m, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+/**
+ * HTML 문자열 → { title, description, ogTitle, titleTag, loginWall }
+ * og:title 우선, 없으면 twitter:title, 마지막으로 <title>. (네이버 블로그·가게 홈페이지 대응)
+ */
+export function parseHtmlMeta(html) {
+  const text = String(html || '');
+  const tags = [];
+  const metaRe = /<meta\b[^>]*>/gi;
+  let m;
+  while ((m = metaRe.exec(text))) {
+    const attrs = {};
+    META_ATTR_RE.lastIndex = 0;
+    let a;
+    while ((a = META_ATTR_RE.exec(m[0]))) {
+      attrs[a[1].toLowerCase()] = a[2] != null ? a[2] : a[3] != null ? a[3] : a[4];
+    }
+    tags.push(attrs);
+  }
+  const pick = (keys) => {
+    for (const key of keys) {
+      for (const t of tags) {
+        const name = String(t.property || t.name || '').toLowerCase();
+        if (name === key && t.content) {
+          const v = decodeEntities(t.content).replace(/\s+/g, ' ').trim();
+          if (v) return v;
+        }
+      }
+    }
+    return '';
+  };
+  const ogTitle = pick(['og:title']);
+  const description = pick(['og:description', 'description']);
+  const twitterTitle = pick(['twitter:title']);
+  const titleTagMatch = text.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const titleTag = titleTagMatch
+    ? decodeEntities(stripTags(titleTagMatch[1])).replace(/\s+/g, ' ').trim()
+    : '';
+  const title = ogTitle || twitterTitle || titleTag;
+  const loginWall = /(^|\s)(로그인|login|sign in)/i.test(title);
+  return { title, description, ogTitle, titleTag, loginWall };
+}
+
+/** 웹(브라우저) 빌드인지 — OG 메타는 CORS가 막혀 있어 네이티브에서만 읽습니다. */
+export function isNativeRuntime() {
+  try {
+    if (typeof Platform === 'undefined' || !Platform) return false;
+    return String(Platform.OS || '') !== 'web';
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 페이지의 OG 메타를 짧은 타임아웃으로 읽어 옵니다. (v1.2)
+ * - 네이티브에서만 시도합니다. 웹은 CORS 로 막혀 있어 조용히 건너뜁니다.
+ * - 인스타 릴스처럼 로그인 월이 떠 있으면 `{ ok:false, blocked:true }` 로 돌려주고,
+ *   호출부는 예외 없이 다음 단계(후보 1탭 확인 / 가게명 찾기)로 넘어갑니다.
+ *
+ * @returns {Promise<{ok:boolean, reason?:string, blocked?:boolean, title?:string,
+ *                    description?:string, url?:string}>}
+ */
+export async function fetchPageMeta(rawUrl, options = {}) {
+  const url = String(rawUrl || '').trim();
+  if (!/^https?:\/\//i.test(url)) return { ok: false, reason: 'not-http' };
+  if (!isNativeRuntime()) return { ok: false, reason: 'web-runtime' };
+  const timeoutMs = options.timeoutMs == null ? PAGE_META_TIMEOUT_MS : options.timeoutMs;
+  const res = await fetchWithTimeout(
+    url,
+    { method: 'GET', headers: { Accept: 'text/html,application/xhtml+xml' } },
+    timeoutMs
+  );
+  if (!res) return { ok: false, reason: 'network' };
+  if (!res.ok) return { ok: false, reason: 'http-' + res.status, status: res.status };
+  if (typeof res.text !== 'function') return { ok: false, reason: 'no-body' };
+  let html = '';
+  try {
+    html = String(await res.text());
+  } catch (e) {
+    return { ok: false, reason: 'body' };
+  }
+  const finalUrl = String(res.url || '');
+  const meta = parseHtmlMeta(html);
+  if (meta.loginWall || /\/accounts\/login|\/login\b/i.test(finalUrl)) {
+    return { ok: false, reason: 'login-wall', blocked: true, status: res.status };
+  }
+  if (!meta.title && !meta.description) {
+    return { ok: false, reason: 'no-meta', blocked: html.trim().length < 600 };
+  }
+  return { ok: true, ...meta, url: finalUrl || url };
+}
+
+// ─────────────────────────────────────────────────────────────
+// v1.2 · 한국어 맛집·핫플 키워드 정제기
+//   캡션은 대개 이렇게 생겼습니다:
+//     "🍞 성수동 소금빵 맛집 베통 다녀왔어요 #성수맛집 #소금빵 #먹방 #shorts"
+//   지도 검색은 '지역명 + 상호/메뉴'만 남겨야 정확도가 올라갑니다.
+//   → 이모지·해시태그 기호·상투적 수식어를 걷어내고 검색어 후보를 만듭니다.
+// ─────────────────────────────────────────────────────────────
+const EMOJI_RE = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]/g;
+const TAG_SYMBOL_RE = /[#＃]/g;
+const HANDLE_RE = /@[A-Za-z0-9._]{2,}/g;
+const PUNCT_RE = /[~!?.,:;'"“”‘’`^*+=_|\\/<>()\[\]{}·•…\-–—]/g;
+
+/** 캡션에서 걷어낼 상투적 수식어·해시태그성 단어 (지도 검색에 도움이 안 되는 말) */
+export const CAPTION_STOPWORDS = [
+  '솔직후기', '솔직리뷰', '솔직하게', '후기', '리뷰', '추천', '추천해요', '추천템', '추천코스',
+  '웨이팅', '줄서는식당', '줄서는', '줄서서', '인생맛집', '맛집', '맛집추천', '맛집투어', '맛스타그램',
+  '핫플', '핫플레이스', '핫한', '오픈런', '오픈', '먹방', '먹방브이로그', '먹스타그램',
+  '브이로그', 'vlog', 'shorts', 'short', '릴스', 'reels', '내돈내산', '내돈내먹',
+  '꿀팁', '꿀조합', '신상', '신상카페', '데이트', '데이트코스', '데이트맛집', '코스',
+  '저장', '공유', '정보', '리스트', '정리', '모음', '베스트', 'best',
+  '완전', '진짜', '정말', '너무', '대박', '미쳤다', '레전드', '최고', '강추', '존맛',
+  '꼭', '같이가자', '가자', '여기', '저기', '우리', '이번', '오늘', '어제', '매일',
+  '로컬', '전문가', '사장님', '자영업', '평균리뷰', '이상', '근처', '주변',
+  '점심', '저녁', '아침', '주말', '평일', '혼밥', '가성비', '가심비', '분위기', '인테리어',
+  '뷰맛집', '감성', '감성카페', '촬영', '협찬', '광고', '제공', '이벤트', '쿠폰', '할인',
+  '예약', '주차', '무료', '가격', '메뉴', '영업시간', '위치', '지도', '링크', '프로필',
+  '더보기', '보기', '클릭', '확인', '구독', '좋아요', '댓글', '알림', '팔로우', '소개',
+  '영상', '여행', '일상', '하루', '기록', '일기', '방문', '필수',
+  '다녀왔어요', '다녀왔습니다', '다녀옴', '가봤어요', '먹어봤어요', '먹고', '시켜', '먹었어요',
+  '가는', '오는', '있는', '없는', '하는', '정도', '이런', '그런', '저런', '요즘', '최근',
+  '이번주', '다음주', '주말에', '평일에도', '진짜로', '완전히', '너무나',
+];
+
+/** 카테고리 단어는 지우지 않고 '지역 + 카테고리' 검색어 재료로 씁니다. */
+export const CAPTION_CATEGORY_WORDS = [
+  '맛집', '카페', '디저트', '베이커리', '빵집', '식당', '분식', '국밥', '고기집', '술집',
+  '브런치', '레스토랑', '케이크', '파스타', '초밥', '라멘', '우동', '칼국수', '냉면', '치킨',
+];
+
+/** 영어권 해시태그 잔여물 */
+const ENGLISH_NOISE = [
+  'food', 'foodie', 'vlog', 'video', 'shorts', 'short', 'reels', 'reel', 'insta', 'instagram',
+  'youtube', 'tiktok', 'new', 'best', 'open', 'daily', 'life', 'mukbang', 'asmr', 'cafe',
+  'coffee', 'dessert', 'restaurant', 'review', 'map', 'link', 'follow', 'like', 'seoul', 'korea',
+];
+
+/** 토큰 끝에 붙은 수식어를 반복해서 걷어냅니다. ('성수동맛집' → '성수동', '카페추천' → '카페') */
+const TOKEN_SUFFIXES = [
+  '브이로그', '맛집추천', '카페추천', '데이트코스', '데이트맛집', '줄서는식당', '핫플레이스',
+  '인생맛집', '먹방', '내돈내산', '솔직후기', '후기', '리뷰', '추천', '핫플', '데이트', '코스',
+  '저장', '공유', '모음', '리스트', '정리', '정보', '신상', '오픈런', '웨이팅', '맛집',
+  '브런치카페', '카페맛집', '카페',
+  'shorts', 'vlog', '릴스', 'reels',
+];
+
+/** 조사(까지·에서·의·과…)를 떼어 냽니다. 짧은 지명('이태원')은 건드리지 않습니다. */
+const PARTICLE_RE =
+  /(까지|부터|에서|으로|하고|이랑|한테|께서|에는|에도|이나|거나|인데|지만|면서|니까|처럼|보다|만큼|마다|조차|밖에|라는|이라고|이라는|의|은|는|이|가|을|를|와|과|도|만|랑|에|로|들|고)$/;
+
+function stripParticles(token) {
+  let t = String(token || '');
+  for (let i = 0; i < 2; i += 1) {
+    const m = t.match(PARTICLE_RE);
+    if (!m) break;
+    if (t.length < 4 || t.length - m[0].length < 2) break;
+    t = t.slice(0, t.length - m[0].length);
+  }
+  return t;
+}
+
+/** '서울맛집'처럼 너무 넓은 시·도 단서는 검색어를 흐리므로 버립니다. */
+const CITY_NOISE = [
+  '서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '경기', '강원', '충북', '충남',
+  '전북', '전남', '경북', '경남', '제주도', '한국', '대한민국',
+];
+
+function stripTokenSuffixes(token) {
+  let t = String(token || '');
+  let guard = 0;
+  let changed = true;
+  while (changed && guard < 3) {
+    changed = false;
+    for (const suf of TOKEN_SUFFIXES) {
+      if (t.length > suf.length + 1 && t.toLowerCase().endsWith(suf.toLowerCase())) {
+        t = t.slice(0, t.length - suf.length);
+        changed = true;
+        break;
+      }
+    }
+    guard += 1;
+  }
+  return t;
+}
+
+/** 이모지·해시태그 기호·문장부호·URL을 걷어낸 한 줄 문자열 */
+export function cleanCaptionText(text) {
+  return String(text || '')
+    .replace(URL_IN_TEXT, ' ')
+    .replace(EMOJI_RE, ' ')
+    .replace(TAG_SYMBOL_RE, ' ')
+    .replace(HANDLE_RE, ' ')
+    .replace(PUNCT_RE, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** 자주 쓰이는 동네·지역 이름 (동/역 접미사 없이 쓰이는 곳) */
+export const KNOWN_AREAS = [
+  '성수', '연남', '망원', '홍대', '합정', '상수', '이태원', '명동', '강남', '역삼', '잠실',
+  '여의도', '검단', '을지로', '한남', '삼청', '서촌', '북촌', '신사', '압구정', '청담',
+  '건대', '왕십리', '분당', '판교', '송도', '해운대', '광안리', '서면', '전주', '경주', '제주',
+  '이시가키', '오키나와', '후쿠오카', '오사카', '도쿄', '교토', '나고야', '방콕', '다낭', '타이베이',
+];
+
+const AREA_SUFFIX_BLOCK = ['특별시', '광역시', '특별자치시', '특별자치도', '자치구', '자치동', '특별', '광역', '자치'];
+
+function findAreaFromText(cleaned) {
+  const hits = [];
+  const re = /([가-힣]{2,5})(동|읍|면|역|구|시)(?=\s|$|[^가-힣])/g;
+  let m;
+  while ((m = re.exec(cleaned))) {
+    const full = m[1] + m[2];
+    if (AREA_SUFFIX_BLOCK.indexOf(full) >= 0 || AREA_SUFFIX_BLOCK.indexOf(m[1]) >= 0) continue;
+    const name = m[2] === '역' || m[2] === '구' || m[2] === '시' ? m[1] : full;
+    hits.push({ area: name, kind: m[2] });
+  }
+  const dong = hits.find((h) => h.kind === '동' || h.kind === '읍' || h.kind === '면');
+  if (dong) return dong.area;
+  if (hits.length) return hits[0].area;
+  for (const name of KNOWN_AREAS) {
+    if (cleaned.indexOf(name) >= 0) return name;
+  }
+  return '';
+}
+
+/** 상호명처럼 보이는 말을 원문(대괄호·따옴표 유지)에서 찾습니다. */
+const STORE_KEYWORD_RE =
+  /(?:맛집|카페|식당|베이커리|빵집|디저트집|분식집|국밥집|고기집|술집|브런치|레스토랑)\s*[:\-–]?\s*([0-9A-Za-z가-힣]{2,12})/;
+const VERB_TAIL_RE = /(어요|아요|여요|습니다|입니다|했다|한다|하는|했어|왔어|가요|해요|되요|돼요|같아요|주세요)$/;
+
+export function findStoreName(rawText, area) {
+  const raw = String(rawText || '')
+    .replace(URL_IN_TEXT, ' ')
+    .replace(EMOJI_RE, ' ');
+  const candidates = [];
+  const bracket = raw.match(/[\[(【〈《'"“]([^\])】〉》'"”]{2,20})[\])】〉》'"”]/);
+  if (bracket) candidates.push(bracket[1]);
+  const after = raw.match(STORE_KEYWORD_RE);
+  if (after) candidates.push(after[1]);
+  const quoted = raw.match(/[“"']([가-힣A-Za-z0-9 ]{2,15})[”"']/);
+  if (quoted) candidates.push(quoted[1]);
+
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  for (const cand of candidates) {
+    const cleaned = cleanCaptionText(cand);
+    const first = cleaned.split(' ')[0] || '';
+    const name = stripTokenSuffixes(stripParticles(first));
+    if (!name || name.length < 2 || name.length > 15) continue;
+    if (stopSet.has(name.toLowerCase())) continue;
+    if (CAPTION_CATEGORY_WORDS.indexOf(name) >= 0) continue;
+    if (VERB_TAIL_RE.test(name)) continue;
+    if (area && (name === area || name.indexOf(area) === 0)) continue;
+    if (/^[0-9]/.test(name)) continue;
+    return name;
+  }
+  return '';
+}
+
+/**
+ * 제목·설명·캡션 → 지도 검색어 후보들. (v1.2)
+ *   "성수동 소금빵 맛집 베통 다녀왔어요 #성수맛집"
+ *   → { area:'성수동', storeName:'베통', keywords:['소금빵'], queries:['성수동 베통','베통','성수동 소금빵',...] }
+ *
+ * @param {string} text
+ * @returns {{queries:string[], area:string, storeName:string, category:string, keywords:string[], cleaned:string}}
+ */
+export function extractSearchQueries(text) {
+  const raw = String(text || '');
+  const cleaned = cleanCaptionText(raw);
+  const rawTokens = cleaned ? cleaned.split(' ').filter(Boolean) : [];
+
+  let area = findAreaFromText(cleaned);
+  let category = '';
+  const keywords = [];
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  const pushUnique = (list, v) => {
+    if (v && list.indexOf(v) < 0) list.push(v);
+  };
+
+  rawTokens.forEach((rawTok) => {
+    const bare = String(rawTok).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
+    // 걷어낼 말은 원형 그대로 먼저 걸러냅니다. (단 '맛집'·'카페'는 카테고리 재료로 남깁니다)
+    if (bare && stopSet.has(bare.toLowerCase()) && CAPTION_CATEGORY_WORDS.indexOf(bare) < 0) return;
+    let tok = stripTokenSuffixes(stripParticles(bare));
+    if (!tok) return;
+    if (/^[0-9]+(개|곳|분|초|원|년|월|일|명|위|차|인)?$/.test(tok)) return;
+    if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
+    if (CITY_NOISE.indexOf(tok) >= 0) return;
+    // 카테고리 단어('맛집'·'카페'…)는 지우지 않고 검색어 재료로 남깁니다.
+    if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) {
+      if (!category) category = tok;
+      return;
+    }
+    if (stopSet.has(tok.toLowerCase())) return;
+
+    // 지역명: '성수동' / '성수동맛집'(→성수동) / '이태원브런치'(→이태원 + 브런치)
+    const suffixArea = tok.match(/^([가-힣]{2,5})(동|읍|면|역|구|시)$/);
+    if (suffixArea && AREA_SUFFIX_BLOCK.indexOf(suffixArea[1]) < 0) {
+      const name =
+        suffixArea[2] === '역' || suffixArea[2] === '구' || suffixArea[2] === '시'
+          ? suffixArea[1]
+          : suffixArea[1] + suffixArea[2];
+      if (!area) area = name;
+      return;
+    }
+    if (KNOWN_AREAS.indexOf(tok) >= 0) {
+      if (!area) area = tok;
+      return;
+    }
+    const knownPrefix = KNOWN_AREAS.find((a) => tok.indexOf(a) === 0 && tok.length > a.length + 1);
+    if (knownPrefix) {
+      if (!area) area = knownPrefix;
+      // '성수동카페' → 지역(성수) + 동 + 카테고리(카페)
+      const rest = stripTokenSuffixes(
+        tok.slice(knownPrefix.length).replace(/^(동|읍|면|역|구|시)(?=[가-힣])/, '')
+      );
+      if (rest && CAPTION_CATEGORY_WORDS.indexOf(rest) >= 0) {
+        if (!category) category = rest;
+        return;
+      }
+      if (rest.length >= 2 && !stopSet.has(rest.toLowerCase())) pushUnique(keywords, rest);
+      return;
+    }
+    if (tok.length < 2) return;
+    if (!/[가-힣A-Za-z]/.test(tok)) return;
+    if (area && tok === area) return;
+    pushUnique(keywords, tok);
+  });
+
+  const storeName = findStoreName(raw, area);
+  // 상호명은 이미 첫 검색어('지역 + 상호')로 들어가므로 키워드 목록에서는 뺍니다.
+  const keywordList = keywords.filter(
+    (k) => !storeName || normalizeName(k) !== normalizeName(storeName)
+  );
+
+  const queries = [];
+  const pushQuery = (parts) => {
+    const v = parts
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (v.length >= 2) pushUnique(queries, v);
+  };
+
+  if (storeName) {
+    if (area) pushQuery([area, storeName]);
+    pushQuery([storeName]);
+  }
+  if (area && keywordList.length) pushQuery([area, keywordList[0]]);
+  if (area && category) pushQuery([area, category]);
+  if (area && keywordList.length > 1) pushQuery([area, keywordList[0], keywordList[1]]);
+  if (area) pushQuery([area]);
+  if (!area && keywordList.length) pushQuery([keywordList[0]]);
+  if (!area && keywordList.length > 1) pushQuery(keywordList.slice(0, 2));
+  if (!queries.length && cleaned) pushQuery([cleaned.slice(0, 40)]);
+
+  return { queries, area, storeName, category, keywords: keywordList, cleaned };
+}
+
+/** 캡션이 아니라 '제목'이 막힌 플랫폼에서 화면에 띄울 안내 문구 */
+export function titleNoticeOf(platform) {
+  if (platform === 'instagram') return '인스타는 보안상 제목을 못 읽어와요';
+  if (platform === 'tiktok') return '틱톡은 보안상 제목을 못 읽어와요';
+  return '이 링크는 제목을 못 읽어와요';
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -76,12 +576,24 @@ export const sourceAdapters = {
   youtube: {
     keyEnv: 'EXPO_PUBLIC_YOUTUBE_API_KEY',
     /**
-     * 유튜브 Data API v3 videos.list (part=snippet) 1유닛.
-     * @returns {Promise<{title:string, description:string, thumbnail?:string}|null>}
+     * 1) **무인증 oEmbed** — 키 없이 제목·썸네일을 읽습니다. (v1.2)
+     *    GET https://www.youtube.com/oembed?url=<영상 URL>&format=json
+     * 2) EXPO_PUBLIC_YOUTUBE_API_KEY 가 있으면 Data API v3 로 설명(description)까지 덧붙입니다.
+     * @returns {Promise<{title:string, description:string, thumbnail?:string, source:string}|null>}
      */
     async fetchMetadata(parsed) {
+      const oembed = await fetchYouTubeOembed(parsed);
+      const base = oembed
+        ? {
+            title: oembed.title,
+            description: '',
+            thumbnail: oembed.thumbnail,
+            authorName: oembed.authorName || '',
+            source: 'youtube-oembed',
+          }
+        : null;
       const key = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
-      if (!key) return null; // 키 없음 → 오프라인 추출기로 폴백
+      if (!key) return base; // 키가 없어도 oEmbed 제목으로 충분합니다.
       try {
         const endpoint =
           'https://www.googleapis.com/youtube/v3/videos?part=snippet&id=' +
@@ -89,41 +601,69 @@ export const sourceAdapters = {
           '&key=' +
           encodeURIComponent(key);
         const res = await fetch(endpoint);
-        if (!res.ok) return null;
+        if (!res || !res.ok) return base;
         const json = await res.json();
         const item = json && json.items && json.items[0];
-        if (!item) return null;
+        if (!item) return base;
+        const snippet = item.snippet || {};
         return {
-          title: item.snippet.title,
-          description: item.snippet.description,
+          title: (base && base.title) || snippet.title || '',
+          description: snippet.description || '',
           thumbnail:
-            item.snippet.thumbnails && item.snippet.thumbnails.high
-              ? item.snippet.thumbnails.high.url
-              : null,
+            (base && base.thumbnail) ||
+            (snippet.thumbnails && snippet.thumbnails.high ? snippet.thumbnails.high.url : null),
+          source: base ? 'youtube-oembed+api' : 'youtube-api',
         };
       } catch (e) {
-        return null;
+        return base;
       }
     },
   },
   instagram: {
     /**
-     * 인스타는 공식 캡션 API를 열어 주지 않습니다.
-     * 공유 시트에서 넘어온 캡션(caption)을 우선 쓰고, 없으면 og 메타데이터 best-effort.
-     * v1.0은 '캡션 없음'이 기본값이라고 보고 후보 1탭 확인 UX로 보완합니다.
+     * 인스타는 공식 캡션 API를 열어 주지 않고, 페이지도 로그인 월로 막습니다.
+     * 1) 공유 시트에서 함께 복사된 캡션을 우선 사용 (가장 정확)
+     * 2) 캡션이 없으면 네이티브에서만 OG 메타를 best-effort — 로그인 월이면 조용히 null
+     *    → 화면은 '인스타는 보안상 제목을 못 읽어와요' 안내 + [가게명으로 찾기] 버튼으로 이어집니다.
      */
     async fetchMetadata(parsed, sharedCaption) {
-      if (sharedCaption) return { title: '', description: sharedCaption, thumbnail: null };
+      if (sharedCaption && String(sharedCaption).trim()) {
+        return {
+          title: '',
+          description: String(sharedCaption).trim(),
+          thumbnail: null,
+          source: 'shared-caption',
+        };
+      }
+      const page = await fetchPageMeta(parsed.url);
+      if (page && page.ok) {
+        return { title: page.title, description: page.description, thumbnail: null, source: 'og' };
+      }
       return null;
     },
   },
   tiktok: {
     async fetchMetadata() {
-      return null; // v1.0 범위 밖 (약관 확인 후 v1.1)
+      return null; // 틱톡은 로그인 월 + 약관 확인 전 — v1.2 범위 밖
     },
   },
   naver: {
-    async fetchMetadata() {
+    /** 네이버 블로그·웹 페이지는 OG 메타로 제목을 읽습니다. (웹 런타임은 CORS 로 건너뜀) */
+    async fetchMetadata(parsed) {
+      const page = await fetchPageMeta(parsed.url);
+      if (page && page.ok) {
+        return { title: page.title, description: page.description, thumbnail: null, source: 'og' };
+      }
+      return null;
+    },
+  },
+  unknown: {
+    /** 일반 웹 페이지도 같은 방식으로 제목을 읽습니다. (v1.2) */
+    async fetchMetadata(parsed) {
+      const page = await fetchPageMeta(parsed.url);
+      if (page && page.ok) {
+        return { title: page.title, description: page.description, thumbnail: null, source: 'og' };
+      }
       return null;
     },
   },
@@ -721,7 +1261,7 @@ export const localSearchAdapter = {
 };
 
 // ─────────────────────────────────────────────────────────────
-// 검색어 만들기 — LLM이 있으면 정확하게, 없으면 캡션 첫 문장으로
+// 검색어 만들기 — LLM이 있으면 정확하게, 없으면 v1.2 키워드 정제기로
 // ─────────────────────────────────────────────────────────────
 function deriveQuery(text, llm) {
   if (llm && llm.name) {
@@ -735,27 +1275,21 @@ function deriveQuery(text, llm) {
       area,
       category: llm.category || '',
       menuTags: Array.isArray(llm.menuTags) ? llm.menuTags : [],
+      queryList: query ? [query] : [],
     };
   }
-  // LLM 키가 없을 때의 2차 폴백: 해시태그·링크·이모지를 걷어낸 첫 문장을 검색어로 씁니다.
-  // (구글 Text Search는 자연어 문장도 잘 받아 주고, 카카오/네이버는 앞부분 키워드 위주로 매칭합니다)
-  const cleaned = String(text || '')
-    .replace(/#[^\s#]+/g, ' ')
-    .replace(/@[A-Za-z0-9._]+/g, ' ')
-    .replace(/https?:\/\/\S+/g, ' ')
-    // 이모지는 서로게이트 쌍으로 지웁니다. (Hermes 등 일부 엔진의 \u{...} 정규식 회피)
-    .replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, ' ')
-    .replace(/[\u2600-\u27BF\u2B00-\u2BFF\uFE0F]/g, ' ')
-    // 줄바꿈은 남겨 두고(문장 구분) 공백만 정리합니다. 이후 '첫 문장'만 검색어로 씁니다.
-    .replace(/[^\S\n]+/g, ' ')
-    .trim();
-  const llmExtras = {
-    category: (llm && llm.category) || '',
+  // 키가 없거나 LLM 결과가 비었을 때: v1.2 정제기가 만든 '지역+상호/메뉴' 후보를 순서대로 씁니다.
+  const keyworded = extractSearchQueries(text);
+  return {
+    query: keyworded.queries[0] || '',
+    name: keyworded.storeName || '',
+    area: keyworded.area || '',
+    category: (llm && llm.category) || keyworded.category || '',
     menuTags: llm && Array.isArray(llm.menuTags) ? llm.menuTags : [],
+    queryList: keyworded.queries,
+    keywords: keyworded.keywords,
+    cleaned: keyworded.cleaned,
   };
-  if (!cleaned) return { query: '', name: '', area: '', ...llmExtras };
-  const firstLine = cleaned.split(/[|\n·,]/)[0].replace(/\s+/g, ' ').trim() || cleaned.replace(/\s+/g, ' ');
-  return { query: firstLine.slice(0, 40), name: '', area: '', ...llmExtras };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -899,38 +1433,113 @@ export function offlineSmartExtract(parsed, caption) {
 export const EXTRACT_STAGES = ['링크 확인', '캡션 분석', '지도 좌표 매칭'];
 
 /**
- * @param {string} rawUrl
- * @param {{caption?: string}} options
+ * @param {string} rawInput URL 하나, 또는 공유 시트에서 복사한 **문구 + URL** 덩어리
+ * @param {{caption?: string, maxQueries?: number}} options
  * @returns {Promise<{ok:boolean, reason?:string, platform?:string, platformLabel?:string,
- *                    title?: string, candidates?: Array<object>, usedAdapter?: string,
+ *                    title?: string, sourceTitle?: string, titleStatus?: string, titleNotice?: string,
+ *                    suggestedQuery?: string, query?: string, queryList?: string[],
+ *                    attempts?: Array<object>, candidates?: Array<object>, usedAdapter?: string,
  *                    providersTried?: string[], providersUsed?: string[], failures?: Array<object>}>}
  */
-export async function extractPlaces(rawUrl, options = {}) {
-  const parsed = parseUrl(rawUrl);
+export async function extractPlaces(rawInput, options = {}) {
+  const shared = splitSharedText(rawInput);
+  const targetUrl = shared.url || String(rawInput == null ? '' : rawInput).trim();
+  const parsed = parseUrl(targetUrl);
   if (!parsed.ok) {
-    return { ok: false, reason: parsed.reason };
+    return {
+      ok: false,
+      reason: shared.hasText
+        ? '링크가 들어 있지 않아요. 공유 문구와 함께 링크를 붙여넣어 주세요.'
+        : parsed.reason,
+    };
   }
 
+  const sharedCaption = String(options.caption || shared.caption || '').trim();
   const adapter = sourceAdapters[parsed.platform];
-  const meta = adapter ? await adapter.fetchMetadata(parsed, options.caption) : null;
-  const text = [meta && meta.title, meta && meta.description, options.caption]
-    .filter(Boolean)
-    .join('\n');
+  const meta = adapter ? await adapter.fetchMetadata(parsed, sharedCaption) : null;
+  const sourceTitle = String((meta && meta.title) || '').trim();
+  const description = String((meta && meta.description) || '').trim();
+  const text = [sourceTitle, description, sharedCaption].filter(Boolean).join('\n');
 
-  // 1) 캡션 분석(LLM) → 검색어 확정
+  // 제목·캡션을 못 읽은 경우를 화면에 그대로 알려 줍니다. (인스타 로그인 월 등)
+  const blocked = !sourceTitle && BLOCKED_PLATFORMS.indexOf(parsed.platform) >= 0;
+  const titleStatus = sourceTitle
+    ? String((meta && meta.source) || '').indexOf('youtube') === 0
+      ? 'video'
+      : 'page'
+    : sharedCaption
+    ? 'caption'
+    : blocked
+    ? 'blocked'
+    : 'none';
+  const titleNotice = blocked ? titleNoticeOf(parsed.platform) + ' — 가게명으로 바로 찾아보세요.' : '';
+  const suggested = extractSearchQueries(text || sharedCaption);
+  const suggestedQuery = suggested.queries[0] || '';
+
+  // 1) 캡션 분석(LLM) → 검색어 후보 확정
   const llm = await llmAdapter.extractPlaceJson(text);
   const derived = deriveQuery(text, llm);
+  const limitQueries = Math.max(1, Number(options.maxQueries) || 2);
+  const queryList = (
+    derived.queryList && derived.queryList.length
+      ? derived.queryList
+      : derived.query
+      ? [derived.query]
+      : []
+  ).slice(0, limitQueries);
 
-  // 2) 카카오·네이버·구글 병렬 조회 + 후보 병합 (설정된 키만)
-  const chain = derived.query
-    ? await searchPlaceProviders({ query: derived.query, limit: 3 })
-    : { candidates: [], providersTried: [], providersUsed: [], failures: [], reason: 'empty-query' };
+  // 2) 후보 검색어를 순서대로 조회 + 후보 병합 (첫 후보로 결과가 없으면 다음 후보로 자동 재시도)
+  let chain = {
+    candidates: [],
+    providersTried: [],
+    providersUsed: [],
+    failures: [],
+    reason: 'empty-query',
+  };
+  let usedQuery = '';
+  const attempts = [];
+  for (const q of queryList) {
+    const res = await searchPlaceProviders({ query: q, limit: 3 });
+    attempts.push({
+      query: q,
+      resultCount: (res.candidates || []).length,
+      providersUsed: res.providersUsed || [],
+      failures: res.failures || [],
+      reason: res.reason,
+    });
+    chain = {
+      candidates: res.candidates || [],
+      providersTried: Array.from(
+        new Set([...(chain.providersTried || []), ...(res.providersTried || [])])
+      ),
+      providersUsed: Array.from(
+        new Set([...(chain.providersUsed || []), ...(res.providersUsed || [])])
+      ),
+      failures: [...(chain.failures || []), ...(res.failures || [])],
+      reason: res.reason,
+    };
+    if (chain.candidates.length) {
+      usedQuery = q;
+      break;
+    }
+  }
+
+  const base = {
+    ok: true,
+    ...parsed,
+    sourceTitle,
+    titleStatus,
+    titleNotice,
+    suggestedQuery,
+    query: usedQuery || derived.query || '',
+    queryList,
+    attempts,
+  };
 
   if (chain.candidates.length) {
     const kind = [llm && llm.name ? 'llm' : null, ...chain.providersUsed].filter(Boolean).join('+');
     return {
-      ok: true,
-      ...parsed,
+      ...base,
       title: chain.candidates[0].name,
       candidates: chain.candidates.map((c) => ({
         ...c,
@@ -939,7 +1548,6 @@ export async function extractPlaces(rawUrl, options = {}) {
         menuTags: derived.menuTags && derived.menuTags.length ? derived.menuTags : c.menuTags || [],
       })),
       usedAdapter: kind,
-      query: derived.query,
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
@@ -949,8 +1557,7 @@ export async function extractPlaces(rawUrl, options = {}) {
   // 3) 지도 결과는 없지만 LLM이 장소명을 잡은 경우 → 수동 확인 후보
   if (llm && llm.name) {
     return {
-      ok: true,
-      ...parsed,
+      ...base,
       title: llm.name,
       candidates: [
         {
@@ -968,7 +1575,6 @@ export async function extractPlaces(rawUrl, options = {}) {
         },
       ],
       usedAdapter: 'llm',
-      query: derived.query,
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
@@ -976,20 +1582,19 @@ export async function extractPlaces(rawUrl, options = {}) {
   }
 
   // 4) 키가 없거나 전부 실패 → 오프라인 스마트 추출기
-  const candidates = offlineSmartExtract(parsed, text || options.caption || '');
+  const candidates = offlineSmartExtract(parsed, text || sharedCaption);
   return {
-    ok: true,
-    ...parsed,
+    ...base,
     title: candidates[0] ? candidates[0].name : parsed.platformLabel,
     candidates,
     // 키는 넣었는데 결과가 없었던 경우와, 키 자체가 없는 경우를 구분해 둡니다.
     usedAdapter: chain.providersTried.length ? 'offline-fallback' : 'offline',
-    query: derived.query || '',
     providersTried: chain.providersTried,
     providersUsed: chain.providersUsed,
     failures: chain.failures,
   };
 }
+
 
 /** '가게명으로 찾기' 모드의 원탭 예시 검색어 */
 export const DIRECT_PRESETS = ['성수동 소금빵', '연남동 딸기케이크', '검단 카페'];

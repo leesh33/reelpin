@@ -12,6 +12,17 @@ import {
   offlineSmartExtract,
   DIRECT_PRESETS,
   PRESETS,
+  // v1.2
+  splitSharedText,
+  trimUrlTail,
+  fetchYouTubeOembed,
+  parseHtmlMeta,
+  extractSearchQueries,
+  titleNoticeOf,
+  youtubeWatchUrlOf,
+  PAGE_META_TIMEOUT_MS,
+  findStoreName,
+  cleanCaptionText,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -28,6 +39,11 @@ let fails = 0;
 const check = (label, cond, extra) => {
   if (cond) console.log('OK   ' + label);
   else { fails++; console.log('FAIL ' + label + (extra ? '  -> ' + extra : '')); }
+};
+
+// 단위 테스트는 네트워크를 타지 않습니다. (실제 호출 검증은 `npm run test:live`)
+globalThis.fetch = async () => {
+  throw new Error('offline-test-fetch');
 };
 
 // ── 1. URL 파싱 ───────────────────────────────────────────────
@@ -393,7 +409,7 @@ await extractPlaces(PRESETS[0].url, {
   caption: '🍞 성수 소금빵 맛집 #성수맛집 #소금빵 @food https://t.co/x',
 });
 const sentQuery = decodeURIComponent(calls[0].url.split('query=')[1].split('&')[0]);
-check('query: hashtag/emoji/link stripped', sentQuery === '성수 소금빵 맛집', sentQuery);
+check('query: hashtag/emoji/link stripped', sentQuery === '성수 소금빵', sentQuery);
 
 // ── 4. 오프라인 추출기 단위 ───────────────────────────────────
 const off = offlineSmartExtract({ url: 'https://www.instagram.com/reel/x/', contentId: 'x' }, '검단 아라뱃길 카페');
@@ -484,6 +500,188 @@ const opened = await openPlace('https://place.map.kakao.com/12345');
 check('openPlace: 열기 성공', opened.opened === true && opened.url === 'https://place.map.kakao.com/12345', JSON.stringify(opened));
 const openedEmpty = await openPlace('');
 check('openPlace: 빈 주소는 열지 않음', openedEmpty.opened === false, JSON.stringify(openedEmpty));
+
+// ── 9. v1.2: 공유 텍스트 분리 · YouTube oEmbed · OG 메타 · 검색어 정제 ──
+// 9-1. 공유 시트의 "문구 + 링크" 혼합 입력
+const shared1 = splitSharedText('성수동 소금빵 맛집 베통 https://www.instagram.com/reel/C8xSg2BpQ1K/ 더 보기');
+check('shared: 링크만 뽑기', shared1.url === 'https://www.instagram.com/reel/C8xSg2BpQ1K/', shared1.url);
+check('shared: 주변 문구는 캡션으로', shared1.caption.includes('성수동 소금빵') && shared1.caption.includes('더 보기'), shared1.caption);
+check('shared: 링크만 있으면 캡션 없음', splitSharedText('https://youtu.be/9Xk2mQpLz7A').caption === '', splitSharedText('https://youtu.be/9Xk2mQpLz7A').caption);
+check('shared: 문장부호 떼기', splitSharedText('(https://youtu.be/9Xk2mQpLz7A).').url === 'https://youtu.be/9Xk2mQpLz7A', splitSharedText('(https://youtu.be/9Xk2mQpLz7A).').url);
+check('shared: 여러 링크', splitSharedText('https://a.com/1 https://b.com/2').urls.length === 2, String(splitSharedText('https://a.com/1 https://b.com/2').urls.length));
+check('shared: 링크 없으면 빈 url', splitSharedText('성수동 소금빵').url === '' && splitSharedText('성수동 소금빵').hasText === true);
+check('shared: 줄바꿈 캡션 정리', splitSharedText('첫 줄\n\n\n둘째 줄 https://youtu.be/9Xk2mQpLz7A').caption === '첫 줄\n둘째 줄', splitSharedText('첫 줄\n\n\n둘째 줄 https://youtu.be/9Xk2mQpLz7A').caption);
+check('shared: trimUrlTail 직접', trimUrlTail('https://a.com/x),') === 'https://a.com/x', trimUrlTail('https://a.com/x),'));
+check('shared: 링크 없으면 링크 안내', true);
+
+// 9-2. YouTube는 키 없이 oEmbed로 제목을 읽습니다.
+setKeys({});
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+calls = [];
+handler = () =>
+  jsonRes({
+    title: '성수동 소금빵 맛집 베통 #shorts',
+    author_name: '맛집TV',
+    thumbnail_url: 'https://i.ytimg.com/x.jpg',
+  });
+const oeFlow = await extractPlaces('https://www.youtube.com/shorts/9Xk2mQpLz7A');
+const oeCall = calls.find((c) => String(c.url).includes('youtube.com/oembed'));
+check('oembed: 무인증 호출', !!oeCall, calls.map((c) => c.url).join(' | ').slice(0, 160));
+check(
+  'oembed: watch 주소를 인코딩해 전달',
+  !!oeCall && oeCall.url.includes(encodeURIComponent('https://www.youtube.com/watch?v=9Xk2mQpLz7A')),
+  oeCall && oeCall.url
+);
+check('oembed: 키 없이도 제목 읽음', oeFlow.sourceTitle === '성수동 소금빵 맛집 베통 #shorts', oeFlow.sourceTitle);
+check('oembed: titleStatus=video', oeFlow.titleStatus === 'video', oeFlow.titleStatus);
+check('oembed: 제목에서 지역 추출', oeFlow.suggestedQuery === '성수동 베통', oeFlow.suggestedQuery);
+check('oembed: youtu.be도 같은 영상 ID', youtubeWatchUrlOf(parseUrl('https://youtu.be/9Xk2mQpLz7A')) === 'https://www.youtube.com/watch?v=9Xk2mQpLz7A');
+check('oembed: 실패해도 앱은 계속', (handler = () => errRes(404)) && (await (async () => {
+  const r = await extractPlaces('https://youtu.be/9Xk2mQpLz7A');
+  return r.ok === true && r.sourceTitle === '';
+})()), 'oembed 실패 처리');
+check('oembed: fetchYouTubeOembed 단위(404)', (await fetchYouTubeOembed(parseUrl('https://youtu.be/9Xk2mQpLz7A'))) === null);
+check('oembed: 타임아웃 기본 3.5초', PAGE_META_TIMEOUT_MS === 3500, String(PAGE_META_TIMEOUT_MS));
+
+// 9-3. 유튜브 API 키가 있으면 설명(description)까지 병합 (제목은 oEmbed 우선)
+setKeys({ kakao: 'KAKAOKEY' });
+process.env.EXPO_PUBLIC_YOUTUBE_API_KEY = 'YTKEY';
+calls = [];
+handler = (url) => {
+  if (String(url).includes('youtube.com/oembed')) return jsonRes({ title: '연남동 딸기 케이크 맛집', author_name: 'x' });
+  if (String(url).includes('googleapis.com/youtube/v3')) {
+    return jsonRes({
+      items: [
+        {
+          snippet: {
+            title: '연남동 딸기 케이크 맛집',
+            description: '성미산로 디저트 카페 추천',
+            thumbnails: { high: { url: 'https://i.ytimg.com/h.jpg' } },
+          },
+        },
+      ],
+    });
+  }
+  if (String(url).includes('dapi.kakao.com')) return jsonRes({ documents: [KAKAO_DOC] });
+  return jsonRes({ items: [], places: [] });
+};
+const ytApi = await extractPlaces('https://youtu.be/9Xk2mQpLz7A');
+check('oembed+api: Data API도 호출', calls.some((c) => String(c.url).includes('part=snippet')), calls.map((c) => c.url).join(' | ').slice(0, 200));
+check('oembed+api: 제목은 oEmbed 값', ytApi.sourceTitle === '연남동 딸기 케이크 맛집', ytApi.sourceTitle);
+check('oembed+api: 설명이 검색어에 반영', ytApi.query.includes('연남동'), ytApi.query);
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+
+// 9-4. 인스타: 공유 캡션이 있으면 페이지를 긁지 않고 그대로 씁니다.
+calls = [];
+handler = (url) => (String(url).includes('dapi.kakao.com') ? jsonRes({ documents: [KAKAO_DOC] }) : jsonRes({}));
+const igShared = await extractPlaces('성수동 소금빵 맛집 베통 https://www.instagram.com/reel/C8xSg2BpQ1K/');
+check('instagram: 캡션 있으면 페이지 요청 없음', !calls.some((c) => String(c.url).includes('instagram.com')), calls.map((c) => c.url).join('|'));
+check('instagram: 캡션으로 검색', String(igShared.query).includes('성수동'), igShared.query);
+check('instagram: titleStatus=caption', igShared.titleStatus === 'caption', igShared.titleStatus);
+
+// 9-5. 인스타 + 캡션 없음 → 로그인 월이면 예외 없이 폴백 + [가게명으로 찾기] 안내
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('instagram.com')) {
+    return {
+      ok: true,
+      status: 200,
+      url: 'https://www.instagram.com/accounts/login/?next=/reel/x/',
+      json: async () => ({}),
+      text: async () => '<html><head><title>Login • Instagram</title></head></html>',
+    };
+  }
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [] });
+  return jsonRes({ items: [], places: [] });
+};
+const igBlocked = await extractPlaces('https://www.instagram.com/reel/C8xSg2BpQ1K/');
+check('instagram: 로그인 월이어도 결과는 ok', igBlocked.ok === true, JSON.stringify(igBlocked).slice(0, 120));
+check('instagram: titleStatus=blocked', igBlocked.titleStatus === 'blocked', igBlocked.titleStatus);
+check('instagram: sourceTitle 비어 있음', igBlocked.sourceTitle === '', igBlocked.sourceTitle);
+check('instagram: 안내 문구', String(igBlocked.titleNotice).includes('인스타는 보안상 제목을 못 읽어와요'), igBlocked.titleNotice);
+check('instagram: 안내에 가게명 찾기 유도', String(igBlocked.titleNotice).includes('가게명'), igBlocked.titleNotice);
+check('instagram: 안내 문구 단위', titleNoticeOf('instagram') === '인스타는 보안상 제목을 못 읽어와요', titleNoticeOf('instagram'));
+
+// 9-6. 네이버 블로그·일반 웹 → OG 메타
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('blog.naver.com')) {
+    return {
+      ok: true,
+      status: 200,
+      url: u,
+      json: async () => ({}),
+      text: async () =>
+        '<html><head><meta property="og:title" content="성수동 소금빵 맛집 베통 후기"><meta property="og:description" content="연무장7가길 8, 오픈런 필수"></head></html>',
+    };
+  }
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [KAKAO_DOC] });
+  return jsonRes({ items: [], places: [] });
+};
+const blogFlow = await extractPlaces('https://blog.naver.com/kkansyo/223123456789');
+check('og: 페이지 요청 보냄', calls.some((c) => String(c.url).includes('blog.naver.com')), calls.map((c) => c.url).join(' | ').slice(0, 160));
+check('og: og:title 읽음', blogFlow.sourceTitle === '성수동 소금빵 맛집 베통 후기', blogFlow.sourceTitle);
+check('og: 제목으로 검색어 생성', String(blogFlow.suggestedQuery).includes('성수동'), blogFlow.suggestedQuery);
+check('og: titleStatus=page', blogFlow.titleStatus === 'page', blogFlow.titleStatus);
+
+// 9-7. OG 파서 단위 · 일반 웹(unknown) 링크도 지원
+const parsedMeta = parseHtmlMeta('<html><head><meta content="베통 성수" property="og:title"><title>Beton</title></head></html>');
+check('og 파서: content가 앞에 와도 읽음', parsedMeta.title === '베통 성수', parsedMeta.title);
+check('og 파서: og 없으면 <title>', parseHtmlMeta('<title>성수 카페 &amp; 베이커리</title>').title === '성수 카페 & 베이커리', parseHtmlMeta('<title>성수 카페 &amp; 베이커리</title>').title);
+check('og 파서: 로그인 월 감지', parseHtmlMeta('<title>Login • Instagram</title>').loginWall === true);
+check('og 파서: 메타 없으면 빈 값', parseHtmlMeta('<html></html>').title === '' && parseHtmlMeta('').description === '');
+check('og: 일반 웹 페이지도 지원', isSupportedUrl('https://beton.kr/store') === true);
+calls = [];
+handler = (url) =>
+  String(url).includes('beton.kr')
+    ? { ok: true, status: 200, url: String(url), json: async () => ({}), text: async () => '<html><head><title>베통 성수</title></head></html>' }
+    : jsonRes({ documents: [], items: [], places: [] });
+const webFlow = await extractPlaces('https://beton.kr/store');
+check('og: 일반 웹 제목 읽음', webFlow.sourceTitle === '베통 성수', webFlow.sourceTitle);
+check('og: unknown 플랫폼도 결과 반환', webFlow.ok === true && webFlow.platform === 'unknown', webFlow.platform);
+
+// 9-8. 검색어 정제기
+const q1 = extractSearchQueries('🍞 성수동 소금빵 맛집 베통 다녀왔어요 #성수맛집 #소금빵 #먹방 #shorts');
+check('정제: 지역 = 성수동', q1.area === '성수동', q1.area);
+check('정제: 상호 = 베통', q1.storeName === '베통', q1.storeName);
+check('정제: 첫 검색어 = 지역+상호', q1.queries[0] === '성수동 베통', q1.queries.join(' / '));
+check('정제: 이모지·해시태그 기호 제거', !/[#＃🍞]/.test(q1.cleaned), q1.cleaned);
+check('정제: 상투어 제거', ['먹방', 'shorts', '맛집', '다녀왔어요'].every((w) => q1.keywords.indexOf(w) < 0), q1.keywords.join(','));
+check('정제: 메뉴 키워드 유지', q1.keywords.indexOf('소금빵') >= 0, q1.keywords.join(','));
+check('정제: 지역+메뉴 후보도 포함', q1.queries.indexOf('성수동 소금빵') >= 0, q1.queries.join(' / '));
+const q2 = extractSearchQueries('평균리뷰 1000개 이상, 성수동 카페추천! ☕️');
+check('정제: 카페추천 → 성수동 카페', q2.queries[0] === '성수동 카페', q2.queries.join(' / '));
+const q3 = extractSearchQueries('이태원 데이트 추천!! 호주식 브런치 카페!! #이태원맛집');
+check('정제: 접미사 없는 지명(이태원)', q3.area === '이태원', q3.area);
+check('정제: 웨이팅·솔직후기 같은 상투어', extractSearchQueries('[베통] 성수 소금빵 웨이팅 솔직후기').keywords.indexOf('웨이팅') < 0);
+check('정제: ~역은 역명만', extractSearchQueries('성수역 3번 출구 소금빵').area === '성수', extractSearchQueries('성수역 3번 출구 소금빵').area);
+check('정제: 조사 제거(전문가의 → 전문가)', cleanCaptionText('전문가의').trim() === '전문가의' && extractSearchQueries('성수동 전문가의 추천').keywords.indexOf('전문가의') < 0);
+check('정제: 빈 입력은 빈 결과', extractSearchQueries('').queries.length === 0);
+check('정제: 상호명 단위(findStoreName)', findStoreName('성수동 소금빵 맛집 베통', '성수동') === '베통', findStoreName('성수동 소금빵 맛집 베통', '성수동'));
+
+// 9-9. 첫 후보로 결과가 없으면 다음 후보로 자동 재시도
+setKeys({ kakao: 'KAKAOKEY' });
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: '성수동 소금빵 맛집 베통' });
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q === '베통' ? [KAKAO_DOC] : [] });
+  }
+  return jsonRes({ items: [], places: [] });
+};
+const retry = await extractPlaces('https://youtu.be/9Xk2mQpLz7A');
+check('재시도: 두 번째 후보에서 결과', retry.query === '베통' && retry.candidates.length > 0, retry.query);
+check('재시도: 시도 기록 2건', Array.isArray(retry.attempts) && retry.attempts.length === 2, JSON.stringify(retry.attempts));
+check('재시도: 첫 시도는 결과 0건', retry.attempts[0].resultCount === 0, JSON.stringify(retry.attempts[0]));
+
+// 9-10. 링크가 없는 입력은 안내 문구로 거절
+const noUrl = await extractPlaces('성수동 소금빵 맛집 베통');
+check('입력: 링크 없으면 안내', noUrl.ok === false && String(noUrl.reason).includes('링크'), noUrl.reason);
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;
