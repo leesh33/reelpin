@@ -1150,6 +1150,9 @@ check('multi: 설명글 문장은 목록이 아님(엄마손횟집 회귀)', ext
 check('multi: 빈 입력은 빈 배열', extractCandidatesFromText('').length === 0 && extractCandidatesFromText(null).length === 0);
 check('multi: 문장형 줄은 목록 줄이 아님', looksLikeListLine('결론적으로 말씀 드리면 비쌉니다..') === false && looksLikeListLine('성수동 베통') === true);
 check('multi: 번호 표식 제거', parseListItem('3) 성수동 베통').name === '베통', JSON.stringify(parseListItem('3) 성수동 베통')));
+check('multi: 한 줄에 번호+쉼표', extractCandidatesFromText('1. 성수동 베통, 2. 연남동 뚜레쥬르').length === 2, JSON.stringify(extractCandidatesFromText('1. 성수동 베통, 2. 연남동 뚜레쥬르').map((i) => i.name)));
+check('multi: 같은 줄이 두 번 와도 후보는 3곳', extractCandidatesFromText(NUMBERED_TEXT + '\n' + NUMBERED_TEXT).length === 3, String(extractCandidatesFromText(NUMBERED_TEXT + '\n' + NUMBERED_TEXT).length));
+check('multi: 한 줄 쉼표 목록(공유 캡션 형태)', extractCandidatesFromText('성수동 베통, 연남동 뚜레쥬르, 망원동 우동집').length === 3);
 
 // 13-2. 여러 후보를 지도 3사에 각각 물어보기 (fetch 스텁)
 setKeys({ kakao: 'KAKAOKEY' });
@@ -1179,6 +1182,23 @@ check('multi: extractPlaces mode=multi', multiResult.mode === 'multi', String(mu
 check('multi: 결과 후보 2곳', (multiResult.candidates || []).length === 2, JSON.stringify((multiResult.candidates || []).map((c) => c.name)));
 check('multi: 못 찾은 항목도 함께', (multiResult.unmatched || []).length === 1, JSON.stringify(multiResult.unmatched));
 check('multi: usedAdapter 에 multi 표시', String(multiResult.usedAdapter).indexOf('multi') === 0, String(multiResult.usedAdapter));
+
+// 13-4. 공유 캡션이 설명글과 같은 문구로 두 번 들어와도(인스타 공유) 목록이 무너지지 않음
+const dupCaption = '성수동 베통, 연남동 뚜레쥬르, 망원동 우동집';
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    if (q.indexOf('뚜레쥬르') >= 0) return jsonRes({ documents: [DOC_TOUR] });
+    if (q.indexOf('우동') >= 0) return jsonRes({ documents: [{ ...DOC_BETONG, id: 'u1', place_name: '망원동 우동집' }] });
+    return jsonRes({ documents: [DOC_BETONG] });
+  }
+  return jsonRes({ documents: [], items: [], places: [] });
+};
+const dupResult = await extractPlaces('https://www.instagram.com/reel/C9multiTest1/', { caption: dupCaption });
+check('multi: 공유 캡션 중복이어도 mode=multi', dupResult.mode === 'multi', String(dupResult.mode));
+check('multi: 공유 캡션 중복이어도 3곳', (dupResult.candidates || []).length === 3, JSON.stringify((dupResult.candidates || []).map((c) => c.name)));
 
 // ═════════════════════════════════════════════════════════════
 // 14. v2.0 — 네이버 지도 링크 직행 + 상세 시트 정보(전화·주소)

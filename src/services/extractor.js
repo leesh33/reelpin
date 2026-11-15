@@ -1144,10 +1144,14 @@ export function extractCandidatesFromText(text, options = {}) {
   const raw = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
   if (!raw.trim()) return [];
   const max = Math.max(1, Math.min(MAX_MULTI_CANDIDATES, Number(options.max) || MAX_MULTI_CANDIDATES));
-  const lines = raw
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const lines = Array.from(
+    new Set(
+      raw
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+    )
+  );
 
   const numbered = lines.filter((l) => NUMBERED_LINE_RE.test(l));
   let items = [];
@@ -2373,7 +2377,8 @@ export async function extractPlaces(rawInput, options = {}) {
   const sourceTitle = String((meta && meta.title) || '').trim();
   const description = String((meta && meta.description) || '').trim();
   const comments = String((meta && meta.comments) || '').trim();
-  const primaryText = [sourceTitle, description, sharedCaption].filter(Boolean).join('\n');
+  // 같은 문구가 제목·설명글·공유 캡션에 겹쳐 오는 경우가 있어(인스타 공유 캡션), 한 번만 씁니다.
+  const primaryText = Array.from(new Set([sourceTitle, description, sharedCaption].filter(Boolean))).join('\n');
   // 댓글은 잡담이 섞이기 쉬우므로, 제목·설명글에서 **상호를 잡았으면** 검색어에 쓰지 않습니다.
   // (확인용으로 결과에는 sourceComments 로 내려 보냅니다)
   const useComments = Boolean(comments) && !extractSearchQueries(primaryText).storeName;
