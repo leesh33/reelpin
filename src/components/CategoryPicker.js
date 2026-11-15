@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import {
@@ -64,34 +64,25 @@ export default function CategoryPicker({
         </View>
       )}
 
-      <View style={compact ? styles.rowWrapCompact : styles.rowWrap}>
-        {/* 분류가 많아지면 가로로 스크롤되고, [+ 분류 추가] 는 오른쪽에 항상 보이게 고정합니다.
-            핀 상세(compact)처럼 좁은 곳에서는 잘리지 않게 두 줄로 접어 보여 줍니다. */}
-        <ScrollView
-          horizontal={!compact}
-          showsHorizontalScrollIndicator={false}
-          style={compact ? null : styles.chipScroll}
-          contentContainerStyle={compact ? styles.rowCompact : styles.row}
-          keyboardShouldPersistTaps="handled"
-        >
-          {options.map((name) => {
-            const on = sameCategory(value, name);
-            return (
-              <Pressable
-                key={name}
-                style={[styles.chip, on && styles.chipOn]}
-                onPress={() => typeof onChange === 'function' && onChange(name)}
-                accessibilityRole="radio"
-                accessibilityState={{ selected: on, checked: on }}
-                accessibilityLabel={'분류 ' + name}
-                testID={'category-chip-' + name}
-              >
-                {on ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>{name}</Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+      {/* 분류가 많아도 잘리지 않게 두 줄로 접어 보여 줍니다. [+ 분류 추가] 는 맨 끝에 이어집니다. */}
+      <View style={styles.row}>
+        {options.map((name) => {
+          const on = sameCategory(value, name);
+          return (
+            <Pressable
+              key={name}
+              style={[styles.chip, on && styles.chipOn]}
+              onPress={() => typeof onChange === 'function' && onChange(name)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on, checked: on }}
+              accessibilityLabel={'분류 ' + name}
+              testID={'category-chip-' + name}
+            >
+              {on ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>{name}</Text>
+            </Pressable>
+          );
+        })}
 
         <Pressable
           style={[styles.addChip, open && styles.addChipOn]}
@@ -170,31 +161,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textMuted,
   },
-  rowWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  rowWrapCompact: {
-    flexDirection: 'column',
-    alignItems: 'stretch',
-    gap: 0,
-  },
-  rowCompact: {
+  row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 6,
-  },
-  chipScroll: {
-    flex: 1,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingRight: 2,
   },
   chip: {
     flexDirection: 'row',
