@@ -8,6 +8,11 @@
  *   · providers               … 어느 지도에서 확인된 장소인지(['kakao','naver'])
  *   · confidence              … 후보 신뢰도(0.3~0.99)
  *   · platform 'search'       … 릴스 링크 없이 '가게명으로 찾기'로 저장한 핀
+ *
+ * v2.0 에서 핀에 새로 붙는 필드
+ *   · phone                   … 지도 API 가 준 전화번호(상세 시트에서 tel: 원탭 연결)
+ *   · naverPlaceId            … 네이버 플레이스 ID — 있으면 매장 정보가 상세 페이지로 직행
+ *   · 여러 곳을 한 번에 저장할 때의 중복 판정(`splitNewPins`)도 이 파일에 모읍니다.
  */
 
 /** 후보 → 핀. 저장에 필요한 값만 추리고, 나머지는 안전한 기본값으로 채웁니다. */
@@ -31,6 +36,8 @@ export function buildPin(candidate, options = {}) {
     lng: candidate.lng,
     placeUrl: candidate.placeUrl || '',
     placeUrlLabel: candidate.placeUrlLabel || '',
+    phone: candidate.phone || '',
+    naverPlaceId: String(candidate.naverPlaceId || ''),
     providers,
     confidence: typeof candidate.confidence === 'number' ? candidate.confidence : null,
     sourceUrl: options.sourceUrl || '',
@@ -55,6 +62,8 @@ export function normalizePin(pin) {
     address: pin.address || '주소 미확인',
     placeUrl: pin.placeUrl || '',
     placeUrlLabel: pin.placeUrlLabel || '',
+    phone: pin.phone || '',
+    naverPlaceId: String(pin.naverPlaceId || ''),
     providers: Array.isArray(pin.providers) ? pin.providers : pin.provider ? [pin.provider] : [],
     confidence: typeof pin.confidence === 'number' ? pin.confidence : null,
     sourceUrl: pin.sourceUrl || '',
@@ -76,6 +85,11 @@ export function findExistingPin(pins, candidate) {
     const byUrl = pins.find((p) => p && p.placeUrl && p.placeUrl === placeUrl);
     if (byUrl) return byUrl;
   }
+  const naverPlaceId = String(candidate.naverPlaceId || '');
+  if (naverPlaceId) {
+    const byPlaceId = pins.find((p) => p && String(p.naverPlaceId || '') === naverPlaceId);
+    if (byPlaceId) return byPlaceId;
+  }
   const name = String(candidate.name || '').trim();
   if (!name) return null;
   return (
@@ -83,4 +97,73 @@ export function findExistingPin(pins, candidate) {
       (p) => p && String(p.name || '').trim() === name && String(p.area || '') === String(candidate.area || '')
     ) || null
   );
+}
+
+// ─────────────────────────────────────────────────────────────
+// v2.0 · 여러 곳 한 번에 저장 — 중복 판정
+//   쇼츠 설명글의 '맛집 5곳'을 한꺼번에 저장할 때, 이미 꽂은 핀이나
+//   같은 목록 안에서 두 번 나온 가게를 또 저장하지 않도록 걸러 냅니다.
+//   판정 순서: 같은 네이버 placeId → 같은 매장 URL → 이름이 같고 좌표가 200m 안
+// ─────────────────────────────────────────────────────────────
+export const SAME_PLACE_RADIUS_M = 200;
+
+/** 이름 비교용 — 공백·괄호·문장부호를 걷어냅니다. ('베통 성수' = '베통성수') */
+export function normalizePlaceName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[\s\u00a0()[\]{}<>·,.'"“”‘’\-_/|]/g, '');
+}
+
+/** 두 좌표 사이 거리(m). 값이 없으면 Infinity */
+export function pinDistanceMeters(a, b) {
+  const lat1 = Number(a && a.lat);
+  const lng1 = Number(a && a.lng);
+  const lat2 = Number(b && b.lat);
+  const lng2 = Number(b && b.lng);
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return Infinity;
+  const R = 6371000;
+  const toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const h =
+    Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/** 같은 가게인지 — 이름 + 좌표 근접(200m) 또는 같은 네이버 placeId/매장 URL */
+export function isSamePin(a, b, options = {}) {
+  if (!a || !b) return false;
+  const radius = Number(options.radiusMeters) > 0 ? Number(options.radiusMeters) : SAME_PLACE_RADIUS_M;
+  const idA = String(a.naverPlaceId || '');
+  const idB = String(b.naverPlaceId || '');
+  if (idA && idA === idB) return true;
+  const urlA = String(a.placeUrl || '');
+  const urlB = String(b.placeUrl || '');
+  if (urlA && urlA === urlB) return true;
+  const nameA = normalizePlaceName(a.name);
+  const nameB = normalizePlaceName(b.name);
+  if (!nameA || !nameB) return false;
+  if (nameA !== nameB) return false;
+  const d = pinDistanceMeters(a, b);
+  return d <= radius || d === Infinity;
+}
+
+/**
+ * 저장 목록 + 새 후보들 → { fresh, duplicates, skipped }
+ *   · fresh      : 지금 저장해야 할 새 핀
+ *   · duplicates : 이미 있는 핀(또는 새 목록 안에서 앞에 나온 핀)과 겹쳐 건너뛴 후보
+ * @param {Array<object>} existing 저장된 핀
+ * @param {Array<object>} incoming 새로 저장할 핀/후보
+ */
+export function splitNewPins(existing, incoming) {
+  const saved = Array.isArray(existing) ? existing.filter(Boolean) : [];
+  const list = Array.isArray(incoming) ? incoming.filter(Boolean) : [];
+  const fresh = [];
+  const duplicates = [];
+  list.forEach((pin) => {
+    const hit = saved.concat(fresh).find((p) => isSamePin(p, pin));
+    if (hit) duplicates.push({ pin, existing: hit });
+    else fresh.push(pin);
+  });
+  return { fresh, duplicates };
 }

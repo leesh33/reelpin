@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
-import { openMap, openSource } from '../utils/links';
+import { openMap, openPhone, openSource, telUrlOf } from '../utils/links';
 import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
 import ProviderBadges from './ProviderBadge';
@@ -16,7 +17,7 @@ const PLATFORM_LABEL = {
   unknown: '원본 링크',
 };
 
-export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onClose, onDelete, onToast }) {
+export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onClose, onDelete, onToast, readOnly = false }) {
   // v1.7 — [매장 정보 보기] 는 브라우저 밖으로 나가지 않고 앱 안 모달을 엽니다.
   const [placeModalOpen, setPlaceModalOpen] = useState(false);
 
@@ -25,6 +26,29 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
   const hasDistance = distanceMeters !== null && distanceMeters !== undefined && Number.isFinite(distanceMeters) && distanceMeters >= 0;
   const distanceLabel = hasDistance ? formatDistance(distanceMeters) : '';
   const platform = PLATFORM_LABEL[pin.platform] || PLATFORM_LABEL.unknown;
+  const phone = String(pin.phone || '');
+  const address = String(pin.address || '');
+  const hasAddress = Boolean(address) && address !== '주소 미확인';
+
+  /** v2.0 — 전화번호 원탭 연결 (기기 기본 전화앱의 tel: 링크) */
+  const handlePhone = async () => {
+    const result = await openPhone(phone);
+    if (onToast) {
+      if (result.opened) onToast('전화 앱으로 연결했어요 · ' + phone);
+      else onToast('이 기기에서는 전화를 걸 수 없어요 · ' + phone);
+    }
+  };
+
+  /** v2.0 — 주소 원탭 복사 (지도 앱에 붙여넣기) */
+  const handleCopyAddress = async () => {
+    if (!hasAddress) return;
+    try {
+      await Clipboard.setStringAsync(address);
+      if (onToast) onToast('주소를 복사했어요');
+    } catch (e) {
+      if (onToast) onToast('주소 복사에 실패했어요');
+    }
+  };
 
   const handleMap = async (provider) => {
     const result = await openMap(pin, provider);
@@ -115,12 +139,35 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
         </Pressable>
       )}
 
-      <View style={styles.addrRow}>
+      {/* v2.0 — 전화번호(tel: 원탭) · 주소(원탭 복사) */}
+      {!!phone && !!telUrlOf(phone) && (
+        <Pressable
+          style={styles.infoRow}
+          onPress={handlePhone}
+          accessibilityRole="link"
+          accessibilityLabel={'전화 걸기 ' + phone}
+        >
+          <Ionicons name="call-outline" size={14} color={colors.coralDark} />
+          <Text style={styles.infoValue} numberOfLines={1}>
+            {phone}
+          </Text>
+          <Text style={styles.infoAction}>전화</Text>
+        </Pressable>
+      )}
+
+      <Pressable
+        style={styles.infoRow}
+        onPress={handleCopyAddress}
+        disabled={!hasAddress}
+        accessibilityRole="button"
+        accessibilityLabel={hasAddress ? '주소 복사' : '주소 미확인'}
+      >
         <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-        <Text style={styles.addrText} numberOfLines={1}>
-          {pin.address || '주소 미확인'}
+        <Text style={styles.infoValue} numberOfLines={1}>
+          {hasAddress ? address : '주소 미확인'}
         </Text>
-      </View>
+        {hasAddress ? <Text style={styles.infoAction}>복사</Text> : null}
+      </Pressable>
 
       {/* v1.7 — 저장된 매장 페이지가 없어도 가게 이름+동네로 네이버 플레이스를 앱 안에서 엽니다 */}
       <Pressable
@@ -131,7 +178,7 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
       >
         <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
         <Text style={styles.placeBtnText}>매장 정보 보기</Text>
-        <Text style={styles.placeBtnMeta}>네이버 플레이스</Text>
+        <Text style={styles.placeBtnMeta}>{pin.naverPlaceId ? '네이버 플레이스 상세' : '네이버 플레이스'}</Text>
         <Ionicons name="expand-outline" size={14} color={colors.coralDark} />
       </Pressable>
 
@@ -154,10 +201,16 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
         </Pressable>
       </View>
 
-      <Pressable style={styles.deleteBtn} onPress={() => onDelete(pin.id)} hitSlop={8}>
-        <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
-        <Text style={styles.deleteText}>핀 삭제</Text>
-      </Pressable>
+      {!readOnly && (
+        <Pressable style={styles.deleteBtn} onPress={() => onDelete(pin.id)} hitSlop={8}>
+          <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
+          <Text style={styles.deleteText}>핀 삭제</Text>
+        </Pressable>
+      )}
+
+      {readOnly && (
+        <Text style={styles.sharedNote}>공유받은 맛집이에요 · 내 지도에 추가하면 저장할 수 있어요</Text>
+      )}
 
       {placeModalOpen && (
         <InAppPlaceModal
@@ -320,6 +373,35 @@ const styles = StyleSheet.create({
     ...typography.sub,
     fontSize: 12,
     flex: 1,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 10,
+    backgroundColor: colors.bg,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  infoValue: {
+    ...typography.sub,
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  infoAction: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.coralDark,
+  },
+  sharedNote: {
+    marginTop: 10,
+    alignSelf: 'center',
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
   },
   placeBtn: {
     flexDirection: 'row',

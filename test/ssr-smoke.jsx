@@ -1,5 +1,6 @@
 import React from 'react';
 import { renderToString } from 'react-dom/server';
+import App from '../App';
 import MapScreen from '../src/screens/MapScreen';
 import PasteScreen from '../src/screens/PasteScreen';
 import ProfileScreen from '../src/screens/ProfileScreen';
@@ -27,6 +28,7 @@ import InAppPlaceModalWeb, {
 } from '../src/components/InAppPlaceModal.web';
 import fs from 'node:fs';
 import path from 'node:path';
+import { injectPwaHead, PWA_REQUIRED_MARKERS } from '../scripts/patch-web-html.mjs';
 import { colors } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
 
@@ -50,7 +52,14 @@ const SEARCH_PIN = {
   createdAt: '2026-11-15T00:00:00+09:00',
 };
 
+// v2.0 — 공유받은 지도 미리보기 핀
+const SHARED_PINS = [
+  { ...SEARCH_PIN, id: 'share-0', name: '공유받은 베통', shared: true, platform: 'share', naverPlaceId: '1736095566' },
+  { ...SEARCH_PIN, id: 'share-1', name: '공유받은 뚜레쥬르', shared: true, platform: 'share', lat: 37.56, lng: 126.925 },
+];
+
 const cases = [
+  ['App(첫 화면 = 스플래시)', <App />, false],
   ['MapScreen', <MapScreen pins={SEED_PINS} selectedPinId={SEED_PINS[0].id} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />],
   ['MapScreen(empty)', <MapScreen pins={[]} selectedPinId={null} onSelectPin={noop} radiusMeters={500} onGoPaste={noop} onDeletePin={noop} onToast={noop} />],
   ['PasteScreen', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />],
@@ -78,6 +87,10 @@ const cases = [
   ['GeofenceBanner(가장 가까운 곳)', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />],
   // v1.7 — 인앱 네이버 플레이스 모달이 node 렌더에서 window 를 건드리지 않는지
   ['InAppPlaceModal.web(SSR 안전)', <InAppPlaceModalWeb pin={SEARCH_PIN} onClose={noop} onToast={noop} />],
+  // v2.0 — 공유받은 지도 배너 · 상세 시트 전화/주소 · 네이버 플레이스 상세 직행
+  ['MapScreen(공유받은 지도)', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} sharedPins={SHARED_PINS} onAddSharedPins={noop} onDismissShared={noop} />],
+  ['PinDetailSheet(전화·주소·placeId)', <PinDetailSheet pin={{ ...SEARCH_PIN, phone: '0507-1375-1660', naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />],
+  ['PinDetailSheet(공유받은 핀 읽기 전용)', <PinDetailSheet pin={{ ...SHARED_PINS[0], phone: '02-123-4567' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly />],
   ['InAppPlaceModal.web(핀 없음)', <InAppPlaceModalWeb pin={null} onClose={noop} onToast={noop} />, true],
 ];
 
@@ -113,6 +126,14 @@ const contentCases = [
   ['InAppPlaceModal.web: 헤더·iframe·폴백', <InAppPlaceModalWeb pin={SEARCH_PIN} onClose={noop} onToast={noop} />, ['베통 성수', '새 창으로 열기', 'm.place.naver.com/place/list?query=', 'iframe', '네이버 지도로 열기']],
   // v1.8 — [새 창으로 열기] 는 다크 헤더 안에서도 반투명 필(인라인 스타일)로 그려집니다.
   ['InAppPlaceModal.web: 새 창 버튼 반투명 다크 필', <InAppPlaceModalWeb pin={SEARCH_PIN} onClose={noop} onToast={noop} />, ['background-color:rgba(255,255,255,0.14)']],
+  // v2.0
+  ['MapScreen: 공유받은 지도 배너 + 모두 추가', <MapScreen pins={[]} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} sharedPins={SHARED_PINS} onAddSharedPins={noop} onDismissShared={noop} />, ['공유받은 맛집 지도 (2곳)', '내 지도에 모두 추가', '지도에 미리보기로 띄웠어요']],
+  ['MapScreen: 지도 공유 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['지도 공유']],
+  ['PinDetailSheet: 전화 걸기(tel 링크)', <PinDetailSheet pin={{ ...SEARCH_PIN, phone: '0507-1375-1660' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['0507-1375-1660', '전화 걸기 0507-1375-1660', '전화']],
+  ['PinDetailSheet: 주소 원탭 복사', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['서울특별시 성동구 연무장7가길 8', '주소 복사', '복사']],
+  ['PinDetailSheet: naverPlaceId 있으면 상세 페이지 표기', <PinDetailSheet pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['네이버 플레이스 상세']],
+  ['PinDetailSheet: 공유받은 핀은 삭제 대신 안내', <PinDetailSheet pin={SHARED_PINS[0]} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly />, ['공유받은 맛집이에요']],
+  ['InAppPlaceModal.web: placeId 있으면 상세 페이지 직행', <InAppPlaceModalWeb pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} onClose={noop} onToast={noop} />, ['m.place.naver.com/place/1736095566/home']],
 ];
 
 for (const [label, element, needles] of contentCases) {
@@ -223,7 +244,102 @@ for (const [label, ok, extra] of placeChecks) {
   }
 }
 
+// ── v2.0: 여러 곳 선택 저장 UI · PWA 메타 · 아이콘 ─────────────────
+const pasteSource = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const mapSource2 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const profileSource = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const appSource = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+
+const v2Checks = [
+  ['PasteScreen: 후보마다 체크박스(전체 선택 토글)', pasteSource.indexOf("'전체 선택'") > 0 && pasteSource.indexOf('toggleAll') > 0],
+  ['PasteScreen: 선택한 N곳 한 번에 저장', pasteSource.indexOf('곳 한 번에 저장') > 0 && pasteSource.indexOf('savePins') > 0],
+  ['PasteScreen: 선택 개수 표시', pasteSource.indexOf('선택 {selectedCandidates.length}곳') > 0],
+  ['PasteScreen: 일괄 저장은 onSavedMany 로', pasteSource.indexOf('onSavedMany') > 0],
+  ['PasteScreen: 못 찾은 항목 안내', pasteSource.indexOf('못 찾은 항목') > 0],
+  ['MapScreen: 공유받은 지도를 지도에 합쳐 그림', mapSource2.indexOf('previewPins.concat(filtered)') > 0],
+  ['MapScreen: 공유받은 핀은 읽기 전용 시트', mapSource2.indexOf('readOnly={selectedIsShared}') > 0],
+  ['MapScreen: navigator.share 지원 시 공유 시트', mapSource2.indexOf('canNativeShare') > 0 && mapSource2.indexOf('buildShareUrl') > 0],
+  ['ProfileScreen: [내 지도 공유하기] 버튼', profileSource.indexOf('내 지도 공유하기') > 0 && profileSource.indexOf('buildShareUrl(pins)') > 0],
+  ['App: 공유 링크(?share=) 읽어 배너로', appSource.indexOf('readShareFromLocation') > 0 && appSource.indexOf('handleAddSharedPins') > 0],
+  ['App: 일괄 저장 시 이름+좌표 중복 제거', appSource.indexOf('splitNewPins') > 0],
+];
+
+for (const [label, ok] of v2Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label);
+  }
+}
+
+// PWA: index.html 메타 주입 (Expo 기본 템플릿에 실제로 들어가는지)
+const EXPO_TEMPLATE =
+  '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
+  '<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />' +
+  '<title>릴스핀</title><link rel="shortcut icon" href="/favicon.ico" /></head><body><div id="root"></div></body></html>';
+const injected = injectPwaHead(EXPO_TEMPLATE);
+const missingPwa = PWA_REQUIRED_MARKERS.filter((marker) => injected.html.indexOf(marker) < 0);
+const pwaChecks = [
+  ['PWA: apple-touch-icon · manifest · theme-color 주입', missingPwa.length === 0, missingPwa.join(', ')],
+  ['PWA: <html lang="ko">', injected.html.indexOf('<html lang="ko">') > 0, injected.html.slice(0, 60)],
+  ['PWA: viewport-fit=cover', injected.html.indexOf('viewport-fit=cover') > 0],
+  ['PWA: 주입 태그 목록 기록', injected.added.length >= 8, String(injected.added.length)],
+  ['PWA: 두 번 실행해도 중복 없음(idempotent)', injectPwaHead(injected.html).added.length === 0, String(injectPwaHead(injected.html).added.length)],
+  ['PWA: 빈 HTML 은 그대로', injectPwaHead('').html === '' && injectPwaHead(null).added.length === 0],
+];
+for (const [label, ok, extra] of pwaChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
+// PWA: manifest.json · 아이콘 파일 실제 크기
+const manifest = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'public', 'manifest.json'), 'utf8'));
+function pngSize(relPath) {
+  const buf = fs.readFileSync(path.join(process.cwd(), relPath));
+  return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
+}
+const icon1024 = pngSize('assets/icon.png');
+const appleIcon = pngSize('public/apple-touch-icon.png');
+const icon192 = pngSize('public/icon-192.png');
+const icon512 = pngSize('public/icon-512.png');
+const manifestIcons = (manifest.icons || []).map((i) => i.src + '@' + i.sizes);
+const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
+const expoConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'app.json'), 'utf8')).expo;
+
+const assetChecks = [
+  ['아이콘: assets/icon.png 1024×1024', icon1024.width === 1024 && icon1024.height === 1024, JSON.stringify(icon1024)],
+  ['아이콘: apple-touch-icon 180×180', appleIcon.width === 180 && appleIcon.height === 180, JSON.stringify(appleIcon)],
+  ['아이콘: icon-192 192×192', icon192.width === 192 && icon192.height === 192, JSON.stringify(icon192)],
+  ['아이콘: icon-512 512×512', icon512.width === 512 && icon512.height === 512, JSON.stringify(icon512)],
+  ['manifest: 이름·테마 코랄', manifest.name.indexOf('릴스핀') >= 0 && manifest.theme_color === '#FF5A36' && manifest.short_name === '릴스핀', JSON.stringify(manifest.theme_color)],
+  ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
+  ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
+  ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
+  ['버전: package.json 2.0.0', pkg.version === '2.0.0', pkg.version],
+  ['버전: app.json 2.0.0', expoConfig.version === '2.0.0', expoConfig.version],
+  ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
+  ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
+];
+for (const [label, ok, extra] of assetChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
-  cases.length + contentCases.length + 1 + mapChecks.length + placeChecks.length + 2;
+  cases.length +
+  contentCases.length +
+  1 +
+  mapChecks.length +
+  placeChecks.length +
+  v2Checks.length +
+  pwaChecks.length +
+  assetChecks.length +
+  2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

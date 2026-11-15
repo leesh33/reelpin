@@ -14,6 +14,13 @@
 import youtubeHandler from '../api/youtube.js';
 import kakaoHandler from '../api/kakao-local.js';
 import naverHandler from '../api/naver-local.js';
+import resolveUrlHandler, {
+  ALLOWED_HOSTS,
+  TOTAL_TIMEOUT_MS as resolveUrlHandlerTotal,
+  extractNaverPlaceId as apiExtractNaverPlaceId,
+  normalizeTarget,
+  parseNaverPlaceHtml as apiParseNaverPlaceHtml,
+} from '../api/resolve-url.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -286,7 +293,7 @@ check('kakao(타임아웃): 키 노출 없음', !leaksSecret(r.raw), r.raw);
 
 // ── 8. api/*.js 는 Vercel Node 함수 규격(module.exports = handler) ──
 const root = process.cwd(); // run-tests.mjs 가 프로젝트 루트에서 실행합니다
-['youtube.js', 'kakao-local.js', 'naver-local.js'].forEach((file) => {
+['youtube.js', 'kakao-local.js', 'naver-local.js', 'resolve-url.js'].forEach((file) => {
   const src = fs.readFileSync(path.join(root, 'api', file), 'utf8');
   check('api/' + file + ': module.exports = async function', /module\.exports\s*=\s*async\s+function/.test(src));
   check('api/' + file + ': 키를 응답에 직접 넣지 않음', !/sendJson\([^)]*process\.env/.test(src));
@@ -295,9 +302,131 @@ const root = process.cwd(); // run-tests.mjs 가 프로젝트 루트에서 실�
 // server/http.js 공용 모듈이 api 밖에 있는지 (Vercel 함수로 배포되지 않도록)
 check('server/http.js 분리', fs.existsSync(path.join(root, 'server', 'http.js')));
 
+// ═════════════════════════════════════════════════════════════
+// 10. v2.0 — /api/resolve-url (단축 링크 목적지 + SSRF 방어)
+// ═════════════════════════════════════════════════════════════
+// 7번에서 '영영 응답 없는' fetch 로 바꿔 두었으니, 여기서 표준 스텁으로 되돌립니다.
+globalThis.fetch = async (url, init = {}) => {
+  calls.push({ url: String(url), init });
+  return handler(String(url), init);
+};
+
+const redirectRes = (location, status = 302) => ({
+  ok: false,
+  status,
+  headers: { get: (name) => (String(name).toLowerCase() === 'location' ? location : null) },
+  text: async () => '',
+  json: async () => ({}),
+});
+const htmlUpstream = (html, status = 200) => ({
+  ok: status < 400,
+  status,
+  headers: { get: () => null },
+  text: async () => html,
+  json: async () => ({}),
+});
+
+const NAVER_PLACE_HTML_API =
+  '<html><head><meta property="og:title" content="칸다소바 : 네이버" /></head><body>' +
+  '<a href="https://nmap.place.naver.com/launchApp/route?path=route&amp;type=place&amp;dlat=37.5492716&amp;dlng=126.9227124&amp;did=1736095566&amp;dname=%EC%B9%B8%EB%8B%A4%EC%86%8C%EB%B0%94">길찾기</a>' +
+  '<a href="#" data-line-description="서울 마포구 와우산로 51-6">공유</a>' +
+  '<a href="tel:0507-1375-1660">전화</a></body></html>';
+
+r = await call(resolveUrlHandler, {});
+check('resolve: url 없음 → 400', r.status === 400 && r.body.error === 'missing-url', JSON.stringify(r.body));
+r = await call(resolveUrlHandler, { url: 'https://naver.me/x' }, 'POST');
+check('resolve: POST → 405', r.status === 405, String(r.status));
+
+calls = [];
+r = await call(resolveUrlHandler, { url: 'https://evil.example.com/x' });
+check('resolve: 허용 목록 밖 호스트 → 403', r.status === 403 && r.body.error === 'host-not-allowed', JSON.stringify(r.body));
+check('resolve: 허용 목록 밖은 요청조차 안 함', calls.length === 0, JSON.stringify(calls));
+check('resolve: 허용 호스트 목록에 naver.me·map·m.place 포함', ['naver.me', 'map.naver.com', 'm.place.naver.com'].every((h) => ALLOWED_HOSTS.indexOf(h) >= 0), ALLOWED_HOSTS.join(','));
+
+for (const [label, bad] of [
+  ['IP 주소', 'http://127.0.0.1/admin'],
+  ['내부망 메타데이터', 'http://169.254.169.254/latest/meta-data/'],
+  ['사설 IP', 'https://10.0.0.5/'],
+  ['자격증명 포함', 'https://user:pass@naver.me/x'],
+  ['이상한 포트', 'https://naver.me:8080/x'],
+  ['file 스킴', 'file:///etc/passwd'],
+]) {
+  calls = [];
+  r = await call(resolveUrlHandler, { url: bad });
+  check('resolve: ' + label + ' 거부', r.status === 403 || r.status === 400, String(r.status));
+  check('resolve: ' + label + ' 요청 없음', calls.length === 0, JSON.stringify(calls));
+}
+
+// 정상: naver.me → m.place.naver.com
+calls = [];
+handler = (url) => {
+  if (url === 'https://naver.me/GabcdEfg') return redirectRes('https://m.place.naver.com/restaurant/1736095566/home');
+  if (url.indexOf('https://m.place.naver.com/restaurant/1736095566/home') === 0) return htmlUpstream(NAVER_PLACE_HTML_API);
+  return htmlUpstream('');
+};
+r = await call(resolveUrlHandler, { url: 'https://naver.me/GabcdEfg' });
+check('resolve: naver.me → 200', r.status === 200, JSON.stringify(r.body));
+check('resolve: 최종 주소', r.body.url === 'https://m.place.naver.com/restaurant/1736095566/home', r.body.url);
+check('resolve: placeId 추출', r.body.naverPlaceId === '1736095566', r.body.naverPlaceId);
+check('resolve: kind=naver-place', r.body.kind === 'naver-place', r.body.kind);
+check('resolve: 제목', r.body.title === '칸다소바', r.body.title);
+check('resolve: 좌표', Math.abs(r.body.lat - 37.5492716) < 1e-9 && Math.abs(r.body.lng - 126.9227124) < 1e-9, JSON.stringify([r.body.lat, r.body.lng]));
+check('resolve: 주소·전화', r.body.address === '서울 마포구 와우산로 51-6' && r.body.phone === '0507-1375-1660', JSON.stringify([r.body.address, r.body.phone]));
+check('resolve: 리다이렉트는 manual 로 따라감', calls[0].init.redirect === 'manual', String(calls[0] && calls[0].init.redirect));
+check('resolve: 캐시 헤더', String(r.headers['cache-control'] || '').indexOf('s-maxage') > 0, JSON.stringify(r.headers));
+
+// 허용 목록 밖으로 튕기는 리다이렉트는 중단 + 그 호스트로 요청하지 않음
+calls = [];
+handler = (url) => (url === 'https://naver.me/evil' ? redirectRes('https://evil.example.com/take-key') : htmlUpstream(''));
+r = await call(resolveUrlHandler, { url: 'https://naver.me/evil' });
+check('resolve: 밖으로 튕기는 리다이렉트 → 403', r.status === 403 && r.body.error === 'redirect-not-allowed', JSON.stringify(r.body));
+check('resolve: 악성 호스트로 요청 없음', !calls.some((c) => c.url.indexOf('evil.example.com') >= 0), JSON.stringify(calls.map((c) => c.url)));
+
+// 리다이렉트 3홉 초과
+calls = [];
+handler = () => redirectRes('https://naver.me/loop');
+r = await call(resolveUrlHandler, { url: 'https://naver.me/loop' });
+check('resolve: 리다이렉트 무한 루프 → 400', r.status === 400 && r.body.error === 'too-many-redirects', JSON.stringify(r.body));
+check('resolve: 홉 수 제한(4회 이하)', calls.length <= 4, String(calls.length));
+
+// youtu.be → youtube.com/watch (영상 ID)
+calls = [];
+handler = (url) => (url === 'https://youtu.be/2QZPPEle9IY' ? redirectRes('https://www.youtube.com/watch?v=2QZPPEle9IY&feature=share') : htmlUpstream('<title>제목</title>'));
+r = await call(resolveUrlHandler, { url: 'https://youtu.be/2QZPPEle9IY' });
+check('resolve: youtu.be 목적지', r.status === 200 && r.body.videoId === '2QZPPEle9IY', JSON.stringify(r.body));
+check('resolve: youtube kind', r.body.kind === 'youtube', r.body.kind);
+check('resolve: youtube 좌표는 비움', r.body.lat === null && r.body.naverPlaceId === '', JSON.stringify(r.body));
+
+// 업스트림 오류·타임아웃
+handler = () => htmlUpstream('', 500);
+r = await call(resolveUrlHandler, { url: 'https://map.naver.com/p/entry/place/1736095566' });
+check('resolve: 업스트림 500 → 502', r.status === 502 && r.body.error === 'upstream-failed', JSON.stringify(r.body));
+handler = () => {
+  throw new Error('network-down');
+};
+r = await call(resolveUrlHandler, { url: 'https://map.naver.com/p/entry/place/1736095566' });
+check('resolve: 네트워크 실패 → 504', r.status === 504 && r.body.error === 'resolve-timeout', JSON.stringify(r.body));
+
+// 정규화·파서 단위
+check('resolve normalize: www 제거 후 허용', normalizeTarget('https://www.naver.me/x').url === 'https://naver.me/x', JSON.stringify(normalizeTarget('https://www.naver.me/x')));
+check('resolve normalize: http → https 승격', normalizeTarget('http://map.naver.com/p/entry/place/1').url === 'https://map.naver.com/p/entry/place/1', JSON.stringify(normalizeTarget('http://map.naver.com/p/entry/place/1')));
+check('resolve normalize: 서브도메인 사칭 거부', normalizeTarget('https://naver.me.evil.com/x').error === 'host-not-allowed');
+check('resolve normalize: 긴 URL 거부', normalizeTarget('https://naver.me/' + 'a'.repeat(600)).error === 'invalid-url');
+check('resolve api: placeId 패턴', apiExtractNaverPlaceId('https://map.naver.com/p/entry/place/1736095566') === '1736095566');
+check('resolve api: 페이지 파서 이름·좌표', apiParseNaverPlaceHtml(NAVER_PLACE_HTML_API).title === '칸다소바' && Math.abs(apiParseNaverPlaceHtml(NAVER_PLACE_HTML_API).lat - 37.5492716) < 1e-9);
+check('resolve api: 키·본문이 응답에 없음', !leaksSecret(r.raw), r.raw.slice(0, 120));
+check('resolve: 전체 시간 예산이 함수 제한(10초) 안', resolveUrlHandlerTotal <= 9000, String(resolveUrlHandlerTotal));
+
+
 // ── 9. vercel.json 배포 설정 ──────────────────────────────
 const vercel = JSON.parse(fs.readFileSync(path.join(root, 'vercel.json'), 'utf8'));
-check('vercel.json: 빌드 명령', vercel.buildCommand === 'npx expo export --platform web', vercel.buildCommand);
+// v2.0 — 빌드 마지막에 PWA 메타 주입 스크립트가 붙습니다. (그래야 홈 화면 아이콘·manifest 가 실제로 나갑니다)
+check(
+  'vercel.json: 빌드 명령 (expo export + PWA 메타 주입)',
+  vercel.buildCommand === 'npx expo export --platform web && node scripts/patch-web-html.mjs',
+  vercel.buildCommand
+);
+check('vercel.json: PWA 메타 주입 스크립트 존재', fs.existsSync(path.join(root, 'scripts', 'patch-web-html.mjs')));
 check('vercel.json: 출력 폴더 dist', vercel.outputDirectory === 'dist', vercel.outputDirectory);
 check('vercel.json: api/*.js 함수 설정', Object.keys(vercel.functions || {}).indexOf('api/*.js') >= 0, JSON.stringify(Object.keys(vercel.functions || {})));
 const rewrite = (vercel.rewrites || [])[0] || {};

@@ -33,19 +33,54 @@ import {
   findAreaFromText,
   leadingText,
   isSpecificCategory,
+  // v2.0 — 여러 가게 한 번에 + 네이버 지도 링크 직행
+  MAX_MULTI_CANDIDATES,
+  extractCandidatesFromText,
+  parseListItem,
+  looksLikeListLine,
+  searchMultiPlaces,
+  parseNaverPlaceHtml,
+  resolvePlaceLinkFromInput,
+  resolveShortLink,
+  naverPlaceCandidate,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
   naverMapWebUrl,
   naverPlaceSearchUrl,
+  naverPlaceDetailUrl,
+  extractNaverPlaceId,
+  telUrlOf,
+  isShortLinkUrl,
   kakaoMapAppUrl,
   kakaoMapWebUrl,
   buildShareLink,
   normalizePlaceUrl,
   openExternalUrl,
+  openPhone,
   openPlace,
 } from '../src/utils/links.js';
-import { buildPin, normalizePin, normalizePins, findExistingPin } from '../src/utils/pins.js';
+import {
+  buildPin,
+  normalizePin,
+  normalizePins,
+  findExistingPin,
+  isSamePin,
+  splitNewPins,
+  SAME_PLACE_RADIUS_M,
+} from '../src/utils/pins.js';
+import {
+  encodeSharePins,
+  decodeSharePins,
+  buildShareUrl,
+  parseShareFromUrl,
+  shareMessage,
+  base64UrlEncode,
+  base64UrlDecode,
+  utf8Encode,
+  utf8Decode,
+  DEFAULT_SHARE_ORIGIN,
+} from '../src/utils/shareMap.js';
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -1076,6 +1111,237 @@ check('댓글 403: 제목으로 정상 검색', noComment.queryList[0] === '성�
 check('댓글 403: sourceComments 빈 값', noComment.sourceComments === '', noComment.sourceComments);
 check('댓글 403: 후보도 정상', (noComment.candidates[0] || {}).name === '성수동 소금빵집');
 delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+
+// ═════════════════════════════════════════════════════════════
+// 13. v2.0 — 쇼츠 '맛집 5곳' 여러 가게 한 번에 저장
+// ═════════════════════════════════════════════════════════════
+const NUMBERED_TEXT = ['1. 성수동 베통 - 소금빵', '2. 연남동 뚜레쥬르', '3. 망원동 우동집'].join('\n');
+const listNumbered = extractCandidatesFromText(NUMBERED_TEXT);
+check('multi: 번호 목록 3곳', listNumbered.length === 3, JSON.stringify(listNumbered.map((i) => i.name)));
+check(
+  'multi: 1번 후보 이름·지역',
+  listNumbered[0] && listNumbered[0].name === '베통' && listNumbered[0].area === '성수동',
+  JSON.stringify(listNumbered[0])
+);
+check('multi: 1번 검색어 = 지역+상호', listNumbered[0] && listNumbered[0].queries[0] === '성수동 베통', JSON.stringify(listNumbered[0] && listNumbered[0].queries));
+check('multi: 2번 후보 이름', listNumbered[1] && listNumbered[1].name === '뚜레쥬르', listNumbered[1] && listNumbered[1].name);
+check('multi: 3번 후보 이름', listNumbered[2] && listNumbered[2].name === '우동집', listNumbered[2] && listNumbered[2].name);
+
+const bulletList = ['📍 성수동 베통', '📍 연남 뚜레쥬르', '📍 망원 우동집'].join('\n');
+const listBullet = extractCandidatesFromText(bulletList);
+check('multi: 이모지 불릿 목록 3곳', listBullet.length === 3, JSON.stringify(listBullet.map((i) => i.name)));
+check('multi: 불릿도 지역·상호 분리', listBullet[0] && listBullet[0].area === '성수동', JSON.stringify(listBullet[0]));
+
+const commaList = extractCandidatesFromText('성수동 소금빵 맛집 베통, 연남 뚜레쥬르, 망원동 우동집');
+check('multi: 쉼표 한 줄 3곳', commaList.length === 3, JSON.stringify(commaList.map((i) => i.name)));
+check('multi: 쉼표 3번째 = 우동집', commaList[2] && commaList[2].name === '우동집', commaList[2] && commaList[2].name);
+
+const manyList = Array.from({ length: 12 }, (_, i) => i + 1 + '. 성수동 국수집' + (i + 1)).join('\n');
+check(
+  'multi: 최대 8곳까지만',
+  extractCandidatesFromText(manyList).length === MAX_MULTI_CANDIDATES && MAX_MULTI_CANDIDATES === 8,
+  String(extractCandidatesFromText(manyList).length)
+);
+
+check('multi: 한 줄 캡션은 목록이 아님', extractCandidatesFromText('성수동 소금빵 맛집 베통 다녀왔어요').length === 0,
+  JSON.stringify(extractCandidatesFromText('성수동 소금빵 맛집 베통 다녀왔어요').map((i) => i.name)));
+check('multi: 설명글 문장은 목록이 아님(엄마손횟집 회귀)', extractCandidatesFromText(KEUM_DESC).length === 0,
+  JSON.stringify(extractCandidatesFromText(KEUM_DESC).map((i) => i.name)));
+check('multi: 빈 입력은 빈 배열', extractCandidatesFromText('').length === 0 && extractCandidatesFromText(null).length === 0);
+check('multi: 문장형 줄은 목록 줄이 아님', looksLikeListLine('결론적으로 말씀 드리면 비쌉니다..') === false && looksLikeListLine('성수동 베통') === true);
+check('multi: 번호 표식 제거', parseListItem('3) 성수동 베통').name === '베통', JSON.stringify(parseListItem('3) 성수동 베통')));
+
+// 13-2. 여러 후보를 지도 3사에 각각 물어보기 (fetch 스텁)
+setKeys({ kakao: 'KAKAOKEY' });
+const DOC_BETONG = { ...KAKAO_DOC, id: 'b1', place_name: '베통 성수', x: '127.0552', y: '37.5429' };
+const DOC_TOUR = { ...KAKAO_DOC, id: 't1', place_name: '뚜레쥬르 연남', address_name: '서울 마포구 연남동 1', road_address_name: '서울 마포구 성미산로 2', x: '126.9250', y: '37.5600' };
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    if (q.includes('베통')) return jsonRes({ documents: [DOC_BETONG] });
+    if (q.includes('뚜레쥬르')) return jsonRes({ documents: [DOC_TOUR] });
+    return jsonRes({ documents: [] });
+  }
+  return jsonRes({ documents: [], items: [], places: [] });
+};
+const multiSearched = await searchMultiPlaces(listNumbered, { limit: 2 });
+check('multi search: 2곳 매칭', multiSearched.matched === 2, String(multiSearched.matched));
+check('multi search: 매칭된 이름', multiSearched.candidates.map((c) => c.name).join(',') === '베통 성수,뚜레쥬르 연남', multiSearched.candidates.map((c) => c.name).join(','));
+check('multi search: 못 찾은 항목 1건', multiSearched.unmatched.length === 1, JSON.stringify(multiSearched.unmatched));
+check('multi search: 후보에 순번 표시', multiSearched.candidates[0].multiIndex === 1, String(multiSearched.candidates[0].multiIndex));
+
+// 13-3. extractPlaces 가 목록을 만나면 mode='multi' 로 돌려줍니다
+calls = [];
+const multiResult = await extractPlaces('https://www.instagram.com/reel/C8xSg2BpQ1K/', { caption: NUMBERED_TEXT });
+check('multi: extractPlaces mode=multi', multiResult.mode === 'multi', String(multiResult.mode));
+check('multi: 결과 후보 2곳', (multiResult.candidates || []).length === 2, JSON.stringify((multiResult.candidates || []).map((c) => c.name)));
+check('multi: 못 찾은 항목도 함께', (multiResult.unmatched || []).length === 1, JSON.stringify(multiResult.unmatched));
+check('multi: usedAdapter 에 multi 표시', String(multiResult.usedAdapter).indexOf('multi') === 0, String(multiResult.usedAdapter));
+
+// ═════════════════════════════════════════════════════════════
+// 14. v2.0 — 네이버 지도 링크 직행 + 상세 시트 정보(전화·주소)
+// ═════════════════════════════════════════════════════════════
+check('naver id: map.naver.com/p/entry/place', extractNaverPlaceId('https://map.naver.com/p/entry/place/1736095566?c=17.00,0,0,0,dh') === '1736095566');
+check('naver id: m.place.naver.com/place', extractNaverPlaceId('https://m.place.naver.com/place/1736095566') === '1736095566');
+check('naver id: m.place.naver.com/restaurant/home', extractNaverPlaceId('https://m.place.naver.com/restaurant/1736095566/home') === '1736095566');
+check('naver id: map.naver.com/v5/entry/place', extractNaverPlaceId('https://map.naver.com/v5/entry/place/1234567890') === '1234567890');
+check('naver id: 숫자만 있으면 그대로', extractNaverPlaceId('1736095566') === '1736095566' && extractNaverPlaceId('123') === '');
+check('naver id: 지도 검색 링크에는 없음', extractNaverPlaceId('https://map.naver.com/p/search/베통') === '');
+check('naver 상세 주소', naverPlaceDetailUrl('1736095566') === 'https://m.place.naver.com/place/1736095566/home', naverPlaceDetailUrl('1736095566'));
+check('naver 상세 주소: 이상한 id 는 빈 값', naverPlaceDetailUrl('abc') === '' && naverPlaceDetailUrl('') === '');
+check(
+  'naver place: naverPlaceId 있으면 상세 직행',
+  naverPlaceSearchUrl({ name: '칸다소바', area: '서교동', naverPlaceId: '1736095566' }) ===
+    'https://m.place.naver.com/place/1736095566/home',
+  naverPlaceSearchUrl({ name: '칸다소바', area: '서교동', naverPlaceId: '1736095566' })
+);
+check(
+  'naver place: placeUrl 에 id 가 있어도 상세 직행',
+  naverPlaceSearchUrl({ name: '칸다소바', placeUrl: 'https://m.place.naver.com/place/1736095566/home' }) ===
+    'https://m.place.naver.com/place/1736095566/home'
+);
+check('naver place: id 없으면 기존 검색 목록', naverPlaceSearchUrl({ name: '베통 성수' }).indexOf('/place/list?query=') > 0);
+
+// 실제 네이버 플레이스 페이지에서 확인한 값 그대로 (2026-11-15 라이브)
+const NAVER_PLACE_HTML =
+  '<html><head><meta property="og:title" content="칸다소바 : 네이버" />' +
+  '<meta property="og:description" content="방문자리뷰 6,945 · 블로그리뷰 2,127" /></head><body>' +
+  '<a href="https://nmap.place.naver.com/launchApp/route?path=route&amp;type=place&amp;dlat=37.5492716&amp;dlng=126.9227124&amp;did=1736095566&amp;dname=%EC%B9%B8%EB%8B%A4%EC%86%8C%EB%B0%94">길찾기</a>' +
+  '<a href="#" data-title="칸다소바&#10;서울 마포구 와우산로 51-6" data-line-description="서울 마포구 와우산로 51-6">공유</a>' +
+  '<a href="tel:0507-1375-1660">전화</a></body></html>';
+const naverPage = parseNaverPlaceHtml(NAVER_PLACE_HTML);
+check('naver page: 이름에서 " : 네이버" 제거', naverPage.title === '칸다소바', naverPage.title);
+check(
+  'naver page: 좌표(dlat/dlg)',
+  Math.abs(naverPage.lat - 37.5492716) < 1e-9 && Math.abs(naverPage.lng - 126.9227124) < 1e-9,
+  JSON.stringify(naverPage)
+);
+check('naver page: 주소', naverPage.address === '서울 마포구 와우산로 51-6', naverPage.address);
+check('naver page: 전화', naverPage.phone === '0507-1375-1660', naverPage.phone);
+check('naver page: 빈 HTML 도 예외 없이', parseNaverPlaceHtml('').title === '' && parseNaverPlaceHtml(null).lat === null);
+
+const naverCand = naverPlaceCandidate({
+  naverPlaceId: '1736095566',
+  title: '칸다소바',
+  lat: 37.5492716,
+  lng: 126.9227124,
+  address: '서울 마포구 와우산로 51-6',
+  phone: '0507-1375-1660',
+});
+check('naver 후보: 좌표·placeId', naverCand.naverPlaceId === '1736095566' && naverCand.manual === false, JSON.stringify(naverCand));
+check('naver 후보: 동네 추출(주소의 구 단위)', naverCand.area === '마포', naverCand.area);
+check('naver 후보: 매장 URL 은 상세 페이지', naverCand.placeUrl === 'https://m.place.naver.com/place/1736095566/home', naverCand.placeUrl);
+check('naver 후보: placeId 없으면 null', naverPlaceCandidate({ title: 'x' }) === null);
+
+// 14-2. 리다이렉트를 따라가 목적지 읽기 (네이티브 = 기기에서 직접)
+const htmlPage = (html, finalUrl) => ({
+  ok: true,
+  status: 200,
+  url: finalUrl,
+  json: async () => ({}),
+  text: async () => html,
+});
+handler = (url) => {
+  if (String(url).includes('naver.me')) return htmlPage(NAVER_PLACE_HTML, 'https://m.place.naver.com/restaurant/1736095566/home');
+  return htmlPage(NAVER_PLACE_HTML, 'https://m.place.naver.com/place/1736095566/home');
+};
+const resolvedShort = await resolveShortLink('https://naver.me/GabcdEfg');
+check('resolve: 최종 주소에서 placeId', resolvedShort.naverPlaceId === '1736095566', resolvedShort.naverPlaceId);
+check('resolve: 제목·좌표까지', resolvedShort.title === '칸다소바' && Math.abs(resolvedShort.lat - 37.5492716) < 1e-9, JSON.stringify(resolvedShort));
+
+const placeLink = await resolvePlaceLinkFromInput(['https://m.place.naver.com/place/1736095566']);
+check('placeLink: 네이버 링크 감지', placeLink && placeLink.naverPlaceId === '1736095566', JSON.stringify(placeLink));
+check('placeLink: 이름·좌표 확보', placeLink.title === '칸다소바' && Number.isFinite(placeLink.lat), JSON.stringify(placeLink));
+check('placeLink: 단축 링크는 naver.me 만', isShortLinkUrl('https://naver.me/x') === true && isShortLinkUrl('https://youtu.be/abc') === true && isShortLinkUrl('https://map.naver.com/p/entry/place/1') === false);
+check('placeLink: 관계없는 링크는 null', (await resolvePlaceLinkFromInput(['https://www.instagram.com/reel/abc/'])) === null);
+
+// 14-3. 붙여넣은 네이버 링크 → placeId 붙은 핀 (지도 검색 없이)
+handler = (url) => {
+  if (String(url).includes('dapi.kakao.com')) return jsonRes({ documents: [] });
+  return htmlPage(NAVER_PLACE_HTML, 'https://m.place.naver.com/place/1736095566/home');
+};
+const naverLinkResult = await extractPlaces('https://m.place.naver.com/place/1736095566');
+check('naver 링크: mode=single', naverLinkResult.mode === 'single', String(naverLinkResult.mode));
+check('naver 링크: usedAdapter=naver-place-link', naverLinkResult.usedAdapter === 'naver-place-link', String(naverLinkResult.usedAdapter));
+check('naver 링크: 후보 이름', (naverLinkResult.candidates[0] || {}).name === '칸다소바', JSON.stringify(naverLinkResult.candidates[0] && naverLinkResult.candidates[0].name));
+check('naver 링크: 후보에 naverPlaceId', (naverLinkResult.candidates[0] || {}).naverPlaceId === '1736095566');
+check('naver 링크: 핀에 phone 저장', buildPin(naverLinkResult.candidates[0], {}).phone === '0507-1375-1660');
+
+// 14-4. 전화번호 → tel: 링크
+check('tel: 일반 번호', telUrlOf('0507-1375-1660') === 'tel:050713751660', telUrlOf('0507-1375-1660'));
+check('tel: 02 번호', telUrlOf('02-123-4567') === 'tel:021234567');
+check('tel: 너무 짧으면 빈 값', telUrlOf('123') === '' && telUrlOf('') === '');
+const phoneOpened = await openPhone('02-123-4567');
+check('openPhone: tel: 로 열기', phoneOpened.opened === true && phoneOpened.url === 'tel:021234567', JSON.stringify(phoneOpened));
+
+// ═════════════════════════════════════════════════════════════
+// 15. v2.0 — 핀 중복 판정(이름+좌표 근접) + 여러 곳 저장
+// ═════════════════════════════════════════════════════════════
+check('same pin: 반경 상수 200m', SAME_PLACE_RADIUS_M === 200, String(SAME_PLACE_RADIUS_M));
+const basePin = { name: '베통 성수', area: '성수동', lat: 37.5429, lng: 127.0552 };
+check('same pin: 같은 이름 + 50m', isSamePin(basePin, { ...basePin, lat: 37.5433, lng: 127.0554 }) === true);
+check('same pin: 같은 이름이어도 2km 밖이면 다른 곳', isSamePin(basePin, { ...basePin, lat: 37.56, lng: 127.07 }) === false);
+check('same pin: 이름이 달라도 같은 placeId 면 같은 곳', isSamePin({ name: '베통', naverPlaceId: '123456' }, { name: '베통성수', naverPlaceId: '123456' }) === true);
+check('same pin: 좌표 없이 이름만 같으면 같은 곳', isSamePin({ name: '베통' }, { name: '베통 성수' }) === false && isSamePin({ name: '베통' }, { name: '베통' }) === true);
+
+const splitResult = splitNewPins(
+  [{ ...basePin, id: 'saved-1' }],
+  [
+    { ...basePin, lat: 37.5431, name: '베통 성수' }, // 이미 있음
+    { name: '베통 성수', lat: 37.56, lng: 127.07 }, // 같은 이름·다른 동네 → 새 핀
+    { name: '뚜레쥬르 연남', lat: 37.56, lng: 126.925 },
+  ]
+);
+check('split: 새 핀 2곳', splitResult.fresh.length === 2, JSON.stringify(splitResult.fresh.map((p) => p.name)));
+check('split: 중복 1곳', splitResult.duplicates.length === 1 && splitResult.duplicates[0].existing.id === 'saved-1', JSON.stringify(splitResult.duplicates.map((d) => d.pin.name)));
+check('findExistingPin: naverPlaceId 로도 중복 판정', (findExistingPin([{ name: '다른이름', naverPlaceId: '1736095566' }], { name: '칸다소바', naverPlaceId: '1736095566' }) || {}).name === '다른이름');
+const builtPin = buildPin({ name: '칸다소바', lat: 37.5, lng: 127, phone: '0507-1375-1660', naverPlaceId: '1736095566', address: '서울 마포구 와우산로 51-6' }, {});
+check('pin: phone · naverPlaceId 저장', builtPin.phone === '0507-1375-1660' && builtPin.naverPlaceId === '1736095566', JSON.stringify({ phone: builtPin.phone, id: builtPin.naverPlaceId }));
+const normalizedOldPin = normalizePin({ name: '옛 핀', lat: 37.5, lng: 127 });
+check('pin: 옛 핀에 phone·naverPlaceId 기본값', normalizedOldPin.phone === '' && normalizedOldPin.naverPlaceId === '');
+
+// ═════════════════════════════════════════════════════════════
+// 16. v2.0 — 내 맛집 지도 공유 링크 (?share=)
+// ═════════════════════════════════════════════════════════════
+const SHARE_PINS = [
+  { name: '베통 성수', category: '카페', area: '성수동', lat: 37.5429, lng: 127.0552, placeUrl: 'https://m.place.naver.com/place/1736095566/home', naverPlaceId: '1736095566', phone: '02-123-4567', address: '서울 성동구 연무장7가길 8' },
+  { name: '연남동 딸기 케이크 맛집', category: '디저트', area: '연남동', lat: 37.56, lng: 126.925, address: '서울 마포구 성미산로 00' },
+  { name: '망원동 우동 맛집', category: '맛집', area: '망원동', lat: 37.556, lng: 126.902 },
+  { name: '검단 아라뱃길 뷰 카페', category: '카페', area: '검단', lat: 37.592, lng: 126.69 },
+  { name: '을지로 노포 국밥', category: '맛집', area: '을지로', lat: 37.5665, lng: 126.991 },
+  { name: '한남동 브런치', category: '카페', area: '한남동', lat: 37.534, lng: 127.001 },
+  { name: '성수 소금빵', category: '베이커리', area: '성수동', lat: 37.5445, lng: 127.0557 },
+  { name: '판교 오마카세', category: '맛집', area: '판교', lat: 37.3947, lng: 127.1112 },
+];
+const shareCode = encodeSharePins(SHARE_PINS);
+check('share: 접두사 r2-', String(shareCode).indexOf('r2-') === 0, String(shareCode).slice(0, 10));
+check('share: URL 안전 문자만', /^[A-Za-z0-9_-]+$/.test(String(shareCode).slice(3)), String(shareCode).slice(0, 40));
+const shareBack = decodeSharePins(shareCode);
+check('share: 왕복 8곳', shareBack && shareBack.count === 8, String(shareBack && shareBack.count));
+check('share: 한글 이름 보존', shareBack.pins[0].name === '베통 성수' && shareBack.pins[1].name === '연남동 딸기 케이크 맛집', shareBack.pins[0].name);
+check('share: 좌표 소수점 유지', Math.abs(shareBack.pins[0].lat - 37.5429) < 1e-9 && Math.abs(shareBack.pins[0].lng - 127.0552) < 1e-9, JSON.stringify([shareBack.pins[0].lat, shareBack.pins[0].lng]));
+check('share: naverPlaceId·전화·주소 유지', shareBack.pins[0].naverPlaceId === '1736095566' && shareBack.pins[0].phone === '02-123-4567' && shareBack.pins[0].address === '서울 성동구 연무장7가길 8', JSON.stringify(shareBack.pins[0]));
+check('share: 미리보기 핀 표시', shareBack.pins[0].shared === true && shareBack.pins[0].platform === 'share');
+check('share: 빈 좌표 핀은 담지 않음', decodeSharePins(encodeSharePins([{ name: '좌표없는곳' }])) === null);
+check('share: 이름 없는 핀은 건너뜀', decodeSharePins(encodeSharePins([{ lat: 37.5, lng: 127 }, SHARE_PINS[0]])).count === 1);
+check('share: 잘못된 코드는 null', decodeSharePins('r2-!!!!') === null && decodeSharePins('hello') === null && decodeSharePins('') === null);
+
+const shareUrl = buildShareUrl(SHARE_PINS, { origin: 'https://reelpin.vercel.app' });
+check('share url: ?share= 규격', shareUrl.indexOf('https://reelpin.vercel.app/?share=r2-') === 0, shareUrl.slice(0, 60));
+check('share url: 공백·한글 없이 안전', /^[A-Za-z0-9\-_.~:\/?=]+$/.test(shareUrl), shareUrl.slice(0, 80));
+check('share url: 8곳도 2,000자 이내', shareUrl.length < 2000, String(shareUrl.length));
+check('share url: origin 기본값', buildShareUrl(SHARE_PINS).indexOf(DEFAULT_SHARE_ORIGIN + '/?share=') === 0, buildShareUrl(SHARE_PINS).slice(0, 50));
+check('share url: 끝 슬래시 중복 없음', buildShareUrl(SHARE_PINS, { origin: 'https://x.test/' }).indexOf('https://x.test/?share=') === 0);
+const parsedShare = parseShareFromUrl(new URL(shareUrl).search);
+check('share parse: ?share= 읽기', parsedShare && parsedShare.count === 8, JSON.stringify(parsedShare && parsedShare.count));
+check('share parse: #share= 읽기', (parseShareFromUrl('#share=' + shareCode) || {}).count === 8);
+check('share parse: 없으면 null', parseShareFromUrl('?x=1') === null && parseShareFromUrl('') === null);
+check('share message: N곳 표기', shareMessage(SHARE_PINS) === '내 성수동 릴스 지도 · 8곳', shareMessage(SHARE_PINS));
+check('share: base64url 왕복', base64UrlDecode(base64UrlEncode(utf8Encode('릴스핀 r2 ✓'))).length > 0 && utf8Decode(base64UrlDecode(base64UrlEncode(utf8Encode('릴스핀 r2 ✓')))) === '릴스핀 r2 ✓');
+check('share: base64url 은 + / = 를 쓰지 않음', !/[+/=]/.test(base64UrlEncode(utf8Encode('~~~???___한글'))));
+
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;

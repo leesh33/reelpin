@@ -1,7 +1,8 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.8
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v2.0
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v2.0 (2026-11-15)** **쇼츠 '맛집 5곳' 여러 가게 한 번에 저장**(후보 체크박스·전체 선택·중복 건너뛰기) · **네이버 지도 링크 → 플레이스 상세 직행**(`naverPlaceId`, `/api/resolve-url` SSRF 화이트리스트) · 상세 시트 **전화 원탭(tel:)·주소 원탭 복사** · **홈 화면 아이콘(PWA)** + **`?share=` 내 맛집 지도 공유 링크**
 > **v1.8 (2026-11-15)** 인앱 모달 **헤더를 다크 차콜(`#1C1C1E`)** 로 — 흰 배경 네이버 플레이스 화면과 한 줄로 붙어 보이던 문제 해결 · 가게명 흰색 · 동네 연회색(`#A1A1AA`) · `[새 창으로 열기]` 반투명 필 · 닫기 흰 `✕`
 > **v1.7 (2026-11-15)** `[매장 정보 보기]` 가 카카오맵 **바깥으로 나가지 않고** 앱 안 **네이버 플레이스 모달**(iframe)로 열림 — 헤더 `[새 창으로 열기]`·`[닫기]`, 차단 감지 시 `[네이버 지도로 열기]` 원탭 폴백
 > **v1.6 (2026-11-15)** 웹 지도를 **네이버 지도**로 교체 — `ncpKeyId` 규격, 카테고리 색 핀·내 위치 파란 점·반경 500m 원·확대축소·`fitBounds`/`morph`, **인증 실패 시 안내 배너 + Leaflet 자동 폴백**
@@ -118,8 +119,8 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 ## 개발 검증 (실제로 돌린 것)
 
 ```bash
-npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
-npm test                           # 단위·통합 530건 통과 (추출기 276 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 75) — 네트워크 안 타는 테스트
+npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
+npm test                           # 단위·통합 720건 통과 (추출기·딥링크 365 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -132,6 +133,40 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v2.0에서 달라진 점 (2026-11-15) — 여러 곳 한 번에 · 네이버 직행 · 홈화면 아이콘 · 공유 링크
+
+상훈 님이 요청한 세 가지 고도화를 **한 버전(2.0.0)** 으로 묶었습니다.
+
+### 1. 📋 쇼츠 '맛집 5곳'을 한 번에 저장
+- `src/services/extractor.js` — `extractCandidatesFromText(text, {max:8})` · `parseListItem()` · `searchMultiPlaces()`
+  - `1. 성수동 베통 - 소금빵` 처럼 **번호가 붙은 줄**, 이모지 불릿(`📍`), **짧은 줄 3개 이상**, 한 줄 쉼표 나열까지 후보로 뽑습니다. (최대 **8곳**)
+  - 이름은 **앞 구획**에서 잡습니다 — 대시·콜론 뒤는 대개 메뉴라 `성수동 베통 - 소금빵` → 지역 `성수동` + 상호 `베통`.
+  - 설명글의 문장(`결론적으로 말씀 드리면 비쌉니다..`)을 가게로 오인하지 않도록 `looksLikeListLine()` 로 `? ! ..`·서술어 줄을 걸러냅니다. (유튜브 '엄마손횟집' 회귀 케이스 통과)
+  - 후보마다 `지역+상호 → 상호 → 지역+상호+메뉴` 순서로 지도 3사를 조회하고, 두 후보가 같은 가게면 뒤엣것은 `duplicate` 로 표시합니다.
+- `src/screens/PasteScreen.js` — 결과 목록의 라디오를 **체크박스**로 바꾸고 `[전체 선택]/[전체 해제]` 토글, `선택 N곳` 표시, 하단 **[선택한 N곳 한 번에 저장]** 버튼. 여러 곳이면 매칭된 후보가 **모두 선택된 상태**로 뜹니다.
+- `App.js` · `src/utils/pins.js` — `handleSavedMany()` + `splitNewPins()` — **이름이 같고 좌표가 200m 이내**(또는 같은 `naverPlaceId`/매장 URL)면 이미 있는 핀으로 보고 건너뜁니다. 저장 후 지도 탭으로 이동하고 `N곳을 지도에 꽂았어요 · K곳은 이미 있어요` 토스트. 무료 플랜 10개 한도는 남은 자리까지만 저장하고 그 사실을 알려 줍니다.
+
+### 2. 🔗 네이버 지도 링크 직접 저장 + 상세 시트 보강
+- `src/utils/links.js` — `extractNaverPlaceId()` · `naverPlaceDetailUrl()` — `map.naver.com/p/entry/place/{id}`, `map.naver.com/p/place/{id}`, `m.place.naver.com/restaurant|place/{id}(/home)` 어느 모양이든 **placeId 하나**로 줄입니다.
+- `api/resolve-url.js` (신규 Vercel 함수) — `GET /api/resolve-url?url=…`
+  - `naver.me/…` 같은 단축 링크의 리다이렉트를 **서버가 직접 따라가** 목적지·플레이스 ID·이름·좌표·주소·전화를 돌려줍니다.
+  - **SSRF 방어**: 허용 호스트 화이트리스트(`naver.me`·`map.naver.com`·`m.place.naver.com`·`place.naver.com`·`youtu.be`·`youtube.com`)만 요청, IP·내부망·`user:pass@`·비표준 포트 거부, **리다이렉트도 매 홉 재검사**(최대 3홉, 총 8초 예산). 업스트림 본문·키는 응답에 담지 않습니다.
+- `naverPlaceSearchUrl(pin)` — 핀에 `naverPlaceId` 가 있으면 검색 목록(`/place/list?query=`)이 아니라 **`https://m.place.naver.com/place/{id}/home` 상세 페이지**를 엽니다. (앱 안 모달 iframe·[새 창으로 열기] 모두)
+- `src/components/PinDetailSheet.js` — **전화번호**(`tel:` 원탭 연결)와 **주소**(원탭 복사)를 표시. `extractor.js`/`pins.js` 가 지도 API 의 `phone`·`roadAddress` 를 핀에 함께 저장합니다.
+
+### 3. 🎨 홈화면 전용 아이콘(PWA) + 내 맛집 지도 공유 링크
+- **아이콘** — 코랄(`#FF5A36`) 바탕 + 흰 지도 핀 + 재생 삼각형: `assets/icon.png`(1024), `public/apple-touch-icon.png`(180), `public/icon-192.png`, `public/icon-512.png`, `public/manifest.json`
+- **PWA 메타** — Expo SDK 51 은 `public/index.html` 템플릿을 지원하지 않아서, 빌드 마지막에 `scripts/patch-web-html.mjs` 가 `dist/index.html` 에 `apple-touch-icon` · `manifest` · `theme-color` · `apple-mobile-web-app-capable` · `apple-mobile-web-app-title` 를 **한 번만** 끼워 넣습니다. (`lang="ko"`, `viewport-fit=cover` 도 함께)
+  - `npm run export:web` = `expo export --platform web && node scripts/patch-web-html.mjs`
+  - `vercel.json` buildCommand 도 같은 두 단계 → **배포 결과물에 그대로 포함**됩니다.
+- **공유 링크** — `src/utils/shareMap.js` (순수 JS, 의존성 없음)
+  - 핀의 핵심 정보(이름·카테고리·동네·좌표·placeUrl·naverPlaceId·전화·주소)를 `이름|카테고리|…` 로 이어 붙이고 UTF-8 → **Base64URL** → `https://<origin>/?share=r2-…` (서버·DB·로그인 불필요, 8곳 기준 링크 2,000자 이내)
+  - `[내 지도 공유하기]`(내 정보 탭)·`[지도 공유]`(지도 탭) — `navigator.share` 가 있으면 **공유 시트**, 없으면 **클립보드 복사** + 토스트
+  - 공유 링크로 들어오면 지도 상단에 **"공유받은 맛집 지도 (N곳)"** 배너 + 핀 미리보기(읽기 전용 상세 시트) + **[내 지도에 모두 추가]**(중복 건너뛰고 병합, 주소창의 `share` 파라미터는 정리)
+
+### 검증
+`npm test` **720건 통과** (추출기·딥링크 365 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) · `npx expo export --platform web` 에러 0건 · `dist/index.html` 에서 `apple-touch-icon`·`manifest`·`theme-color` 확인 · `dist/` 삭제 후 푸시.
 
 ## v1.8에서 달라진 점 (2026-11-15) — 모달 헤더를 다크 차콜로 (네이버 플레이스와 확실히 구분)
 
@@ -294,8 +329,8 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 | 탭 | 파일 | 내용 |
 | --- | --- | --- |
 | 📍 지도 | `src/screens/MapScreen.js` | **실제 지도(웹 네이버 지도)** + **내 위치·반경 500m 원**, [📍 내 위치] · [주변 500m] 버튼, 500m 진입 배너(실제 거리), 주변 목록(거리순) + 근처 알림 토글, 핀 상세 시트(출처 배지 + **내 위치에서 320m** + 원본 릴스 + **앱 안 네이버 플레이스 모달** + 네이버지도·카카오맵) |
-| 🔗 저장 | `src/screens/PasteScreen.js` | **릴스 링크 ↔ 가게명으로 찾기** 모드 전환, 클립보드 자동 감지, 장소 추출·직접 검색, **출처 배지가 붙은 후보 라디오 선택**, [지도에 핀 꽂기] → AsyncStorage 저장 후 지도 탭 이동 |
-| 👤 내 정보 | `src/screens/ProfileScreen.js` | 저장 핀 카운터(N/10 무료), 지오펜스 반경 300m·500m·1km, 프로 플랜 카드(월 2,900원), 내 릴스 지도 링크 복사 |
+| 🔗 저장 | `src/screens/PasteScreen.js` | **릴스 링크 ↔ 가게명으로 찾기** 모드 전환, 클립보드 자동 감지, 장소 추출·직접 검색, **여러 후보 체크박스 + [전체 선택] + [선택한 N곳 한 번에 저장]**, [지도에 핀 꽂기] → AsyncStorage 저장 후 지도 탭 이동 |
+| 👤 내 정보 | `src/screens/ProfileScreen.js` | 저장 핀 카운터(N/10 무료), 지오펜스 반경 300m·500m·1km, 프로 플랜 카드(월 2,900원), **[내 지도 공유하기]**(`?share=` 링크) |
 
 ### 핵심 파일
 
@@ -314,7 +349,11 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - `vercel.json` — 빌드(`npx expo export --platform web`)·출력(`dist`)·`/api/*` 함수·SPA 라우팅
 - `src/utils/pins.js` — 후보 → 핀 변환(`buildPin`), v1.0 핀 마이그레이션(`normalizePins`), 중복 판정(`findExistingPin`)
 - `src/storage.js` — AsyncStorage 저장/불러오기 (핀·반경·플랜)
-- `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백, `naverPlaceSearchUrl()`(인앱 모달 주소), `openExternalUrl()`·`openPlace()`(매장 정보 열기)
+- `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백, `naverPlaceSearchUrl()`(placeId 있으면 **상세 페이지 직행**), `extractNaverPlaceId()`·`naverPlaceDetailUrl()`, `openExternalUrl()`·`openPlace()`, `telUrlOf()`·`openPhone()`
+- `src/utils/shareMap.js` — **내 맛집 지도 공유 링크**(압축 + Base64URL, `?share=r2-…`), `parseShareFromUrl()`·`readShareFromLocation()`, `buildShareUrl()`·`nativeShare()`
+- `api/resolve-url.js` — **단축·네이버 지도 링크 리다이버터**(화이트리스트·리다이렉트 재검사·8초 예산), 목적지 placeId·이름·좌표·주소·전화 반환
+- `scripts/patch-web-html.mjs` — 빌드 결과 `index.html` 에 **PWA 메타**(apple-touch-icon·manifest·theme-color) 주입 (idempotent)
+- `public/manifest.json` · `public/icon-192.png` · `public/icon-512.png` · `public/apple-touch-icon.png` — 홈 화면 아이콘(PWA)
 
 ---
 

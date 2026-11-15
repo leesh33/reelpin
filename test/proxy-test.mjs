@@ -19,6 +19,9 @@ import {
   searchPlacesDirect,
   extractPlaces,
   parseUrl,
+  // v2.0 — 네이버 단축·지도 링크는 웹에서도 프록시로
+  resolveShortLink,
+  resolvePlaceLinkFromInput,
 } from '../src/services/extractor.js';
 
 let fails = 0;
@@ -182,6 +185,54 @@ handler = (url) => {
 const direct = await searchPlacesDirect('성수 소금빵');
 check('web/direct: 결과 있음', direct.ok === true && direct.candidates.length >= 1, JSON.stringify(direct.candidates.map((c) => c.name)));
 check('web/direct: usedAdapter = kakao+naver', direct.usedAdapter === 'kakao+naver', String(direct.usedAdapter));
+
+// ── 10. v2.0: 네이버 단축 링크 → /api/resolve-url 프록시 ─────────
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('/api/resolve-url') === 0) {
+    return jsonRes({
+      ok: true,
+      url: 'https://m.place.naver.com/place/1736095566/home',
+      kind: 'naver-place',
+      naverPlaceId: '1736095566',
+      title: '칸다소바',
+      lat: 37.5492716,
+      lng: 126.9227124,
+      address: '서울 마포구 와우산로 51-6',
+      phone: '0507-1375-1660',
+    });
+  }
+  return jsonRes({ items: [], places: [], documents: [] });
+};
+const webResolved = await resolveShortLink('https://naver.me/GabcdEfg');
+check('web/resolve: /api/resolve-url 프록시 호출', calls.length > 0 && calls[0].url.indexOf('/api/resolve-url?url=') === 0, calls[0] && calls[0].url);
+check(
+  'web/resolve: 링크 인코딩',
+  calls[0] && calls[0].url.indexOf(encodeURIComponent('https://naver.me/GabcdEfg')) > 0,
+  calls[0] && calls[0].url
+);
+check('web/resolve: placeId·제목·좌표', webResolved.naverPlaceId === '1736095566' && webResolved.title === '칸다소바' && Math.abs(webResolved.lat - 37.5492716) < 1e-9, JSON.stringify(webResolved));
+check('web/resolve: 네이버 페이지 직접 호출 없음', !calls.some((c) => c.url.indexOf('m.place.naver.com') === 0));
+
+calls = [];
+const webPlaceLink = await resolvePlaceLinkFromInput(['https://map.naver.com/p/entry/place/1736095566']);
+check('web/placeLink: 지도 링크에서 placeId', webPlaceLink && webPlaceLink.naverPlaceId === '1736095566', JSON.stringify(webPlaceLink));
+check('web/placeLink: 프록시로 제목 보강', webPlaceLink && webPlaceLink.title === '칸다소바' && webPlaceLink.phone === '0507-1375-1660', JSON.stringify(webPlaceLink));
+
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('/api/resolve-url') === 0) {
+    return jsonRes({ ok: true, url: 'https://m.place.naver.com/place/1736095566/home', naverPlaceId: '1736095566', title: '칸다소바', lat: 37.5492716, lng: 126.9227124, address: '서울 마포구 와우산로 51-6', phone: '0507-1375-1660' });
+  }
+  if (u.indexOf('/api/kakao-local') === 0) return jsonRes({ documents: [] });
+  return jsonRes({ items: [], places: [], documents: [] });
+};
+const webNaverPin = await extractPlaces('https://m.place.naver.com/place/1736095566');
+check('web/extract: 네이버 링크는 placeId 핀', webNaverPin.usedAdapter === 'naver-place-link' && (webNaverPin.candidates[0] || {}).naverPlaceId === '1736095566', JSON.stringify(webNaverPin.usedAdapter));
+check('web/extract: 좌표·전화까지 저장', (webNaverPin.candidates[0] || {}).phone === '0507-1375-1660' && Number.isFinite((webNaverPin.candidates[0] || {}).lat));
+
 
 // ── 9. 네트워크 예외도 앱을 멈추지 않음 ─────────────────────
 globalThis.fetch = async () => {

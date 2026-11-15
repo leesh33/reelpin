@@ -15,7 +15,9 @@ import ProfileScreen from './src/screens/ProfileScreen';
 import TabBar from './src/components/TabBar';
 import Toast from './src/components/Toast';
 import { loadPins, loadPro, loadRadius, savePins, savePro, saveRadius } from './src/storage';
-import { findExistingPin, normalizePins } from './src/utils/pins';
+import { findExistingPin, normalizePins, splitNewPins } from './src/utils/pins';
+import { clearShareFromLocation, readShareFromLocation } from './src/utils/shareMap';
+import { FREE_PIN_LIMIT } from './src/data/seedPins';
 import { colors, typography } from './src/theme';
 
 const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
@@ -27,6 +29,8 @@ export default function App() {
   const [radius, setRadius] = useState(300);
   const [isPro, setIsPro] = useState(false);
   const [selectedPinId, setSelectedPinId] = useState(null);
+  // v2.0 — `?share=…` 링크로 들어온 '공유받은 맛집 지도' (아직 내 지도에 넣기 전 미리보기)
+  const [sharedPins, setSharedPins] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
@@ -64,6 +68,13 @@ export default function App() {
     if (ready) savePro(isPro);
   }, [isPro, ready]);
 
+  // v2.0 — 주소창에 `?share=…` 가 있으면 공유받은 지도를 미리보기로 띄웁니다. (웹 전용, SSR 안전)
+  useEffect(() => {
+    if (!ready) return;
+    const shared = readShareFromLocation();
+    if (shared && shared.pins.length) setSharedPins(shared.pins);
+  }, [ready]);
+
   useEffect(
     () => () => {
       if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -94,6 +105,69 @@ export default function App() {
     },
     [pins, showToast]
   );
+
+  /**
+   * v2.0 — 여러 곳 한 번에 저장.
+   *   · 이미 저장한 핀과 이름+좌표(200m)·placeId·매장 URL 이 겹치면 건너뜁니다.
+   *   · 무료 플랜은 남은 자리까지만 저장하고, 그 밖의 곳은 토스트로 알려 줍니다.
+   */
+  const handleSavedMany = useCallback(
+    (incoming) => {
+      const list = (Array.isArray(incoming) ? incoming : [incoming]).filter(Boolean);
+      if (!list.length) return;
+      const { fresh, duplicates } = splitNewPins(pins, list);
+      const room = isPro ? Infinity : Math.max(0, FREE_PIN_LIMIT - pins.length);
+      const allowed = fresh.slice(0, room);
+      const overLimit = fresh.length - allowed.length;
+      if (!allowed.length) {
+        setTab('map');
+        if (duplicates.length) {
+          const first = duplicates[0].existing;
+          if (first) setSelectedPinId(first.id);
+          showToast(
+            duplicates.length === list.length
+              ? '이미 지도에 있는 장소예요 · ' + first.name
+              : '무료 플랜은 핀 ' + FREE_PIN_LIMIT + '개까지예요'
+          );
+        } else {
+          showToast('무료 플랜은 핀 ' + FREE_PIN_LIMIT + '개까지예요');
+        }
+        return;
+      }
+      setPins((prev) => allowed.concat(prev));
+      setSelectedPinId(allowed[0].id);
+      setTab('map');
+      const parts = [];
+      parts.push(allowed.length > 1 ? allowed.length + '곳을 지도에 꽂았어요' : '지도에 핀을 꽂았어요 · ' + allowed[0].name);
+      if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
+      if (overLimit > 0) parts.push('무료 한도로 ' + overLimit + '곳은 못 넣었어요');
+      showToast(parts.join(' · '), 'pro');
+    },
+    [isPro, pins, showToast]
+  );
+
+  /** 공유받은 지도를 내 지도에 합칩니다. (중복은 건너뛰고, 주소창의 share 는 지움) */
+  const handleAddSharedPins = useCallback(() => {
+    if (!sharedPins.length) return;
+    const incoming = sharedPins.map((p) => ({ ...p, id: 'pin-shared-' + p.id + '-' + Date.now(), shared: false }));
+    const { fresh, duplicates } = splitNewPins(pins, incoming);
+    const room = isPro ? Infinity : Math.max(0, FREE_PIN_LIMIT - pins.length);
+    const allowed = fresh.slice(0, room);
+    if (allowed.length) setPins((prev) => allowed.concat(prev));
+    setSharedPins([]);
+    setTab('map');
+    clearShareFromLocation();
+    const parts = [];
+    if (allowed.length) parts.push('공유받은 ' + allowed.length + '곳을 내 지도에 넣었어요');
+    if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
+    if (fresh.length - allowed.length > 0) parts.push('무료 한도로 ' + (fresh.length - allowed.length) + '곳은 못 넣었어요');
+    showToast(parts.join(' · ') || '추가할 곳이 없어요', allowed.length ? 'pro' : 'dark');
+  }, [isPro, pins, sharedPins, showToast]);
+
+  const handleDismissShared = useCallback(() => {
+    setSharedPins([]);
+    clearShareFromLocation();
+  }, []);
 
   const handleDeletePin = useCallback(
     (pinId) => {
@@ -150,6 +224,9 @@ export default function App() {
               onGoPaste={() => setTab('paste')}
               onDeletePin={handleDeletePin}
               onToast={showToast}
+              sharedPins={sharedPins}
+              onAddSharedPins={handleAddSharedPins}
+              onDismissShared={handleDismissShared}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
@@ -158,6 +235,7 @@ export default function App() {
               pinCount={pins.length}
               isPro={isPro}
               onSaved={handleSaved}
+              onSavedMany={handleSavedMany}
               onClose={() => setTab('map')}
               onGoProfile={() => setTab('profile')}
               onToast={showToast}

@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { FREE_PIN_LIMIT } from '../data/seedPins';
-import { buildShareLink } from '../utils/links';
+import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 const RADIUS_OPTIONS = [
@@ -35,12 +35,26 @@ export default function ProfileScreen({
   const ratio = isPro ? 1 : Math.min(1, count / FREE_PIN_LIMIT);
 
   const shareMap = async () => {
-    const text = buildShareLink(handle, pins, pins[0] ? pins[0].area : '');
+    if (!pins.length) {
+      onToast('공유할 핀이 아직 없어요');
+      return;
+    }
+    // v2.0 — 핀을 압축·Base64URL 로 담은 `?share=` 링크 (서버 DB 없이 동작)
+    const url = buildShareUrl(pins);
+    const text = shareMessage(pins);
+    if (canNativeShare()) {
+      const result = await nativeShare(url, { title: text, text });
+      if (result.shared) {
+        onToast('공유 시트를 열었어요');
+        return;
+      }
+      if (result.cancelled) return;
+    }
     try {
-      await Clipboard.setStringAsync(text);
+      await Clipboard.setStringAsync(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 2200);
-      onToast('내 릴스 지도 링크를 복사했어요');
+      onToast('내 지도 공유 링크를 복사했어요 · ' + text);
     } catch (e) {
       onToast('복사에 실패했어요. 다시 시도해 주세요');
     }
@@ -102,13 +116,13 @@ export default function ProfileScreen({
         {/* 지도 공유 */}
         <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
           <View style={styles.shareIcon}>
-            <Ionicons name={copied ? 'checkmark' : 'link'} size={18} color={colors.coral} />
+            <Ionicons name={copied ? 'checkmark' : 'share-social'} size={18} color={colors.coral} />
           </View>
           <View style={styles.shareText}>
-            <Text style={styles.shareTitle}>
-              {copied ? '복사했어요!' : '내 릴스 지도 링크 복사'}
+            <Text style={styles.shareTitle}>{copied ? '링크를 복사했어요!' : '내 지도 공유하기'}</Text>
+            <Text style={styles.shareSub}>
+              {count}곳을 담은 링크 하나로 건네줘요 · 받는 사람은 바로 지도로 열립니다
             </Text>
-            <Text style={styles.shareSub}>스토리·단톡방에 붙이면 그 자체가 초대장이 됩니다</Text>
           </View>
           <Ionicons name="copy-outline" size={17} color={colors.textMuted} />
         </Pressable>
@@ -176,7 +190,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v1.0.0 (MVP)</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.0.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>

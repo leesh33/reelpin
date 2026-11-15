@@ -43,6 +43,7 @@ export default function PasteScreen({
   pinCount,
   isPro,
   onSaved,
+  onSavedMany,
   onClose,
   onGoProfile,
   onToast,
@@ -56,7 +57,8 @@ export default function PasteScreen({
   const [extracting, setExtracting] = useState(false);
   const [stage, setStage] = useState(0);
   const [candidates, setCandidates] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  // v2.0 — 후보마다 체크박스. 한 곳이든 여러 곳이든 '선택한 N곳'을 한 번에 저장합니다.
+  const [selectedIds, setSelectedIds] = useState([]);
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState('');
   const scrollRef = useRef(null);
@@ -102,7 +104,7 @@ export default function PasteScreen({
     setMode(next);
     setError('');
     setCandidates([]);
-    setSelectedId(null);
+    setSelectedIds([]);
     setMeta(null);
     setStage(0);
   };
@@ -133,7 +135,7 @@ export default function PasteScreen({
     setError('');
     setExtracting(true);
     setCandidates([]);
-    setSelectedId(null);
+    setSelectedIds([]);
 
     const stageTimer = startProgress();
 
@@ -149,9 +151,15 @@ export default function PasteScreen({
         return;
       }
       setCandidates(result.candidates || []);
-      setSelectedId(result.candidates && result.candidates[0] ? result.candidates[0].id : null);
+      // 여러 곳이면 매칭된 후보를 모두 선택해 두고(바로 저장), 한 곳이면 1순위만 선택합니다.
+      const firstList = result.candidates || [];
+      setSelectedIds(
+        result.mode === 'multi' ? firstList.map((c) => c.id) : firstList[0] ? [firstList[0].id] : []
+      );
       setMeta({
         mode: 'link',
+        multi: result.mode === 'multi',
+        unmatched: result.unmatched || [],
         platform: result.platformLabel || '링크',
         platformKey: result.platform,
         usedAdapter: result.usedAdapter,
@@ -180,7 +188,7 @@ export default function PasteScreen({
     setError('');
     setExtracting(true);
     setCandidates([]);
-    setSelectedId(null);
+    setSelectedIds([]);
     if (targetQuery != null) setQuery(targetQuery);
 
     const stageTimer = startProgress();
@@ -196,9 +204,11 @@ export default function PasteScreen({
         return;
       }
       setCandidates(result.candidates || []);
-      setSelectedId(result.candidates && result.candidates[0] ? result.candidates[0].id : null);
+      setSelectedIds(result.candidates && result.candidates[0] ? [result.candidates[0].id] : []);
       setMeta({
         mode: 'search',
+        multi: false,
+        unmatched: [],
         platform: '직접 검색',
         platformKey: 'search',
         usedAdapter: result.usedAdapter,
@@ -224,7 +234,7 @@ export default function PasteScreen({
     setMode('search');
     setError('');
     setCandidates([]);
-    setSelectedId(null);
+    setSelectedIds([]);
     setMeta(null);
     setStage(0);
     setQuery(nextQuery);
@@ -237,20 +247,31 @@ export default function PasteScreen({
     runExtract(preset.url);
   };
 
-  const selectedCandidate = candidates.find((c) => c.id === selectedId) || null;
+  const selectedCandidates = candidates.filter((c) => selectedIds.indexOf(c.id) >= 0);
+  const heroCandidate = selectedCandidates[0] || null;
+  const allSelected = candidates.length > 0 && selectedCandidates.length === candidates.length;
+
+  const toggleSelected = (id) => {
+    setSelectedIds((cur) => (cur.indexOf(id) >= 0 ? cur.filter((x) => x !== id) : cur.concat(id)));
+  };
+
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? [] : candidates.map((c) => c.id));
+  };
 
   const resetInputs = () => {
     setUrl('');
     setQuery('');
     setCandidates([]);
-    setSelectedId(null);
+    setSelectedIds([]);
     setMeta(null);
     setClipboardUrl(null);
     setClipboardCaption('');
   };
 
-  const savePin = () => {
-    if (!selectedCandidate) return;
+  /** 선택한 후보를 핀으로 만들어 저장합니다. (1곳이든 N곳이든 같은 버튼) */
+  const savePins = () => {
+    if (!selectedCandidates.length) return;
     if (limitReached) {
       onToast('무료 플랜은 핀 10개까지예요');
       return;
@@ -259,12 +280,15 @@ export default function PasteScreen({
     // 붙여넣은 게 '문구 + 링크' 덩어리여도 핀에는 링크만 저장합니다. (상세 시트의 [원본 열기]가 깨지지 않게)
     const sourceUrl = searchMode ? '' : splitSharedText(url).url;
     const platform = searchMode ? 'search' : parseUrl(sourceUrl).platform || 'instagram';
-    const pin = buildPin(selectedCandidate, { sourceUrl, platform });
-    if (!pin) {
+    const built = selectedCandidates
+      .map((candidate) => buildPin(candidate, { sourceUrl, platform }))
+      .filter(Boolean);
+    if (!built.length) {
       setError('저장할 장소 정보가 비어 있어요. 후보를 다시 골라 주세요.');
       return;
     }
-    onSaved(pin);
+    if (typeof onSavedMany === 'function') onSavedMany(built);
+    else if (typeof onSaved === 'function') built.forEach((pin) => onSaved(pin));
     resetInputs();
   };
 
@@ -488,7 +512,9 @@ export default function PasteScreen({
           <View style={styles.resultWrap}>
             <View style={styles.resultHead}>
               <Text style={styles.sectionTitle}>
-                {meta && meta.mode === 'search' ? '찾은 가게' : '추출된 장소'} {candidates.length}곳
+                {meta && meta.multi
+                  ? '설명글에서 찾은 가게 ' + candidates.length + '곳'
+                  : (meta && meta.mode === 'search' ? '찾은 가게 ' : '추출된 장소 ') + candidates.length + '곳'}
               </Text>
               <View style={styles.platformChip}>
                 <Text style={styles.platformChipText}>{meta ? meta.platform : '링크'}</Text>
@@ -515,27 +541,48 @@ export default function PasteScreen({
             <View style={styles.heroCard}>
               <View style={styles.heroTile}>
                 <Text style={styles.heroEmoji}>
-                  {EMOJI_BY_CATEGORY[selectedCandidate ? selectedCandidate.category : '맛집'] || '📍'}
+                  {EMOJI_BY_CATEGORY[heroCandidate ? heroCandidate.category : '맛집'] || '📍'}
                 </Text>
               </View>
               <View style={styles.heroOverlay}>
                 <Text style={styles.heroName} numberOfLines={1}>
-                  {selectedCandidate ? selectedCandidate.name : ''}
+                  {heroCandidate ? heroCandidate.name : '저장할 곳을 골라 주세요'}
                 </Text>
-                {selectedCandidate ? <ProviderBadges item={selectedCandidate} size="sm" style={styles.heroBadges} /> : null}
+                {heroCandidate ? <ProviderBadges item={heroCandidate} size="sm" style={styles.heroBadges} /> : null}
               </View>
             </View>
 
+            {/* v2.0 — 전체 선택 토글 + 선택 개수 */}
+            <View style={styles.selectRow}>
+              <Pressable
+                style={styles.selectAllBtn}
+                onPress={toggleAll}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: allSelected }}
+                accessibilityLabel={allSelected ? '전체 해제' : '전체 선택'}
+              >
+                <View style={[styles.checkbox, allSelected && styles.checkboxOn]}>
+                  {allSelected ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
+                </View>
+                <Text style={styles.selectAllText}>{allSelected ? '전체 해제' : '전체 선택'}</Text>
+              </Pressable>
+              <Text style={styles.selectCount}>선택 {selectedCandidates.length}곳</Text>
+            </View>
+
             {candidates.map((c, i) => {
-              const on = c.id === selectedId;
+              const on = selectedIds.indexOf(c.id) >= 0;
               return (
                 <Pressable
                   key={c.id}
                   style={[styles.candCard, on && styles.candCardOn]}
-                  onPress={() => setSelectedId(c.id)}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
+                  onPress={() => toggleSelected(c.id)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: on }}
+                  accessibilityLabel={c.name + ' 선택'}
                 >
+                  <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                    {on ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
+                  </View>
                   <View style={[styles.candTile, { backgroundColor: TILE_BG[i % TILE_BG.length] }]}>
                     <Text style={styles.candEmoji}>{EMOJI_BY_CATEGORY[c.category] || '📍'}</Text>
                   </View>
@@ -550,12 +597,15 @@ export default function PasteScreen({
                       </Text>
                     </View>
                   </View>
-                  <View style={[styles.radio, on && styles.radioOn]}>
-                    {on ? <View style={styles.radioDot} /> : null}
-                  </View>
                 </Pressable>
               );
             })}
+
+            {meta && meta.unmatched && meta.unmatched.length > 0 ? (
+              <Text style={styles.unmatchedNote}>
+                못 찾은 항목: {meta.unmatched.map((u) => u.label || u.name).join(' · ')}
+              </Text>
+            ) : null}
 
             {meta && String(meta.usedAdapter || '').indexOf('offline') === 0 && (
               <Text style={styles.adapterNote}>
@@ -572,13 +622,17 @@ export default function PasteScreen({
               </Pressable>
             ) : (
               <Pressable
-                style={[styles.primaryBtn, styles.saveBtn]}
-                onPress={savePin}
-                disabled={!selectedCandidate}
+                style={[styles.primaryBtn, styles.saveBtn, !selectedCandidates.length && styles.saveBtnOff]}
+                onPress={savePins}
+                disabled={!selectedCandidates.length}
                 accessibilityRole="button"
               >
                 <Ionicons name="location" size={16} color={colors.white} />
-                <Text style={styles.primaryBtnText}>지도에 핀 꽂기</Text>
+                <Text style={styles.primaryBtnText}>
+                  {selectedCandidates.length > 1
+                    ? '선택한 ' + selectedCandidates.length + '곳 한 번에 저장'
+                    : '선택한 ' + selectedCandidates.length + '곳 저장'}
+                </Text>
               </Pressable>
             )}
 
@@ -957,6 +1011,53 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     padding: 10,
     marginBottom: 8,
+  },
+  selectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  selectAllBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 4,
+    paddingRight: 8,
+  },
+  selectAllText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  selectCount: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.coralDark,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: '#D8D8E0',
+    backgroundColor: colors.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxOn: {
+    borderColor: colors.coral,
+    backgroundColor: colors.coral,
+  },
+  unmatchedNote: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: colors.textSub,
+    marginTop: 2,
+    marginBottom: 4,
+  },
+  saveBtnOff: {
+    opacity: 0.5,
   },
   candCardOn: {
     borderColor: colors.coral,

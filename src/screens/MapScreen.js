@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import RealMapView from '../components/RealMapView';
 import FilterChips, { FILTERS, matchesFilter } from '../components/FilterChips';
@@ -22,6 +23,7 @@ import {
   showNearbyNotification,
 } from '../services/notifications';
 import { colors, cardShadow, radius, typography } from '../theme';
+import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 
 export default function MapScreen({
   pins,
@@ -31,6 +33,9 @@ export default function MapScreen({
   onGoPaste,
   onDeletePin,
   onToast,
+  sharedPins = [],
+  onAddSharedPins,
+  onDismissShared,
 }) {
   const [filter, setFilter] = useState('전체');
 
@@ -61,6 +66,12 @@ export default function MapScreen({
   }, []);
 
   const filtered = useMemo(() => pins.filter((p) => matchesFilter(p, filter)), [pins, filter]);
+  // v2.0 — 공유받은 지도는 '미리보기'로 지도에 함께 띄우고, 상세 시트는 읽기 전용으로 엽니다.
+  const previewPins = useMemo(() => (Array.isArray(sharedPins) ? sharedPins.filter(Boolean) : []), [sharedPins]);
+  const mapPins = useMemo(
+    () => (previewPins.length ? previewPins.concat(filtered) : filtered),
+    [previewPins, filtered]
+  );
 
   const counts = useMemo(() => {
     const out = {};
@@ -71,8 +82,12 @@ export default function MapScreen({
   }, [pins]);
 
   const selectedPin = useMemo(
-    () => pins.find((p) => p.id === selectedPinId) || null,
-    [pins, selectedPinId]
+    () => pins.find((p) => p.id === selectedPinId) || previewPins.find((p) => p.id === selectedPinId) || null,
+    [pins, previewPins, selectedPinId]
+  );
+  const selectedIsShared = useMemo(
+    () => Boolean(selectedPinId) && previewPins.some((p) => p.id === selectedPinId),
+    [previewPins, selectedPinId]
   );
 
   // 내 위치로부터의 실제 거리 (핀 id → m)
@@ -257,12 +272,36 @@ export default function MapScreen({
     focusOnPin(banner.target);
   };
 
+  /** v2.0 — 내 맛집 지도를 링크로 공유(공유 시트 또는 클립보드) */
+  const shareMyMap = useCallback(async () => {
+    if (!pins.length) {
+      showToast('공유할 핀이 아직 없어요');
+      return;
+    }
+    const url = buildShareUrl(pins);
+    const text = shareMessage(pins);
+    if (canNativeShare()) {
+      const result = await nativeShare(url, { title: text, text });
+      if (result.shared) {
+        showToast('공유 시트를 열었어요');
+        return;
+      }
+      if (result.cancelled) return;
+    }
+    try {
+      await Clipboard.setStringAsync(url);
+      showToast('내 지도 공유 링크를 복사했어요');
+    } catch (e) {
+      showToast('링크 복사에 실패했어요. 다시 시도해 주세요');
+    }
+  }, [pins, showToast]);
+
   const nearbyList = myCoords ? nearby : [];
 
   return (
     <View style={styles.root}>
       <RealMapView
-        pins={filtered}
+        pins={mapPins}
         selectedId={selectedPinId}
         onSelect={onSelectPin}
         myCoords={myCoords}
@@ -271,8 +310,40 @@ export default function MapScreen({
         radiusMeters={NEARBY_RADIUS_M}
       />
 
-      {/* 상단 오버레이: 실시간 배너 + 카테고리 필터 */}
+      {/* 상단 오버레이: 공유받은 지도 배너 + 실시간 배너 + 카테고리 필터 */}
       <View style={styles.topOverlay} pointerEvents="box-none">
+        {previewPins.length > 0 && (
+          <View style={styles.sharedBanner}>
+            <View style={styles.sharedIcon}>
+              <Ionicons name="share-social" size={15} color={colors.white} />
+            </View>
+            <View style={styles.sharedTextWrap}>
+              <Text style={styles.sharedTitle} numberOfLines={1}>
+                {'공유받은 맛집 지도 (' + previewPins.length + '곳)'}
+              </Text>
+              <Text style={styles.sharedSub} numberOfLines={1}>
+                지도에 미리보기로 띄웠어요
+              </Text>
+            </View>
+            <Pressable
+              style={styles.sharedAddBtn}
+              onPress={onAddSharedPins}
+              accessibilityRole="button"
+              accessibilityLabel="내 지도에 모두 추가"
+            >
+              <Text style={styles.sharedAddText}>내 지도에 모두 추가</Text>
+            </Pressable>
+            <Pressable
+              style={styles.sharedClose}
+              onPress={onDismissShared}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="공유받은 지도 닫기"
+            >
+              <Ionicons name="close" size={14} color="#C9D3E4" />
+            </Pressable>
+          </View>
+        )}
         <GeofenceBanner
           pin={banner.pin}
           radiusMeters={radiusMeters}
@@ -392,7 +463,7 @@ export default function MapScreen({
         </View>
       )}
 
-      {/* 내 위치 · 주변 500m 버튼 */}
+      {/* 내 위치 · 주변 500m · 공유 버튼 */}
       {!selectedPin && (
         <View style={styles.actionCol}>
           <Pressable
@@ -404,6 +475,15 @@ export default function MapScreen({
           >
             <Ionicons name="storefront-outline" size={14} color={colors.white} />
             <Text style={styles.nearbyBtnText}>{'주변 ' + NEARBY_RADIUS_M + 'm'}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.nearbyBtn}
+            onPress={shareMyMap}
+            accessibilityRole="button"
+            accessibilityLabel="내 지도 공유하기"
+          >
+            <Ionicons name="share-social-outline" size={14} color={colors.white} />
+            <Text style={styles.nearbyBtnText}>지도 공유</Text>
           </Pressable>
           <Pressable
             style={[styles.fab, myCoords && styles.fabLive]}
@@ -420,8 +500,8 @@ export default function MapScreen({
         </View>
       )}
 
-      {/* 핀 없음 안내 */}
-      {pins.length === 0 && (
+      {/* 핀 없음 안내 (공유받은 지도만 있으면 띄우지 않습니다) */}
+      {pins.length === 0 && previewPins.length === 0 && (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyTitle}>지도가 비어 있어요</Text>
           <Text style={styles.emptySub}>릴스 링크 하나면 3초 만에 핀이 꽂힙니다.</Text>
@@ -440,6 +520,7 @@ export default function MapScreen({
           onClose={() => onSelectPin(null)}
           onDelete={onDeletePin}
           onToast={onToast}
+          readOnly={selectedIsShared}
         />
       )}
     </View>
@@ -456,6 +537,59 @@ const styles = StyleSheet.create({
     top: 8,
     left: 0,
     right: 0,
+  },
+  sharedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(20,31,53,0.95)',
+    borderWidth: 1,
+    borderColor: colors.navyLine,
+  },
+  sharedIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 9,
+    backgroundColor: colors.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sharedTextWrap: { flex: 1, minWidth: 0 },
+  sharedTitle: {
+    color: colors.white,
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  sharedSub: {
+    color: '#9FB0C8',
+    fontSize: 10.5,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  sharedAddBtn: {
+    height: 30,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: colors.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sharedAddText: {
+    color: colors.white,
+    fontSize: 10.5,
+    fontWeight: '800',
+  },
+  sharedClose: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipWrap: {
     marginTop: 10,

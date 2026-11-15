@@ -30,6 +30,7 @@
  *     첫 후보로 결과가 없으면 다음 후보로 자동 재시도합니다.
  */
 import { Platform } from 'react-native';
+import { extractNaverPlaceId, isShortLinkUrl, naverPlaceDetailUrl } from '../utils/links';
 
 export const PLATFORMS = {
   instagram: { label: '인스타 릴스', host: 'instagram.com' },
@@ -1021,6 +1022,394 @@ export function titleNoticeOf(platform) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// v2.0 · 쇼츠 '맛집 5곳' — 여러 가게 후보 한 번에 뽑기
+// ─────────────────────────────────────────────────────────────
+/** 한 번에 뽑는 후보 수 상한 (지도에 꽂을 수 있는 개수) */
+export const MAX_MULTI_CANDIDATES = 8;
+
+/** 목록 표식 — `1.` `2)` `①` `- ` `• ` `[3]` */
+const LIST_MARKER_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\d{1,2}\s*\uBC88[.)]?|\[[0-9]{1,2}\]|[-\u2022*\u00b7\u2023\u25aa\u25e6])\s*/;
+/** 번호가 붙은 줄인지 — 2줄 이상이면 '여러 곳 목록'으로 봅니다. */
+const NUMBERED_LINE_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\d{1,2}\s*\uBC88[.)]?)\s*\S/;
+/** 한 줄 안에서 가게를 나누는 구분자 (`|` `·` `→` `-`) */
+const ITEM_SPLIT_RE = /\s*[|\u00b7\u2022\u2023\u2192>]\s*|\s+[-\u2013\u2014]\s+/;
+
+/** 목록 표식과 앞뒤 장식(이모지·화살표)을 걱어냅니다. */
+export function stripListMarker(line) {
+  return String(line || '')
+    .replace(LIST_MARKER_RE, '')
+    .replace(/^[\s\u2192>·•\-–—]+/, '')
+    .trim();
+}
+
+/** 지역 이름 같은 토큰인지 ('성수동'·'연남'·'마포구') */
+function isAreaToken(token) {
+  const t = String(token || '').trim();
+  if (!t) return false;
+  if (KNOWN_AREAS.indexOf(t) >= 0) return true;
+  return /^[가-힣]{1,6}(?:동|읍|면|역|구|시|도)$/.test(t);
+}
+
+/**
+ * 목록 한 줄 → { name, area, queries }
+ *   '1. 성수동 베통 (소금빵)'  → { name:'베통', area:'성수동', queries:['성수동 베통','베통',…] }
+ * 이름은 '지역·카테고리·수식어'를 걸러 낸 마지막 토큰을 씁니다. (상호는 대개 줄 끝에 옵니다)
+ */
+export function parseListItem(line, index = 0, options = {}) {
+  const bare = stripListMarker(line);
+  if (!bare) return null;
+  // '성수동 베통 - 소금빵' 처럼 대시·콜론 뒤는 대개 메뉴·설명이라, 이름은 **앞 구획**에서 찾습니다.
+  const head = bare.split(/\s+[-–—]\s+|\s*[|:]\s*|\s*→\s*/)[0] || bare;
+  const dropBrackets = (text) =>
+    String(text || '')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\{[^}]*\}/g, ' ');
+  const cleanedHead = cleanCaptionText(dropBrackets(head));
+  const cleaned = cleanCaptionText(dropBrackets(bare));
+  if (!cleaned) return null;
+  const area = findAreaFromText(cleaned) || findAreaFromText(cleanedHead);
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  const pickUsable = (tokens) =>
+    tokens.filter((tok) => {
+      if (tok.length < 2) return false;
+      if (!/[가-힣A-Za-z]/.test(tok)) return false;
+      if (isAreaToken(tok)) return false;
+      if (area && tok === area) return false;
+      if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) return false;
+      if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return false;
+      if (PREDICATE_TAIL_RE.test(tok)) return false;
+      if (isStopToken(tok, stopSet)) return false;
+      return true;
+    });
+  let usable = pickUsable(cleanedHead.split(' ').filter(Boolean));
+  if (!usable.length) usable = pickUsable(cleaned.split(' ').filter(Boolean));
+  const name = usable.length ? usable[usable.length - 1] : '';
+  const joined = usable.slice(-2).join(' ');
+  const queries = [];
+  const push = (q) => {
+    const v = String(q || '').replace(/\s+/g, ' ').trim();
+    if (v.length >= 2 && queries.indexOf(v) < 0) queries.push(v);
+  };
+  if (name) {
+    if (area) push(area + ' ' + name);
+    push(name);
+    if (joined && joined !== name) {
+      if (area) push(area + ' ' + joined);
+      push(joined);
+    }
+  }
+  // 이름을 못 잴았어도, **번호가 붙은 목록**이면 줄 전체를 검색어로 써 봅니다.
+  // (설명글 문장을 목록으로 오인하지 않게, 번호 없는 줄에는 이 폴백을 쓰지 않습니다)
+  if (!queries.length && options.allowFallback && cleaned.length >= 2 && cleaned.length <= 40) {
+    push(cleaned);
+  }
+  if (!queries.length) return null;
+  return {
+    index: index + 1,
+    label: bare.replace(/\s+/g, ' ').slice(0, 60),
+    name: name || queries[0],
+    area: area || '',
+    queries: queries.slice(0, 4),
+  };
+}
+
+/**
+ * (번호 없는) 한 줄이 '가게 이름 줄'처럼 보이는지
+ *   · 24자 이하로 짧고, 문장부호(? ! ..)나 서술어로 끝나지 않아야 합니다.
+ *   → 설명글의 문장(“결론적으로 말씀 드리면 비쌉니다..”)을 가게로 오인하지 않습니다.
+ */
+export function looksLikeListLine(line) {
+  const raw = String(line || '');
+  const cleaned = cleanCaptionText(stripListMarker(raw));
+  if (cleaned.length < 2 || cleaned.length > 24) return false;
+  if (/[?!]|\.\./.test(raw)) return false;
+  if (PREDICATE_TAIL_RE.test(cleaned)) return false;
+  return true;
+}
+
+/**
+ * 설명글·댓글·붙여넣은 텍스트 → 여러 가게 후보 (최대 8곳)
+ *   판단 순서
+ *     1) `1. … 2. …` 처럼 **번호가 붙은 줄**이 2개 이상 → 각 줄이 한 가게
+ *     2) 짧고 이름처럼 보이는 줄이 **3개 이상** → 각 줄이 한 가게
+ *     3) 한 줄에 `,` `·` 로 나열돼 있으면 → 그 조각들이 각각 한 가게
+ *   후보가 1개 이하면 빈 배열을 돌려줍니다(기존 '한 곳' 흐름을 그대로 쓰기 위해).
+ *
+ * @param {string} text
+ * @param {{max?:number}} [options]
+ * @returns {Array<{index:number, label:string, name:string, area:string, queries:string[]}>}
+ */
+export function extractCandidatesFromText(text, options = {}) {
+  const raw = String(text == null ? '' : text).replace(/\r\n?/g, '\n');
+  if (!raw.trim()) return [];
+  const max = Math.max(1, Math.min(MAX_MULTI_CANDIDATES, Number(options.max) || MAX_MULTI_CANDIDATES));
+  const lines = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const numbered = lines.filter((l) => NUMBERED_LINE_RE.test(l));
+  let items = [];
+
+  if (numbered.length >= 2) {
+    items = numbered.map((line, i) => parseListItem(line, i, { allowFallback: true })).filter(Boolean);
+  } else {
+    const listLines = lines.filter(looksLikeListLine);
+    if (listLines.length >= 3) {
+      items = listLines.map((line, i) => parseListItem(line, i)).filter(Boolean);
+    } else {
+      // 한 줄에 '베통, 뚜레쥬르, 카페 온도' 처럼 이어 쓴 경우 (조각이 짧을 때만)
+      const parts = raw
+        .split(/,|、|\s[·•]\s/)
+        .map((p) => p.trim())
+        .filter((p) => cleanCaptionText(p).length >= 2 && cleanCaptionText(p).length <= 20);
+      if (parts.length >= 2 && parts.length === raw.split(/,|、|\s[·•]\s/).length) {
+        items = parts.map((p, i) => parseListItem(p, i)).filter(Boolean);
+      }
+    }
+  }
+
+  // 같은 이름이 두 번 나오면 한 번만
+  const seen = new Set();
+  const unique = [];
+  items.forEach((item) => {
+    const key = normalizeName(item.name + '|' + item.area);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    unique.push(item);
+  });
+  if (unique.length < 2) return [];
+  return unique.slice(0, max).map((item, i) => ({ ...item, index: i + 1 }));
+}
+
+/**
+ * 여러 후보를 각각 지도 3사에 물어보고, 첫 번째로 맞은 결과를 그 후보의 장소로 정합니다.
+ * (후보의 검색어를 앞에서부터 시도 → 결과가 나오면 다음 후보로)
+ *
+ * @param {Array<object>} items extractCandidatesFromText 결과
+ * @param {{limit?:number, providers?:string[]}} [options]
+ * @returns {Promise<{items:Array<object>, candidates:Array<object>, matched:number, unmatched:Array<object>,
+ *                    providersUsed:string[], providersTried:string[], failures:Array<object>}>}
+ */
+export async function searchMultiPlaces(items, options = {}) {
+  const list = (Array.isArray(items) ? items : []).slice(0, MAX_MULTI_CANDIDATES);
+  const limit = Number(options.limit) || 3;
+  const providersUsed = new Set();
+  const providersTried = new Set();
+  const failures = [];
+
+  const results = await Promise.all(
+    list.map(async (item) => {
+      const chainList = Array.isArray(item.queries) && item.queries.length ? item.queries : [item.name];
+      for (const q of chainList) {
+        const res = await searchPlaceProviders({ query: q, limit, providers: options.providers });
+        (res.providersUsed || []).forEach((p) => providersUsed.add(p));
+        (res.providersTried || []).forEach((p) => providersTried.add(p));
+        (res.failures || []).forEach((f) => failures.push({ ...f, query: q }));
+        if (res.candidates && res.candidates.length) {
+          const top = res.candidates[0];
+          return {
+            ...item,
+            query: q,
+            status: 'matched',
+            candidate: { ...top, multiIndex: item.index, multiLabel: item.label },
+            alternatives: res.candidates.slice(1, 3),
+          };
+        }
+      }
+      return { ...item, status: 'unmatched', candidate: null, alternatives: [] };
+    })
+  );
+
+  // 두 후보가 같은 가게로 매칭되면 뒤엣것은 '같은 가게'로 표시해 중복 저장을 막습니다.
+  const seenIds = new Set();
+  const candidates = [];
+  results.forEach((r) => {
+    if (!r.candidate) return;
+    const key = String(r.candidate.naverPlaceId || '') || normalizeName(r.candidate.name) + '@' + r.candidate.lat + ',' + r.candidate.lng;
+    if (seenIds.has(key)) {
+      r.status = 'duplicate';
+      r.candidate = null;
+      return;
+    }
+    seenIds.add(key);
+    candidates.push(r.candidate);
+  });
+
+  return {
+    items: results,
+    candidates,
+    matched: candidates.length,
+    unmatched: results.filter((r) => r.status === 'unmatched').map((r) => ({ label: r.label, name: r.name, queries: r.queries })),
+    duplicates: results.filter((r) => r.status === 'duplicate').map((r) => ({ label: r.label, name: r.name })),
+    providersUsed: Array.from(providersUsed),
+    providersTried: Array.from(providersTried),
+    failures,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// v2.0 · 네이버 지도 링크 → placeId 직행 저장
+//   `naver.me/…` 단축 링크는 리다이렉트를 따라가야 목적지를 알 수 있어서
+//   웹은 같은 출처 프록시(`/api/resolve-url`), 네이티브는 직접 페이지를 읽습니다.
+// ─────────────────────────────────────────────────────────────
+export const RESOLVE_URL_ENDPOINT = '/api/resolve-url';
+export const RESOLVE_TIMEOUT_MS = 5500;
+
+/** 네이버 플레이스 페이지 HTML → { title, lat, lng, address, phone } (SSR·테스트 공용 순수 함수) */
+export function parseNaverPlaceHtml(html) {
+  const text = String(html || '');
+  if (!text) return { title: '', lat: null, lng: null, address: '', phone: '' };
+  const meta = parseHtmlMeta(text);
+  const cleanName = (value) =>
+    decodeEntities(String(value || ''))
+      .replace(/[\u0000-\u001f]/g, ' ')
+      .replace(/\s*[:\-|]\s*네이버.*$/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  let title = cleanName(meta.ogTitle || meta.title || '');
+  if (/^네이버\s*(지도|플레이스)?$/i.test(title)) title = '';
+  // `&amp;` 가 그대로 들어 있는 HTML 도 있어서 한 번 풀고 읽습니다.
+  const flat = text.replace(/&amp;/g, '&');
+  const dname = (flat.match(/[?&]dname=([^&"'\\]{2,80})/) || [])[1];
+  if (!title && dname) {
+    try {
+      title = cleanName(decodeURIComponent(dname));
+    } catch (e) {
+      title = cleanName(dname);
+    }
+  }
+  const lat = Number((flat.match(/[?&]dlat=([0-9]{1,3}\.[0-9]{4,})/) || [])[1]);
+  const lng = Number((flat.match(/[?&]dlng=([0-9]{1,3}\.[0-9]{4,})/) || [])[1]);
+  const address = decodeEntities((text.match(/data-line-description="([^"]{4,120})"/) || [])[1] || '').trim();
+  const phone = String((text.match(/href="tel:([0-9+\-]{7,20})"/) || [])[1] || '').trim();
+  return {
+    title,
+    lat: Number.isFinite(lat) && Math.abs(lat) <= 90 ? lat : null,
+    lng: Number.isFinite(lng) && Math.abs(lng) <= 180 ? lng : null,
+    address,
+    phone,
+  };
+}
+
+/**
+ * 단축 링크·네이버 플레이스 주소 → { ok, url, naverPlaceId, title, lat, lng, address, phone }
+ * · 웹: `/api/resolve-url` 프록시가 서버에서 리다이렉트를 따라가고 제목까지 읽어 줍니다.
+ * · 네이티브: 기기에서 직접 읽습니다(fetch 는 리다이렉트를 따라가고 `res.url` 에 최종 주소가 남습니다).
+ * @param {string} rawUrl
+ * @param {{timeoutMs?:number}} [options]
+ */
+export async function resolveShortLink(rawUrl, options = {}) {
+  const url = String(rawUrl || '').trim();
+  if (!/^https?:\/\//i.test(url)) return null;
+  const timeoutMs = Number(options.timeoutMs) || RESOLVE_TIMEOUT_MS;
+
+  if (isWebPlatform()) {
+    const json = await fetchProxyJson(
+      RESOLVE_URL_ENDPOINT + '?url=' + encodeURIComponent(url),
+      { timeoutMs }
+    );
+    if (!json || json.ok === false) return null;
+    return {
+      ok: true,
+      url: String(json.url || url),
+      naverPlaceId: String(json.naverPlaceId || '') || extractNaverPlaceId(String(json.url || url)),
+      title: String(json.title || ''),
+      lat: Number(json.lat),
+      lng: Number(json.lng),
+      address: String(json.address || ''),
+      phone: String(json.phone || ''),
+      source: 'proxy',
+    };
+  }
+
+  const res = await fetchWithTimeout(url, { method: 'GET' }, timeoutMs);
+  if (!res) return null;
+  const finalUrl = String(res.url || url);
+  let html = '';
+  if (typeof res.text === 'function') {
+    try {
+      html = String(await res.text());
+    } catch (e) {
+      html = '';
+    }
+  }
+  const meta = parseNaverPlaceHtml(html);
+  return {
+    ok: true,
+    url: finalUrl,
+    naverPlaceId: extractNaverPlaceId(finalUrl) || extractNaverPlaceId(html.slice(0, 4000)),
+    ...meta,
+    source: 'direct',
+  };
+}
+
+/**
+ * 붙여넣은 링크들 중 '네이버 플레이스로 바로 갈 수 있는 링크'를 찾습니다.
+ * @param {string[]} urls
+ * @param {{timeoutMs?:number}} [options]
+ * @returns {Promise<null|{naverPlaceId:string, url:string, title?:string, lat?:number, lng?:number,
+ *                        address?:string, phone?:string, source:string}>}
+ */
+export async function resolvePlaceLinkFromInput(urls, options = {}) {
+  const list = (Array.isArray(urls) ? urls : [urls]).map((u) => String(u || '').trim()).filter(Boolean);
+  for (const url of list) {
+    const directId = extractNaverPlaceId(url);
+    if (directId) {
+      const detail = naverPlaceDetailUrl(directId);
+      const info = await resolveShortLink(detail, options);
+      return {
+        naverPlaceId: directId,
+        url: info && info.url ? info.url : url,
+        title: (info && info.title) || '',
+        lat: info ? info.lat : null,
+        lng: info ? info.lng : null,
+        address: (info && info.address) || '',
+        phone: (info && info.phone) || '',
+        source: 'naver-place',
+      };
+    }
+    if (!isShortLinkUrl(url)) continue;
+    const resolved = await resolveShortLink(url, options);
+    if (!resolved) continue;
+    const id = resolved.naverPlaceId || extractNaverPlaceId(resolved.url);
+    if (!id) continue;
+    return { ...resolved, naverPlaceId: id, url: resolved.url || url, source: 'short-link' };
+  }
+  return null;
+}
+
+/** 네이버 플레이스 링크 정보 → 저장할 후보 (좌표를 못 읽으면 manual=true) */
+export function naverPlaceCandidate(link) {
+  if (!link || !link.naverPlaceId) return null;
+  const lat = Number(link.lat);
+  const lng = Number(link.lng);
+  const hasCoords = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
+  const name = String(link.title || '').trim();
+  if (!name && !hasCoords) return null;
+  const address = String(link.address || '').trim();
+  return {
+    id: 'naver-place-' + link.naverPlaceId,
+    name: name || '네이버 플레이스 ' + link.naverPlaceId,
+    area: findAreaFromText(cleanCaptionText(address)),
+    category: '맛집',
+    menuTags: [],
+    address: address || '주소 미확인',
+    lat: hasCoords ? lat : null,
+    lng: hasCoords ? lng : null,
+    phone: String(link.phone || ''),
+    placeUrl: naverPlaceDetailUrl(link.naverPlaceId),
+    placeUrlLabel: '네이버 플레이스',
+    naverPlaceId: String(link.naverPlaceId),
+    provider: 'naver',
+    providers: ['naver'],
+    confidence: 0.95,
+    manual: !hasCoords,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
 // 어댑터 1 · 소스 메타데이터 (유튜브 Data API / 인스타 og 태그)
 // ─────────────────────────────────────────────────────────────
 export const sourceAdapters = {
@@ -1382,9 +1771,11 @@ function mapNaverItems(items) {
       lat: Number(it.mapy) / 1e7,
       lng: Number(it.mapx) / 1e7,
       phone: it.telephone || '',
-      // 지도사가 주는 link 는 업체 홈페이지·SNS 일 수 있고, 없으면 비워 둡니다.
+      // 지도사가 주는 link 는 업주 홈페이지·SNS 일 수 있고, 없으면 비워 둡니다.
       placeUrl: toOpenableUrl(it.link),
       placeUrlLabel: placeUrlLabelOf(it.link),
+      // 가끔 link 가 네이버 플레이스 주소면 placeId 를 살려 둘다 (매장 정보 직행).
+      naverPlaceId: extractNaverPlaceId(it.link),
       provider: 'naver',
       manual: false,
     };
@@ -2011,6 +2402,89 @@ export async function extractPlaces(rawInput, options = {}) {
   const suggested = extractSearchQueries(text || sharedCaption);
   const suggestedQuery = suggested.queries[0] || '';
 
+  // 결과 공통부 — 모든 반환 경로가 같은 모양(제목·상태·안내)을 갖게 합니다.
+  const baseInfo = {
+    ok: true,
+    ...parsed,
+    sourceTitle,
+    sourceDescription: description.slice(0, 500),
+    sourceComments: comments.slice(0, 300),
+    titleStatus,
+    titleNotice,
+    suggestedQuery,
+  };
+
+  // ── v2.0 (1) 네이버 지도 링크는 지도 검색 없이 placeId 로 직행 저장 ──
+  if (options.resolvePlaceLink !== false) {
+    const placeLink = await resolvePlaceLinkFromInput(
+      [targetUrl].concat(shared.urls || []),
+      { timeoutMs: options.linkTimeoutMs }
+    );
+    const direct = naverPlaceCandidate(placeLink);
+    if (direct) {
+      const coordsOk = Number.isFinite(direct.lat) && Number.isFinite(direct.lng);
+      if (coordsOk) {
+        return {
+          ...baseInfo,
+          mode: 'single',
+          title: direct.name,
+          candidates: [direct],
+          query: direct.name,
+          usedAdapter: 'naver-place-link',
+          providersTried: [],
+          providersUsed: ['naver'],
+          failures: [],
+          naverPlaceId: direct.naverPlaceId,
+        };
+      }
+      // 좌표를 못 읽었으면 이름으로 지도에서 찾아 좌표를 채우고 placeId 를 붙입니다.
+      const nameQuery = [direct.area, direct.name].filter(Boolean).join(' ');
+      const res = await searchPlaceProviders({ query: nameQuery, limit: 3 });
+      if (res.candidates && res.candidates.length) {
+        const top = {
+          ...res.candidates[0],
+          placeUrl: direct.placeUrl,
+          placeUrlLabel: direct.placeUrlLabel,
+          naverPlaceId: direct.naverPlaceId,
+        };
+        return {
+          ...baseInfo,
+          mode: 'single',
+          title: top.name,
+          candidates: [top],
+          query: nameQuery,
+          usedAdapter: 'naver-place-link',
+          providersTried: res.providersTried,
+          providersUsed: res.providersUsed,
+          failures: res.failures,
+          naverPlaceId: direct.naverPlaceId,
+        };
+      }
+    }
+  }
+
+  // ── v2.0 (2) 설명글에 여러 가게가 적혀 있으면 후보를 각각 매칭 ──
+  const listItems = options.multi === false ? [] : extractCandidatesFromText(text || sharedCaption);
+  if (listItems.length >= 2) {
+    const multi = await searchMultiPlaces(listItems, { limit: 3 });
+    if (multi.candidates.length) {
+      return {
+        ...baseInfo,
+        mode: 'multi',
+        title: multi.candidates[0].name,
+        candidates: multi.candidates.map((c) => ({ ...c, category: c.category || '맛집' })),
+        items: multi.items,
+        unmatched: multi.unmatched,
+        duplicates: multi.duplicates,
+        query: listItems.map((i) => i.queries[0]).filter(Boolean).join(' / '),
+        usedAdapter: ['multi'].concat(multi.providersUsed).join('+'),
+        providersTried: multi.providersTried,
+        providersUsed: multi.providersUsed,
+        failures: multi.failures,
+      };
+    }
+  }
+
   // 1) 캡션 분석(LLM) → 검색어 후보 확정
   const llm = await llmAdapter.extractPlaceJson(text);
   const derived = deriveQuery(text, llm);
@@ -2066,14 +2540,8 @@ export async function extractPlaces(rawInput, options = {}) {
   }
 
   const base = {
-    ok: true,
-    ...parsed,
-    sourceTitle,
-    sourceDescription: description.slice(0, 500),
-    sourceComments: comments.slice(0, 300),
-    titleStatus,
-    titleNotice,
-    suggestedQuery,
+    ...baseInfo,
+    mode: 'single',
     query: usedQuery || derived.query || '',
     queryList,
     attempts,
