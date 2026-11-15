@@ -6,7 +6,7 @@
   "installCommand": "npm install",
   "functions": {
     "api/gemini.js": {
-      "maxDuration": 30
+      "maxDuration": 60
     },
     "api/*.js": {
       "maxDuration": 10

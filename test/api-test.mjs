@@ -347,9 +347,14 @@ check(
   gBody.contents[0].parts[1].text.slice(0, 120)
 );
 check(
-  'gemini: responseMimeType=application/json + 스키마',
-  gBody.generationConfig.responseMimeType === 'application/json' && !!gBody.generationConfig.responseSchema,
+  'gemini: responseMimeType=application/json (스키마 없이 JSON 모드)',
+  gBody.generationConfig.responseMimeType === 'application/json' && !gBody.generationConfig.responseSchema,
   JSON.stringify(Object.keys(gBody.generationConfig || {}))
+);
+check(
+  'gemini: 프롬프트가 JSON 키를 지정',
+  String(gBody.contents[0].parts[1].text).indexOf('storeName') > 0 && String(gBody.contents[0].parts[1].text).indexOf('"places"') > 0,
+  String(gBody.contents[0].parts[1].text).slice(0, 160)
 );
 check('gemini: 첫 시도는 thinkingBudget 0(속도)', gBody.generationConfig.thinkingConfig.thinkingBudget === 0, JSON.stringify(gBody.generationConfig.thinkingConfig));
 check(
@@ -359,6 +364,7 @@ check(
 );
 check('gemini: places 배열 유지', r.body.places.length === 1 && r.body.places[0].name === '엄마손횟집', JSON.stringify(r.body.places));
 check('gemini: 모델·출처 표시', r.body.model === 'gemini-3.8-flash' && r.body.source === 'gemini', JSON.stringify([r.body.model, r.body.source]));
+check('gemini: 걸린 시간(elapsedMs) 함께 반환', typeof r.body.elapsedMs === 'number' && r.body.elapsedMs >= 0, String(r.body.elapsedMs));
 check('gemini: 응답에 키 없음', !leaksSecret(r.raw), r.raw.slice(0, 100));
 
 // places 만 온 경우 → 첫 가게를 storeName 으로
@@ -413,7 +419,7 @@ handler = () => errRes(429);
 r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 check('gemini: 429 는 모델 폴백 없이 빈 결과', calls.length === 1 && r.body.reason === 'gemini-upstream-429', calls.length + ' | ' + r.body.reason);
 check('gemini: 응답 타임아웃 25초 이상', geminiHandler.GEMINI_TIMEOUT_MS >= 25000, String(geminiHandler.GEMINI_TIMEOUT_MS));
-check('gemini: 전체 예산이 maxDuration(30초) 안', geminiHandler.TOTAL_BUDGET_MS <= 29000, String(geminiHandler.TOTAL_BUDGET_MS));
+check('gemini: 전체 예산이 maxDuration(60초) 안', geminiHandler.TOTAL_BUDGET_MS <= 59000, String(geminiHandler.TOTAL_BUDGET_MS));
 check(
   'gemini normalize: shorts·embed·watch·youtu.be',
   geminiHandler.normalizeYouTubeUrl('https://www.youtube.com/shorts/LPLE_SH2b9U') === 'https://www.youtube.com/watch?v=LPLE_SH2b9U' &&
@@ -578,8 +584,8 @@ check('vercel.json: PWA 메타 주입 스크립트 존재', fs.existsSync(path.j
 check('vercel.json: 출력 폴더 dist', vercel.outputDirectory === 'dist', vercel.outputDirectory);
 check('vercel.json: api/*.js 함수 설정', Object.keys(vercel.functions || {}).indexOf('api/*.js') >= 0, JSON.stringify(Object.keys(vercel.functions || {})));
 check(
-  'vercel.json: /api/gemini 만 maxDuration 30초 · 나머지는 10초',
-  (vercel.functions['api/gemini.js'] || {}).maxDuration === 30 && (vercel.functions['api/*.js'] || {}).maxDuration === 10,
+  'vercel.json: /api/gemini 만 maxDuration 60초 · 나머지는 10초',
+  (vercel.functions['api/gemini.js'] || {}).maxDuration === 60 && (vercel.functions['api/*.js'] || {}).maxDuration === 10,
   JSON.stringify(vercel.functions)
 );
 // Vercel 은 파일마다 '처음 매칭되는 키' 하나만 씁니다. 와이드 패턴이 먼저 오면 api/gemini.js 키는

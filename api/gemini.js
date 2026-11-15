@@ -26,10 +26,10 @@ const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 /** 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. */
 const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
-/** 한 번의 영상 분석 응답 타임아웃 — Gemini 영상 분석은 10~25초가 걸립니다(실측). */
-const GEMINI_TIMEOUT_MS = 26000;
-/** 모델 폴백까지 포함한 전체 예산 — Vercel maxDuration 30초 안에서 넉넉히 */
-const TOTAL_BUDGET_MS = 28000;
+/** 한 번의 영상 분석 응답 타임아웃 — Gemini 3 영상 분석은 30초를 넘기도 합니다(실측). */
+const GEMINI_TIMEOUT_MS = 45000;
+/** 모델 폴백까지 포함한 전체 예산 — Vercel maxDuration 60초 안 */
+const TOTAL_BUDGET_MS = 55000;
 /** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TITLE_CHARS = 200;
@@ -126,43 +126,22 @@ const SYSTEM_INSTRUCTION = [
   '7) 가게를 하나도 특정할 수 없으면 storeName 을 "" 로, places 를 [] 로 둔다.',
 ].join('\n');
 
-const RESPONSE_SCHEMA = {
-  type: 'OBJECT',
-  properties: {
-    storeName: { type: 'STRING' },
-    area: { type: 'STRING' },
-    menu: { type: 'STRING' },
-    category: { type: 'STRING', enum: ['맛집', '카페', '디저트', '베이커리', '가볼곳', '기타'] },
-    places: {
-      type: 'ARRAY',
-      items: {
-        type: 'OBJECT',
-        properties: {
-          name: { type: 'STRING' },
-          area: { type: 'STRING' },
-          menu: { type: 'STRING' },
-        },
-        required: ['name'],
-      },
-    },
-  },
-  required: ['storeName', 'area', 'menu', 'category', 'places'],
-};
-
 /** 요청 본문 — 영상 + 참고용 메타데이터(제목·설명글) */
 function buildRequestBody({ videoUrl, title, description, withThinkingOff }) {
   const hints = [];
   if (title) hints.push('영상 제목: ' + title);
   if (description) hints.push('영상 설명글: ' + description);
   const ask =
-    '이 영상을 보고, 영상에 나온 가게 정보를 JSON 으로만 답해줘. ' +
-    '영상 속 말과 화면 자막에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.' +
+    '이 영상을 보고, 영상에 나온 가게 정보를 아래 키만 가진 JSON 하나로 답해줘(설명·코드블록 없이).\n' +
+    '{"storeName":"가게 상호","area":"동네","menu":"대표 메뉴 1~3개(쉼표)","category":"맛집|카페|디저트|베이커리|가볼곳|기타","places":[{"name":"","area":"","menu":""}]}\n' +
+    '영상 속 말(음성)과 화면 자막·간판에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.' +
     (hints.length ? '\n\n[참고 — 영상 메타데이터]\n' + hints.join('\n') : '');
   const generationConfig = {
     temperature: 0.2,
     maxOutputTokens: 4096, // Gemini 3 는 '생각' 토큰도 여기서 나가므로 넉넉히
+    // JSON 만 받습니다. (responseSchema 는 구조를 보장하지만 영상 분석이 26초를 넘겨
+    //  타임아웃이 났습니다 — 형식은 시스템 프롬프트로 강제하고 앱에서 느슨하게 파싱합니다)
     responseMimeType: 'application/json',
-    responseSchema: RESPONSE_SCHEMA,
   };
   // 2.5 flash 는 기본적으로 '생각' 토큰을 씁니다 — 영상 분석 속도를 위해 끕니다.
   // (모델이 이 옵션을 모르면 400 이 오므로, 호출부가 옵션 없이 한 번 더 시도합니다)
@@ -291,6 +270,7 @@ module.exports = async function handler(req, res) {
   const apiKey = process.env.GEMINI_API_KEY || '';
   if (!apiKey) return sendJson(res, 503, { error: 'gemini-not-configured' });
 
+  const startedAt = Date.now();
   const body = await readBody(req);
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return sendJson(res, 400, { error: 'invalid-body' });
@@ -338,7 +318,11 @@ module.exports = async function handler(req, res) {
   if (!attempt.ok) {
     // 업스트림 본문·키는 절대 돌려주지 않습니다. (상태 코드만 로그)
     warn('gemini: upstream failed status=' + attempt.status + ' model=' + usedModel);
-    return sendJson(res, 200, emptyResult(attempt.status ? 'gemini-upstream-' + attempt.status : 'gemini-timeout'));
+    return sendJson(res, 200, {
+      ...emptyResult(attempt.status ? 'gemini-upstream-' + attempt.status : 'gemini-timeout'),
+      model: usedModel,
+      elapsedMs: Date.now() - startedAt,
+    });
   }
 
   const text = responseTextOf(attempt.json);
@@ -349,7 +333,12 @@ module.exports = async function handler(req, res) {
   }
 
   const analysis = coerceAnalysis(parsed);
-  return sendJson(res, 200, { ...analysis, model: usedModel, source: 'gemini' });
+  return sendJson(res, 200, {
+    ...analysis,
+    model: usedModel,
+    source: 'gemini',
+    elapsedMs: Date.now() - startedAt,
+  });
 };
 
 function finishReasonOf(json) {
