@@ -6,6 +6,13 @@ import { FREE_PIN_LIMIT } from '../data/seedPins';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 import { OAUTH_PROVIDERS } from '../services/cloudSync';
 import { SUPABASE_SETUP_HINT } from '../services/supabase';
+import {
+  CATEGORY_MAX_LENGTH,
+  allCategories,
+  customCategoryColor,
+  isDefaultCategory,
+  pinsInCategory,
+} from '../utils/categories';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 const RADIUS_OPTIONS = [
@@ -252,10 +259,222 @@ function AccountCard({
   );
 }
 
+/**
+ * v2.2 — 분류 관리 카드 (만들기 · 이름 바꾸기 · 지우기)
+ *
+ *   · 기본 3개(맛집·카페·가볼곳)는 **자물쇠**로 표시하고 지우기·수정 버튼을 주지 않습니다
+ *   · 커스텀 분류는 [수정] → 이름 입력 → [저장] / [삭제] → 한 번 더 확인 → 핀을 맛집으로 옮김
+ *   · 이름 검사·핀 일괄 반영은 상위(App)의 핸들러가 하고, 여기서는 돌려받은 안내를 그대로 보여 줍니다
+ */
+function CategoryManager({
+  categories,
+  pins,
+  onAddCategory,
+  onRenameCategory,
+  onRemoveCategory,
+  onToast,
+}) {
+  const [newName, setNewName] = useState('');
+  const [addError, setAddError] = useState('');
+  const [editing, setEditing] = useState(null);
+  const [editValue, setEditValue] = useState('');
+  const [editError, setEditError] = useState('');
+  const [confirming, setConfirming] = useState(null);
+
+  const list = allCategories(categories);
+  const countOf = (category) => pinsInCategory(pins, category).length;
+
+  const submitAdd = () => {
+    if (typeof onAddCategory !== 'function') return;
+    const result = onAddCategory(newName);
+    if (!result || !result.ok) {
+      setAddError((result && result.message) || '분류를 추가하지 못했어요');
+      return;
+    }
+    setNewName('');
+    setAddError('');
+  };
+
+  const startEdit = (category) => {
+    setConfirming(null);
+    setEditing(category);
+    setEditValue(category);
+    setEditError('');
+  };
+
+  const submitEdit = () => {
+    if (!editing || typeof onRenameCategory !== 'function') return;
+    const result = onRenameCategory(editing, editValue);
+    if (!result || !result.ok) {
+      setEditError((result && result.message) || '이름을 바꾸지 못했어요');
+      return;
+    }
+    setEditing(null);
+    setEditValue('');
+    setEditError('');
+  };
+
+  const removeConfirmed = (category) => {
+    if (typeof onRemoveCategory !== 'function') return;
+    const result = onRemoveCategory(category);
+    if (!result || !result.ok) {
+      if (onToast && result && result.message) onToast(result.message);
+      return;
+    }
+    setConfirming(null);
+  };
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHead}>
+        <Text style={styles.cardTitle}>분류 관리</Text>
+        <View style={styles.catCountChip}>
+          <Text style={styles.catCountChipText}>{list.length}개</Text>
+        </View>
+      </View>
+      <Text style={styles.cardHint}>
+        지도 필터와 저장할 때 쓰는 분류예요. 기본 3개는 잠겨 있고, 내가 만든 분류는 이름을 바꾸거나 지울 수 있어요.
+      </Text>
+
+      {list.map((category) => {
+        const isDefault = isDefaultCategory(category);
+        const count = countOf(category);
+        if (!isDefault && editing === category) {
+          return (
+            <View key={category} style={styles.catEditBox}>
+              <View style={styles.catRowTop}>
+                <TextInput
+                  style={styles.catInput}
+                  value={editValue}
+                  onChangeText={(t) => {
+                    setEditValue(t);
+                    setEditError('');
+                  }}
+                  maxLength={CATEGORY_MAX_LENGTH}
+                  autoCorrect={false}
+                  returnKeyType="done"
+                  onSubmitEditing={submitEdit}
+                  accessibilityLabel={'분류 이름 수정 ' + category}
+                />
+                <Pressable
+                  style={styles.catSaveBtn}
+                  onPress={submitEdit}
+                  accessibilityRole="button"
+                  accessibilityLabel={category + ' 이름 저장'}
+                >
+                  <Text style={styles.catSaveText}>저장</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.catCancelBtn}
+                  onPress={() => {
+                    setEditing(null);
+                    setEditValue('');
+                    setEditError('');
+                  }}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.catCancelText}>취소</Text>
+                </Pressable>
+              </View>
+              {!!editError && <Text style={styles.catError}>{editError}</Text>}
+            </View>
+          );
+        }
+        return (
+          <View key={category}>
+            <View style={styles.catRow}>
+              <View style={[styles.catDot, { backgroundColor: customCategoryColor(category) }]} />
+              <Text style={styles.catName} numberOfLines={1}>
+                {category}
+              </Text>
+              <Text style={styles.catPinCount}>{'핀 ' + count + '개'}</Text>
+              {isDefault ? (
+                <View style={styles.catLock}>
+                  <Ionicons name="lock-closed" size={10} color={colors.textMuted} />
+                  <Text style={styles.catLockText}>기본</Text>
+                </View>
+              ) : (
+                <View style={styles.catActions}>
+                  <Pressable
+                    style={styles.catActionBtn}
+                    onPress={() => startEdit(category)}
+                    accessibilityRole="button"
+                    accessibilityLabel={category + ' 이름 수정'}
+                  >
+                    <Text style={styles.catActionText}>수정</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.catActionBtn}
+                    onPress={() => setConfirming(confirming === category ? null : category)}
+                    accessibilityRole="button"
+                    accessibilityLabel={category + ' 삭제'}
+                  >
+                    <Text style={[styles.catActionText, styles.catDeleteText]}>삭제</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+            {confirming === category && (
+              <View style={styles.catConfirm}>
+                <Ionicons name="alert-circle" size={13} color={colors.coralDark} />
+                <Text style={styles.catConfirmText}>
+                  {count > 0
+                    ? '지울까요? 핀 ' + count + '개는 맛집으로 옮겨요'
+                    : '지울까요? 이 분류를 쓰는 핀은 없어요'}
+                </Text>
+                <Pressable
+                  style={styles.catConfirmBtn}
+                  onPress={() => removeConfirmed(category)}
+                  accessibilityRole="button"
+                  accessibilityLabel={category + ' 삭제 확인'}
+                >
+                  <Text style={styles.catConfirmBtnText}>삭제</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        );
+      })}
+
+      <View style={styles.catAddRow}>
+        <TextInput
+          style={styles.catInput}
+          value={newName}
+          onChangeText={(t) => {
+            setNewName(t);
+            setAddError('');
+          }}
+          placeholder="새 분류 이름 (예: 아이랑)"
+          placeholderTextColor={colors.textMuted}
+          maxLength={CATEGORY_MAX_LENGTH}
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={submitAdd}
+          accessibilityLabel="새 분류 이름"
+        />
+        <Pressable
+          style={styles.catAddBtn}
+          onPress={submitAdd}
+          accessibilityRole="button"
+          accessibilityLabel="새 분류 추가"
+        >
+          <Ionicons name="add" size={13} color={colors.white} />
+          <Text style={styles.catAddText}>추가</Text>
+        </Pressable>
+      </View>
+      {!!addError && <Text style={styles.catError}>{addError}</Text>}
+    </View>
+  );
+}
+
 export default function ProfileScreen({
   name,
   handle,
   pins,
+  categories,
+  onAddCategory,
+  onRenameCategory,
+  onRemoveCategory,
   radiusMeters,
   onChangeRadius,
   isPro,
@@ -361,6 +580,16 @@ export default function ProfileScreen({
           </Text>
         </View>
 
+        {/* v2.2 — 분류 관리 (만들기 · 이름 바꾸기 · 지우기) */}
+        <CategoryManager
+          categories={categories}
+          pins={pins}
+          onAddCategory={onAddCategory}
+          onRenameCategory={onRenameCategory}
+          onRemoveCategory={onRemoveCategory}
+          onToast={onToast}
+        />
+
         {/* 지도 공유 */}
         <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
           <View style={styles.shareIcon}>
@@ -438,7 +667,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.1.0</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.2.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>
@@ -612,6 +841,177 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSub,
     lineHeight: 17,
+  },
+  // ── v2.2 분류 관리 카드 ──────────────────────
+  catCountChip: {
+    backgroundColor: colors.coralSoft,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  catCountChipText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.coralDark,
+  },
+  catRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+  },
+  catDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  catName: {
+    flex: 1,
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  catPinCount: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  catLock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.lineSoft,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  catLockText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: colors.textMuted,
+  },
+  catActions: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  catActionBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: colors.lineSoft,
+  },
+  catActionText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  catDeleteText: {
+    color: colors.coralDark,
+  },
+  catEditBox: {
+    paddingVertical: 9,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.line,
+  },
+  catRowTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  catInput: {
+    flex: 1,
+    height: 38,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+    paddingHorizontal: 10,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  catSaveBtn: {
+    height: 34,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: colors.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catSaveText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  catCancelBtn: {
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: colors.lineSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catCancelText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  catConfirm: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.coralSoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    marginBottom: 6,
+  },
+  catConfirmText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.coralDark,
+  },
+  catConfirmBtn: {
+    height: 28,
+    paddingHorizontal: 11,
+    borderRadius: 999,
+    backgroundColor: colors.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  catConfirmBtnText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  catAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+  },
+  catAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    height: 38,
+    paddingHorizontal: 13,
+    borderRadius: radius.sm,
+    backgroundColor: colors.navy,
+  },
+  catAddText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  catError: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.coralDark,
+    marginTop: 5,
   },
   // ── v2.1 계정 · 클라우드 동기화 카드 ──────────────────────
   syncChip: {

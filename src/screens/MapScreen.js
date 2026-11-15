@@ -3,7 +3,15 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import RealMapView from '../components/RealMapView';
-import FilterChips, { FILTERS, matchesFilter } from '../components/FilterChips';
+import FilterChips from '../components/FilterChips';
+import {
+  DEFAULT_CATEGORIES,
+  countByCategory,
+  filterOptions,
+  matchesFilter,
+  nextFilterAfterRemoval,
+  nextFilterAfterRename,
+} from '../utils/categories';
 import GeofenceBanner from '../components/GeofenceBanner';
 import PinDetailSheet from '../components/PinDetailSheet';
 import {
@@ -31,6 +39,10 @@ import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../uti
 
 export default function MapScreen({
   pins,
+  categories = DEFAULT_CATEGORIES,
+  lastCategoryChange = null,
+  onChangePinCategory,
+  onAddCategory,
   selectedPinId,
   onSelectPin,
   radiusMeters,
@@ -42,6 +54,26 @@ export default function MapScreen({
   onDismissShared,
 }) {
   const [filter, setFilter] = useState('전체');
+
+  /**
+   * v2.2 — 분류를 이름 바꾸거나 지우면 지도 필터도 함께 정리합니다.
+   *   · 이름을 바꿈 → 그 분류를 보고 있었다면 새 이름을 계속 봅니다
+   *   · 지움         → 그 분류를 보고 있었다면 '전체'로 돌아갑니다
+   *   · 목록에 없는 분류 → '전체'
+   */
+  useEffect(() => {
+    setFilter((current) => {
+      if (current === '전체') return current;
+      if (lastCategoryChange && lastCategoryChange.type === 'rename' && current === lastCategoryChange.from) {
+        return nextFilterAfterRename(current, lastCategoryChange.from, lastCategoryChange.to);
+      }
+      if (lastCategoryChange && lastCategoryChange.type === 'remove' && current === lastCategoryChange.name) {
+        return nextFilterAfterRemoval(current, lastCategoryChange.name);
+      }
+      if (filterOptions(categories).indexOf(current) < 0) return '전체';
+      return current;
+    });
+  }, [categories, lastCategoryChange]);
 
   // ── v1.5 실제 위치 ────────────────────────────────────────
   const [myCoords, setMyCoords] = useState(null);
@@ -78,13 +110,7 @@ export default function MapScreen({
     [previewPins, filtered]
   );
 
-  const counts = useMemo(() => {
-    const out = {};
-    FILTERS.forEach((f) => {
-      out[f] = pins.filter((p) => matchesFilter(p, f)).length;
-    });
-    return out;
-  }, [pins]);
+  const counts = useMemo(() => countByCategory(pins, categories), [pins, categories]);
 
   const selectedPin = useMemo(
     () => pins.find((p) => p.id === selectedPinId) || previewPins.find((p) => p.id === selectedPinId) || null,
@@ -388,7 +414,7 @@ export default function MapScreen({
           tone={banner.tone}
         />
         <View style={styles.chipWrap}>
-          <FilterChips value={filter} onChange={setFilter} counts={counts} />
+          <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
         </View>
         {!!locationError && (
           <Pressable style={styles.errorChip} onPress={() => locate()} accessibilityRole="button">
@@ -543,6 +569,9 @@ export default function MapScreen({
       {selectedPin && (
         <PinDetailSheet
           pin={selectedPin}
+          categories={categories}
+          onChangeCategory={onChangePinCategory}
+          onAddCategory={onAddCategory}
           radiusMeters={radiusMeters}
           distanceMeters={myCoords ? distanceById[selectedPin.id] : null}
           onClose={() => onSelectPin(null)}

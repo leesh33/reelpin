@@ -22,7 +22,9 @@ import {
 import { FREE_PIN_LIMIT } from '../data/seedPins';
 import ProviderBadges from '../components/ProviderBadge';
 import ExtractedTitleNote from '../components/ExtractedTitleNote';
+import CategoryPicker from '../components/CategoryPicker';
 import { buildPin } from '../utils/pins';
+import { DEFAULT_CATEGORIES, mapLegacyCategory } from '../utils/categories';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 const EMOJI_BY_CATEGORY = {
@@ -40,6 +42,8 @@ const SEARCH_STAGES = ['지도 조회', '중복 정리', '후보 정렬'];
 
 export default function PasteScreen({
   pinCount,
+  categories = DEFAULT_CATEGORIES,
+  onAddCategory,
   isPro,
   onSaved,
   onSavedMany,
@@ -58,6 +62,9 @@ export default function PasteScreen({
   const [selectedIds, setSelectedIds] = useState([]);
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState('');
+  // v2.2 — 저장하기 전에 분류를 직접 고르기 (고르지 않았다면 자동 분류 결과를 씁니다)
+  const [pickedCategory, setPickedCategory] = useState('');
+  const [categoryTouched, setCategoryTouched] = useState(false);
   const scrollRef = useRef(null);
 
   const limitReached = !isPro && pinCount >= FREE_PIN_LIMIT;
@@ -108,6 +115,8 @@ export default function PasteScreen({
     setSelectedIds([]);
     setMeta(null);
     setStage(0);
+    setCategoryTouched(false);
+    setPickedCategory('');
   };
 
   const startProgress = () => {
@@ -137,6 +146,8 @@ export default function PasteScreen({
     setExtracting(true);
     setCandidates([]);
     setSelectedIds([]);
+    setCategoryTouched(false);
+    setPickedCategory('');
 
     const stageTimer = startProgress();
 
@@ -190,6 +201,8 @@ export default function PasteScreen({
     setExtracting(true);
     setCandidates([]);
     setSelectedIds([]);
+    setCategoryTouched(false);
+    setPickedCategory('');
     if (targetQuery != null) setQuery(targetQuery);
 
     const stageTimer = startProgress();
@@ -252,6 +265,19 @@ export default function PasteScreen({
   const heroCandidate = selectedCandidates[0] || null;
   const allSelected = candidates.length > 0 && selectedCandidates.length === candidates.length;
 
+  /**
+   * v2.2 — 저장할 분류의 기본값은 **자동 분류 결과**입니다.
+   *   · 베이커리·디저트는 지도 칩과 같은 '맛집'으로 보여 줍니다 (예전 핀과 호환)
+   *   · 사용자가 칩을 탭하면 그 분류로 저장됩니다. (선택이 바뀌어도 사용자가 고른 값은 유지)
+   */
+  const autoCategory = mapLegacyCategory(heroCandidate ? heroCandidate.category : '맛집') || '맛집';
+  const saveCategory = categoryTouched && pickedCategory ? pickedCategory : autoCategory;
+
+  const pickCategory = (name) => {
+    setPickedCategory(name);
+    setCategoryTouched(true);
+  };
+
   const toggleSelected = (id) => {
     setSelectedIds((cur) => (cur.indexOf(id) >= 0 ? cur.filter((x) => x !== id) : cur.concat(id)));
   };
@@ -266,6 +292,8 @@ export default function PasteScreen({
     setCandidates([]);
     setSelectedIds([]);
     setMeta(null);
+    setCategoryTouched(false);
+    setPickedCategory('');
   };
 
   /** 선택한 후보를 핀으로 만들어 저장합니다. (1곳이든 N곳이든 같은 버튼) */
@@ -280,7 +308,9 @@ export default function PasteScreen({
     const sourceUrl = searchMode ? '' : splitSharedText(url).url;
     const platform = searchMode ? 'search' : parseUrl(sourceUrl).platform || 'instagram';
     const built = selectedCandidates
-      .map((candidate) => buildPin(candidate, { sourceUrl, platform }))
+      .map((candidate) =>
+        buildPin({ ...candidate, category: saveCategory }, { sourceUrl, platform })
+      )
       .filter(Boolean);
     if (!built.length) {
       setError('저장할 장소 정보가 비어 있어요. 후보를 다시 골라 주세요.');
@@ -586,7 +616,7 @@ export default function PasteScreen({
                     <View style={styles.candMetaRow}>
                       <ProviderBadges item={c} size="sm" />
                       <Text style={styles.candAddr} numberOfLines={1}>
-                        {c.address} · {c.category}
+                        {c.address} · {mapLegacyCategory(c.category)}
                       </Text>
                     </View>
                   </View>
@@ -605,6 +635,22 @@ export default function PasteScreen({
                 오프라인 추출기로 찾은 후보예요. API 키를 연결하면 실제 가게·좌표로 정확도가 올라갑니다.
               </Text>
             )}
+
+            {/* v2.2 — 저장 전에 분류를 직접 고르거나, 새 분류를 그 자리에서 만듭니다 */}
+            <View style={styles.categoryCard}>
+              <CategoryPicker
+                value={saveCategory}
+                onChange={pickCategory}
+                categories={categories}
+                onAddCategory={onAddCategory}
+                label={'저장할 분류'}
+                hint={
+                  categoryTouched
+                    ? '고른 분류로 저장해요'
+                    : '자동 분류: ' + autoCategory + ' · 다른 칩을 누르면 바뀝니다'
+                }
+              />
+            </View>
 
             {limitReached ? (
               <Pressable style={styles.proGate} onPress={onGoProfile}>
@@ -1085,6 +1131,16 @@ const styles = StyleSheet.create({
     color: colors.textSub,
     lineHeight: 16,
     marginTop: 2,
+    marginBottom: 4,
+  },
+  categoryCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 11,
+    paddingVertical: 10,
+    marginTop: 4,
     marginBottom: 4,
   },
   saveBtn: {

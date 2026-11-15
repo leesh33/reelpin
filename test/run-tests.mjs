@@ -4,10 +4,11 @@
  * 소스(src)는 ESM + react-native import 를 쓰기 때문에 node 로 바로 돌릴 수 없습니다.
  * esbuild 로 react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 실행합니다.
  *
- *   npm test            … 추출기·딥링크 + 프록시·API + 위치/거리 + 클라우드 로그인·동기화 + 화면 렌더 스모크 테스트
+ *   npm test            … 추출기·딥링크 + 프록시·API + 위치/거리 + 클라우드 로그인·동기화 + 분류 + 화면 렌더 스모크 테스트
  *   npm run test:extract  … 추출기 테스트만
  *   npm run test:location … 위치·거리·반경 500m 테스트만
  *   npm run test:cloud    … Supabase 설정·로그인·클라우드 동기화 테스트만
+ *   npm run test:category … 분류(카테고리) 만들기·이름 변경·삭제 테스트만
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -97,6 +98,17 @@ if (!only || only === 'cloud') {
     name: '클라우드 로그인·동기화 테스트',
     entry: 'cloud-test.mjs',
     out: 'cloud-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+  });
+}
+
+if (!only || only === 'category') {
+  // v2.2 — 분류 직접 선택 · 만들기 · 이름 바꾸기(핀 일괄 반영) · 지우기(핀 안전 폴백)
+  failed += await runSuite({
+    name: '분류 선택·생성·수정·삭제 테스트',
+    entry: 'category-test.mjs',
+    out: 'category-test.bundle.mjs',
     format: 'esm',
     alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
   });

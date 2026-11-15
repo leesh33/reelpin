@@ -9,12 +9,14 @@ import ProviderBadges from '../src/components/ProviderBadge';
 import ExtractedTitleNote from '../src/components/ExtractedTitleNote';
 import GeofenceBanner from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
+import CategoryPicker from '../src/components/CategoryPicker';
 import TabBar from '../src/components/TabBar';
 import MapCanvas from '../src/components/MapCanvas';
 import RealMapViewWeb, {
   NAVER_MAP_CLIENT_ID,
   buildNaverScriptUrl,
   resolveNaverClientId,
+  pinColor,
   FALLBACK_NOTICE,
   FALLBACK_NOTICE_NETWORK,
 } from '../src/components/RealMapView.web';
@@ -31,6 +33,11 @@ import path from 'node:path';
 import { injectPwaHead, PWA_REQUIRED_MARKERS } from '../scripts/patch-web-html.mjs';
 import { colors, mapControls } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
+import {
+  CUSTOM_PIN_COLORS,
+  allCategories,
+  matchesFilter,
+} from '../src/utils/categories';
 
 const noop = () => {};
 
@@ -78,6 +85,12 @@ const cases = [
   ['ExtractedTitleNote(인스타 안내)', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요 — 가게명으로 바로 찾아보세요." onSearchByName={noop} />],
   ['ExtractedTitleNote(없음)', <ExtractedTitleNote />, true],
   ['ProviderBadges(없음)', <ProviderBadges item={{ name: 'x' }} />, true],
+  // v2.2 — 분류 직접 고르기 · 내 분류 만들기
+  ['CategoryPicker(기본+커스텀)', <CategoryPicker value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} onAddCategory={noop} />],
+  ['FilterChips(커스텀 분류)', <FilterChips value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} counts={{ '전체': 6, '맛집': 3, '카페': 1, '가볼곳': 0, '아이랑': 1 }} />],
+  ['MapScreen(커스텀 분류 필터)', <MapScreen pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onChangePinCategory={noop} onAddCategory={noop} />],
+  ['PinDetailSheet(분류 변경)', <PinDetailSheet pin={{ ...SEARCH_PIN, category: '아이랑' }} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} onChangeCategory={noop} onAddCategory={noop} />],
+  ['ProfileScreen(분류 관리)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />],
   ['GeofenceBanner', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={1000} onPress={noop} title="반경 1km 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name} badge="지금" />],
   ['GeofenceBanner(내 위치 전 안내)', <GeofenceBanner needsLocation onPress={noop} onLocate={noop} radiusMeters={500} />],
   ['FilterChips', <FilterChips value="전체" onChange={noop} counts={{ 전체: 4 }} />],
@@ -150,6 +163,13 @@ const contentCases = [
   // v2.1.1 — 클립보드는 사용자가 버튼을 눌렀을 때만 (아이폰 사파리 붙여넣기 팝업 방지)
   ['PasteScreen: [클립보드에서 붙여넣기] 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['클립보드에서 붙여넣기']],
   ['PasteScreen: 링크 입력 + 붙여넣기 버튼 렌더', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 · 쇼츠 링크', '클립보드에서 붙여넣기']],
+  // v2.2 — 분류 직접 고르기 · 만들기 · 관리
+  ['CategoryPicker: 기본 3개 + 내 분류 + [분류 추가]', <CategoryPicker value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} onAddCategory={noop} label="저장할 분류" hint="고른 분류로 저장해요" />, ['맛집', '카페', '가볼곳', '아이랑', '분류 추가', '저장할 분류', '고른 분류로 저장해요']],
+  ['FilterChips: 커스텀 분류가 이어서 + 개수', <FilterChips value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} counts={{ '전체': 6, '맛집': 3, '아이랑': 1 }} />, ['아이랑 1', '아이랑 필터']],
+  ['MapScreen: 커스텀 분류 칩', <MapScreen pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onChangePinCategory={noop} onAddCategory={noop} />, ['아이랑 1']],
+  ['PinDetailSheet: 분류 칩으로 바로 변경', <PinDetailSheet pin={{ ...SEARCH_PIN, category: '아이랑' }} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} onChangeCategory={noop} onAddCategory={noop} />, ['누르면 바로 바뀌어요', '분류 추가', '분류 아이랑']],
+  ['PinDetailSheet: 공유받은 핀은 분류 변경 없음', <PinDetailSheet pin={SHARED_PINS[0]} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly onChangeCategory={noop} />, ['공유받은 맛집이에요']],
+  ['ProfileScreen: 분류 관리 카드(수정·삭제·추가)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />, ['분류 관리', '아이랑', '기본', '수정', '삭제', '새 분류 이름', '핀 1개']],
 ];
 
 for (const [label, element, needles] of contentCases) {
@@ -455,8 +475,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.1.0', pkg.version === '2.1.0', pkg.version],
-  ['버전: app.json 2.1.0', expoConfig.version === '2.1.0', expoConfig.version],
+  ['버전: package.json 2.2.0', pkg.version === '2.2.0', pkg.version],
+  ['버전: app.json 2.2.0', expoConfig.version === '2.2.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -513,6 +533,28 @@ for (const [label, ok, extra] of v213Checks) {
   }
 }
 
+// ── v2.2: 분류 직접 선택 · 만들기 · 이름 변경(핀 일괄) · 삭제(핀 안전 폴백) ──
+const categorySource = fs.readFileSync(path.join(process.cwd(), 'src/utils/categories.js'), 'utf8');
+const pickerSource = fs.readFileSync(path.join(process.cwd(), 'src/components/CategoryPicker.js'), 'utf8');
+const v22Checks = [
+  ['분류: 기본 3개 + 내가 만든 분류', allCategories(['아이랑']).join('|') === '맛집|카페|가볼곳|아이랑', allCategories(['아이랑']).join('|')],
+  ['분류: 베이커리·디저트는 맛집 필터에 함께', matchesFilter({ category: '베이커리' }, '맛집') && matchesFilter({ category: '디저트' }, '맛집')],
+  ['분류: 커스텀은 이름이 정확히 같을 때만', matchesFilter({ category: '아이랑' }, '아이랑') && !matchesFilter({ category: '아이랑' }, '가볼곳')],
+  ['분류: 기본은 지우기·이름 변경 금지', categorySource.indexOf('기본 분류(맛집·카페·가볼곳)는 지울 수 없어요') > 0 && categorySource.indexOf('기본 분류(맛집·카페·가볼곳)는 이름을 바꿀 수 없어요') > 0],
+  ['분류: 이름을 바꾸면 핀 일괄 반영', categorySource.indexOf('applyCategoryRename') > 0 && categorySource.indexOf('category: to, updatedAt') > 0],
+  ['분류: 지우면 핀은 맛집으로 안전 이동', categorySource.indexOf('applyCategoryRemoval') > 0 && categorySource.indexOf('CATEGORY_FALLBACK') > 0],
+  ['핀 색: 커스텀 분류는 고정 팔레트 색', CUSTOM_PIN_COLORS.indexOf(pinColor({ category: '아이랑' })) >= 0, pinColor({ category: '아이랑' })],
+  ['핀 색: 기본 분류 색은 그대로(맛집 코랄·카페 민트)', pinColor({ category: '맛집' }) === '#FF7A5C' && pinColor({ category: '카페' }) === colors.mint],
+  ['분류 고르기: 이름 입력 + [추가] + 글자 수 제한', pickerSource.indexOf('새 분류 이름 (예: 아이랑)') > 0 && pickerSource.indexOf('maxLength={CATEGORY_MAX_LENGTH}') > 0],
+];
+for (const [label, ok, extra] of v22Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -526,6 +568,7 @@ const total =
   fakeBannerChecks.length +
   2 +
   v213Checks.length +
+  v22Checks.length +
   pwaChecks.length +
   assetChecks.length +
   2;

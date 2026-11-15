@@ -1,6 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme';
+import { customCategoryColor, isDefaultCategory } from '../utils/categories';
 
 // 지도 투영 범위 (서울 서부 ~ 인천 검단)
 export const MAP_BOUNDS = {
@@ -56,10 +57,15 @@ const PARKS = [
   { left: '70%', top: '76%', w: '11%', h: '8%' },
 ];
 
+// 카테고리 색 — 기본은 그대로(맛집·베이커리 주황, 카페 민트), 커스텀 분류는 이름마다 고정된 색
 function pinColor(pin, selected) {
   if (selected) return colors.coral;
-  if (pin.category === '카페') return colors.mint;
-  return '#FF8A6E';
+  const category = (pin && pin.category) || '';
+  if (category === '카페') return colors.mint;
+  if (!category || isDefaultCategory(category) || category === '디저트' || category === '베이커리') {
+    return '#FF8A6E';
+  }
+  return customCategoryColor(category);
 }
 
 export default function MapCanvas({ pins, selectedId, onSelect, radius }) {

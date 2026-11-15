@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -14,8 +14,30 @@ import PasteScreen from './src/screens/PasteScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import TabBar from './src/components/TabBar';
 import Toast from './src/components/Toast';
-import { loadPins, loadPro, loadRadius, savePins, savePro, saveRadius } from './src/storage';
+import {
+  loadCategories,
+  loadPins,
+  loadPro,
+  loadRadius,
+  saveCategories,
+  savePins,
+  savePro,
+  saveRadius,
+} from './src/storage';
 import { findExistingPin, normalizePins, splitNewPins } from './src/utils/pins';
+import {
+  addCategory,
+  allCategories,
+  applyCategoryRemoval,
+  applyCategoryRename,
+  mapLegacyCategory,
+  mergeCategoryNames,
+  normalizeCategoryName,
+  normalizeCustomCategories,
+  removeCategory,
+  renameCategory,
+  sameCategory,
+} from './src/utils/categories';
 import { clearShareFromLocation, readShareFromLocation } from './src/utils/shareMap';
 import { FREE_PIN_LIMIT } from './src/data/seedPins';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
@@ -44,6 +66,11 @@ export default function App() {
   const [radius, setRadius] = useState(300);
   const [isPro, setIsPro] = useState(false);
   const [selectedPinId, setSelectedPinId] = useState(null);
+  // v2.2 — 내가 만든 분류 (기본 3개는 여기 저장하지 않습니다) + 마지막 분류 변경(지도 필터 되돌림용)
+  const [customCategories, setCustomCategories] = useState([]);
+  const [categoryChange, setCategoryChange] = useState(null);
+  const categoryChangeId = useRef(0);
+  const categories = useMemo(() => allCategories(customCategories), [customCategories]);
   // v2.0 — `?share=…` 링크로 들어온 '공유받은 맛집 지도' (아직 내 지도에 넣기 전 미리보기)
   const [sharedPins, setSharedPins] = useState([]);
   const [toast, setToast] = useState(null);
@@ -65,16 +92,18 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [storedPins, storedRadius, storedPro] = await Promise.all([
+      const [storedPins, storedRadius, storedPro, storedCategories] = await Promise.all([
         loadPins(),
         loadRadius(),
         loadPro(),
+        loadCategories(),
       ]);
       if (cancelled) return;
       // v1.0에서 저장된 핀에 없던 필드(placeUrl·providers)를 채워 넣습니다.
       setPins(normalizePins(storedPins));
       setRadius(storedRadius);
       setIsPro(storedPro);
+      setCustomCategories(normalizeCustomCategories(storedCategories));
       setReady(true);
     })();
     return () => {
@@ -94,6 +123,23 @@ export default function App() {
   useEffect(() => {
     if (ready) savePro(isPro);
   }, [isPro, ready]);
+
+  useEffect(() => {
+    if (ready) saveCategories(customCategories);
+  }, [customCategories, ready]);
+
+  /**
+   * v2.2 — 핀이 쓰고 있는 분류 이름은 목록에 반드시 있어야 지도 필터 칩이 사라지지 않습니다.
+   * (다른 기기·클라우드에서 온 핀, 공유받은 지도에서 가져온 핀)
+   */
+  useEffect(() => {
+    if (!ready) return;
+    const merged = mergeCategoryNames(customCategories, pins.map((p) => p && p.category));
+    const same =
+      merged.length === customCategories.length &&
+      merged.every((name, i) => name === customCategories[i]);
+    if (!same) setCustomCategories(merged);
+  }, [pins, customCategories, ready]);
 
   // v2.0 — 주소창에 `?share=…` 가 있으면 공유받은 지도를 미리보기로 띄웁니다. (웹 전용, SSR 안전)
   useEffect(() => {
@@ -367,6 +413,100 @@ export default function App() {
   }, [cloudSyncing, syncWithCloud]);
 
 
+  // ── v2.2 · 분류 만들기 · 이름 바꾸기 · 지우기 ────────────────
+  /** 새 분류 만들기 — 저장 화면·핀 상세·내 정보가 함께 씁니다. 실패하면 안내 문구를 돌려줍니다. */
+  const handleAddCategory = useCallback(
+    (raw) => {
+      const result = addCategory(customCategories, raw);
+      if (!result.ok) return result;
+      setCustomCategories(result.custom);
+      showToast('분류를 추가했어요 · ' + result.name, 'pro');
+      return result;
+    },
+    [customCategories, showToast]
+  );
+
+  /**
+   * 분류 이름 바꾸기 — 그 분류를 쓰던 핀의 category 도 한꺼번에 바꾸고,
+   * 로그인 상태면 바뀐 핀만 클라우드에 다시 올립니다.
+   */
+  const handleRenameCategory = useCallback(
+    (oldName, newName) => {
+      const result = renameCategory(customCategories, oldName, newName);
+      if (!result.ok || !result.changed) return result;
+      setCustomCategories(result.custom);
+      const { pins: nextPins, changed } = applyCategoryRename(pinsRef.current, result.previous, result.name);
+      if (changed.length) {
+        pinsRef.current = nextPins;
+        setPins(nextPins);
+        pushPinsToCloud(changed);
+      }
+      setCategoryChange({
+        id: (categoryChangeId.current += 1),
+        type: 'rename',
+        from: result.previous,
+        to: result.name,
+      });
+      showToast(
+        '분류 이름을 바꿨어요 · ' + result.previous + ' → ' + result.name +
+          (changed.length ? ' (핀 ' + changed.length + '개)' : ''),
+        'pro'
+      );
+      return result;
+    },
+    [customCategories, pushPinsToCloud, showToast]
+  );
+
+  /**
+   * 분류 지우기 — 그 분류를 쓰던 핀은 **사라지지 않고** 기본 분류(맛집)로 옮겨 갑니다.
+   * 지도 필터는 MapScreen 이 '전체'로 되돌립니다(categoryChange).
+   */
+  const handleRemoveCategory = useCallback(
+    (name) => {
+      const result = removeCategory(customCategories, name);
+      if (!result.ok) return result;
+      setCustomCategories(result.custom);
+      const { pins: nextPins, changed, fallback } = applyCategoryRemoval(pinsRef.current, result.name);
+      if (changed.length) {
+        pinsRef.current = nextPins;
+        setPins(nextPins);
+        pushPinsToCloud(changed);
+      }
+      setCategoryChange({
+        id: (categoryChangeId.current += 1),
+        type: 'remove',
+        name: result.name,
+        fallback,
+      });
+      showToast(
+        '분류를 지웠어요 · ' + result.name +
+          (changed.length ? ' · 핀 ' + changed.length + '개는 ' + fallback + '으로 옮겼어요' : ''),
+        changed.length ? 'pro' : 'dark'
+      );
+      return { ...result, moved: changed.length, fallback };
+    },
+    [customCategories, pushPinsToCloud, showToast]
+  );
+
+  /** 저장된 핀 하나의 분류만 바꾸기 (핀 상세 시트) */
+  const handleChangePinCategory = useCallback(
+    (pinId, raw) => {
+      const name = normalizeCategoryName(raw);
+      if (!pinId || !name) return { ok: false, reason: 'empty', message: '분류 이름이 비어 있어요' };
+      const target = (pinsRef.current || []).find((p) => p && p.id === pinId);
+      if (!target) return { ok: false, reason: 'missing', message: '핀을 찾지 못했어요' };
+      if (sameCategory(mapLegacyCategory(target.category), name)) return { ok: true, name, changed: false };
+      const changedPin = { ...target, category: name, updatedAt: new Date().toISOString() };
+      const next = pinsRef.current.map((p) => (p && p.id === pinId ? changedPin : p));
+      pinsRef.current = next;
+      setPins(next);
+      pushPinsToCloud([changedPin]);
+      showToast('분류를 바꿨어요 · ' + name);
+      return { ok: true, name, changed: true };
+    },
+    [pushPinsToCloud, showToast]
+  );
+
   const handleSaved = useCallback(
     (pin) => {
       // 매장 정보 URL 또는 이름+동네가 같으면 같은 장소 — 중복 핀을 만들지 않습니다.
@@ -502,6 +642,10 @@ export default function App() {
           <View style={[styles.screen, tab !== 'map' && styles.hidden]}>
             <MapScreen
               pins={pins}
+              categories={categories}
+              lastCategoryChange={categoryChange}
+              onChangePinCategory={handleChangePinCategory}
+              onAddCategory={handleAddCategory}
               selectedPinId={selectedPinId}
               onSelectPin={setSelectedPinId}
               radiusMeters={radius}
@@ -516,6 +660,8 @@ export default function App() {
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
             <PasteScreen
               pinCount={pins.length}
+              categories={categories}
+              onAddCategory={handleAddCategory}
               isPro={isPro}
               onSaved={handleSaved}
               onSavedMany={handleSavedMany}
@@ -529,6 +675,10 @@ export default function App() {
               name="이상훈"
               handle="odol"
               pins={pins}
+              categories={categories}
+              onAddCategory={handleAddCategory}
+              onRenameCategory={handleRenameCategory}
+              onRemoveCategory={handleRemoveCategory}
               radiusMeters={radius}
               onChangeRadius={handleChangeRadius}
               isPro={isPro}

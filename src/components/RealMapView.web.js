@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, typography } from '../theme';
+import { customCategoryColor, isDefaultCategory } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
 
 // ── 네이버 지도 설정 ──────────────────────────────────────────
@@ -64,14 +65,15 @@ const TILE_ATTRIBUTION =
 const SEOUL = { lat: 37.5665, lng: 126.978 };
 const NAVER_SCRIPT_TIMEOUT_MS = 9000;
 
-/** 카테고리별 핀 색 — 앱 지도(MapCanvas)와 같은 결 */
+/** 카테고리별 핀 색 — 앱 지도(MapCanvas)와 같은 결. 커스텀 분류는 이름 해시로 고정 색 */
 export function pinColor(pin, selected) {
   if (selected) return colors.coral;
   const category = (pin && pin.category) || '';
   if (category === '카페') return colors.mint;
   if (category === '디저트') return '#FFB86B';
   if (category === '베이커리') return '#FF8A6E';
-  return '#FF7A5C';
+  if (!category || isDefaultCategory(category)) return '#FF7A5C';
+  return customCategoryColor(category);
 }
 
 // ── 네이버 지도 로더 (브라우저에서만) ─────────────────────────

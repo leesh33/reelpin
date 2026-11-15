@@ -7,6 +7,8 @@ import { openMap, openPhone, openSource, telUrlOf } from '../utils/links';
 import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
 import ProviderBadges from './ProviderBadge';
+import CategoryPicker from './CategoryPicker';
+import { DEFAULT_CATEGORIES } from '../utils/categories';
 
 const PLATFORM_LABEL = {
   instagram: '인스타 릴스',
@@ -17,7 +19,18 @@ const PLATFORM_LABEL = {
   unknown: '원본 링크',
 };
 
-export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onClose, onDelete, onToast, readOnly = false }) {
+export default function PinDetailSheet({
+  pin,
+  radiusMeters,
+  distanceMeters,
+  onClose,
+  onDelete,
+  onToast,
+  readOnly = false,
+  categories = DEFAULT_CATEGORIES,
+  onChangeCategory,
+  onAddCategory,
+}) {
   // v1.7 — [매장 정보 보기] 는 브라우저 밖으로 나가지 않고 앱 안 모달을 엽니다.
   const [placeModalOpen, setPlaceModalOpen] = useState(false);
 
@@ -102,6 +115,23 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
 
       {/* 어느 지도에서 확인된 장소인지 — 두 곳 이상이면 배지가 나란히 붙습니다 */}
       <ProviderBadges item={pin} size="sm" style={styles.badgeRow} />
+
+      {/* v2.2 — 저장된 핀의 분류를 바로 바꾸거나 새 분류를 만듭니다 (읽기 전용 핀은 제외) */}
+      {!readOnly && (
+        <View style={styles.categoryBox}>
+          <CategoryPicker
+            value={pin.category || '맛집'}
+            onChange={(name) => {
+              if (typeof onChangeCategory === 'function') onChangeCategory(pin.id, name);
+            }}
+            categories={categories}
+            onAddCategory={onAddCategory}
+            label={'분류'}
+            hint={'누르면 바로 바뀌어요'}
+            compact
+          />
+        </View>
+      )}
 
       {pin.menuTags && pin.menuTags.length > 0 && (
         <View style={styles.tagRow}>
@@ -310,6 +340,13 @@ const styles = StyleSheet.create({
   },
   badgeRow: {
     marginTop: 8,
+  },
+  categoryBox: {
+    marginTop: 10,
+    backgroundColor: colors.bg,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
   },
   tagRow: {
     flexDirection: 'row',

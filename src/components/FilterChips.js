@@ -1,26 +1,34 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
 import { colors } from '../theme';
+import {
+  CATEGORY_ALL,
+  DEFAULT_CATEGORIES,
+  filterOptions,
+  matchesFilter,
+} from '../utils/categories';
 
-export const FILTERS = ['전체', '맛집', '카페', '가볼곳'];
+// v2.2 — 기본 3개. 실제 칩 목록은 화면이 넘긴 categories(기본 + 커스텀)로 그립니다.
+export const FILTERS = [CATEGORY_ALL].concat(DEFAULT_CATEGORIES);
 
-// 카테고리 → 필터 매핑 (베이커리·디저트는 '맛집'에 포함)
-export function matchesFilter(pin, filter) {
-  if (filter === '전체') return true;
-  if (filter === '맛집') return ['맛집', '베이커리', '디저트'].includes(pin.category);
-  if (filter === '카페') return pin.category === '카페';
-  if (filter === '가볼곳') return pin.category === '가볼곳';
-  return true;
-}
+// 기존 화면·테스트가 FilterChips 에서 matchesFilter 를 가져다 써 왔습니다.
+export { matchesFilter };
 
-export default function FilterChips({ value, onChange, counts, onDark = true }) {
+export default function FilterChips({
+  value,
+  onChange,
+  counts,
+  categories = DEFAULT_CATEGORIES,
+  onDark = true,
+}) {
+  const options = filterOptions(categories);
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.row}
     >
-      {FILTERS.map((f) => {
+      {options.map((f) => {
         const on = value === f;
         const count = counts ? counts[f] : null;
         return (
@@ -37,8 +45,7 @@ export default function FilterChips({ value, onChange, counts, onDark = true }) 
             accessibilityLabel={f + ' 필터'}
           >
             <Text style={[styles.text, onDark ? styles.textDark : styles.textLight, on && styles.textOn]}>
-              {f}
-              {count != null ? ' ' + count : ''}
+              {count != null ? f + ' ' + count : f}
             </Text>
           </Pressable>
         );
