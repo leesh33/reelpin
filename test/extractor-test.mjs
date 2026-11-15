@@ -43,6 +43,11 @@ import {
   resolvePlaceLinkFromInput,
   resolveShortLink,
   naverPlaceCandidate,
+  // v2.7 — 해시태그 상호 · 댓글 형용사 오탐
+  extractHashtagTokens,
+  isBasePredicate,
+  regionWordsOf,
+  filterQueriesByArea,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -1374,6 +1379,131 @@ check(
 check('share: base64url 왕복', base64UrlDecode(base64UrlEncode(utf8Encode('릴스핀 r2 ✓'))).length > 0 && utf8Decode(base64UrlDecode(base64UrlEncode(utf8Encode('릴스핀 r2 ✓')))) === '릴스핀 r2 ✓');
 check('share: base64url 은 + / = 를 쓰지 않음', !/[+/=]/.test(base64UrlEncode(utf8Encode('~~~???___한글'))));
 
+
+// ═════════════════════════════════════════════════════════════
+// 17. v2.7 — 유튜브 쇼츠 해시태그 상호(#디오디아) · 댓글 형용사 오탐
+//   상훈 님이 제보한 영상(youtube.com/shorts/WtB53sC3weY)의 **실제** 메타데이터.
+//   · 제목: “5만원대 강남 럭셔리 뷔페 #shorts #디오디아 #리뷰” — 상호는 **해시태그**로만 있었습니다.
+//   · 설명: 광고 문의 메일뿐 — 상호 없음.
+//   · 댓글: “항상 솔직하게 말하셔서 좋다😊” — 감상어가 검색어가 되면 안 됩니다.
+//   · 카카오 로컬에서 “강남 디오디아” = 디오디아2.0 (서울 서초구 강남대로 213 · 뷔페, 2026-11-16 확인)
+// ═════════════════════════════════════════════════════════════
+const DODIA_TITLE = '5만원대 강남 럭셔리 뷔페 #shorts #디오디아 #리뷰';
+const DODIA_DESC = 'clclalsgml@naver.com - 광고/문의🎖️';
+const DODIA_COMMENTS = [
+  '항상 솔직하게 말하셔서 좋다😊',
+  '따봉을 날리는 와중에도 오물오물 꼭꼭 씹어 먹는게 졸귀시네용😊',
+  '진짜... 아침부터 기분좋게 웃자나요',
+  '진짜 너무 귀여우시다',
+  '저 일식좋아해서 저기한번 가볼게요 좋은 정보 고마워요♡',
+].join('\n');
+const DODIA_DOC = {
+  id: '7850610',
+  place_name: '디오디아2.0',
+  category_name: '음식점 > 뷔페',
+  category_group_code: 'FD6',
+  phone: '02-526-8700',
+  address_name: '서울 서초구 양재동 24-6',
+  road_address_name: '서울 서초구 강남대로 213',
+  x: '127.03566459833955',
+  y: '37.48235358031832',
+  place_url: 'http://place.map.kakao.com/7850610',
+};
+const ULSAN_DOC = {
+  ...DODIA_DOC,
+  id: '900001',
+  place_name: '울산 중구 떡볶이',
+  address_name: '울산 중구 학성동 1-1',
+  road_address_name: '울산 중구 학성로 1',
+};
+const hasWord = (list, word) => (list || []).some((v) => String(v).indexOf(word) >= 0);
+
+// 17-1. 해시태그는 원문에서 따로 읽습니다. ('#'을 지우면 뒤쪽 단어로 밀려서 누락되던 상호)
+check('해시태그: 원문에서 낱말 수집', extractHashtagTokens(DODIA_TITLE).indexOf('디오디아') >= 0, JSON.stringify(extractHashtagTokens(DODIA_TITLE)));
+check('해시태그: 없으면 빈 배열', extractHashtagTokens('성수동 소금빵 맛집 베통').length === 0 && extractHashtagTokens('').length === 0);
+const dodiaTitle = extractSearchQueries(DODIA_TITLE + '\n' + DODIA_DESC);
+check('디오디아: 지역 = 강남', dodiaTitle.area === '강남', dodiaTitle.area);
+check('디오디아: 첫 검색어 = 강남 디오디아', dodiaTitle.queries[0] === '강남 디오디아', dodiaTitle.queries.join(' / '));
+check('디오디아: 해시태그 상호를 결과에 남김', (dodiaTitle.hashtags || []).indexOf('디오디아') >= 0, JSON.stringify(dodiaTitle.hashtags));
+check('디오디아: 업종 = 뷔페', dodiaTitle.category === '뷔페', dodiaTitle.category);
+check('디오디아: 형용사(럭셔리)는 키워드에서 제외', dodiaTitle.keywords.indexOf('럭셔리') < 0, dodiaTitle.keywords.join(','));
+check('디오디아: 금액(5만원대)은 키워드에서 제외', !hasWord(dodiaTitle.keywords, '5만원'), dodiaTitle.keywords.join(','));
+check('디오디아: 설명글의 메일 주소는 검색어에 안 들어감', !hasWord(dodiaTitle.queries, 'clclalsgml') && !hasWord(dodiaTitle.keywords, 'clclalsgml'), dodiaTitle.queries.join(' / '));
+check('디오디아: 상호 뒤가 아니라 첫 후보', dodiaTitle.queries.indexOf('강남 디오디아') === 0, dodiaTitle.queries.join(' / '));
+
+// 17-2. 시청자 댓글의 감상어('좋다'·'귀엽다')는 검색어가 되지 않습니다.
+const dodiaComments = extractSearchQueries(DODIA_TITLE + '\n' + DODIA_COMMENTS);
+check('댓글: 첫 검색어는 여전히 강남 디오디아', dodiaComments.queries[0] === '강남 디오디아', dodiaComments.queries.join(' / '));
+check('댓글: "좋다" 검색어 없음', !hasWord(dodiaComments.queries, '좋다'), dodiaComments.queries.join(' / '));
+check('댓글: "귀엽다" 검색어 없음', !hasWord(dodiaComments.queries, '귀엽'), dodiaComments.queries.join(' / '));
+check('댓글: 감상어는 키워드에서도 제외', !hasWord(dodiaComments.keywords, '좋다') && !hasWord(dodiaComments.keywords, '귀엽'), dodiaComments.keywords.join(','));
+check('형용사 기본형 판정: 좋다·귀엽다·고맙다', isBasePredicate('좋다') && isBasePredicate('귀엽다') && isBasePredicate('고맙다'));
+check('형용사 기본형 판정: 상호는 통과(디오디아·바다·베통)', !isBasePredicate('디오디아') && !isBasePredicate('바다') && !isBasePredicate('베통'));
+check('형용사 기본형: 한 글자·빈 값은 아님', !isBasePredicate('다') && !isBasePredicate(''));
+
+// 17-3. 댓글 폴백이 다른 동네(울산)로 새지 않습니다.
+check('지역 낱말: 울산 중구 검출', regionWordsOf('울산 중구 떡볶이').has('울산'), JSON.stringify([...regionWordsOf('울산 중구 떡볶이')]));
+check('지역 낱말: 강남 디오디아 = 강남', regionWordsOf('강남 디오디아').has('강남'), JSON.stringify([...regionWordsOf('강남 디오디아')]));
+const guarded = filterQueriesByArea(['강남 디오디아', '울산 중구 떡볶이', '디오디아', '울산'], '강남');
+check('지역 방어: 다른 동네 후보 제거', JSON.stringify(guarded) === JSON.stringify(['강남 디오디아', '디오디아']), JSON.stringify(guarded));
+check('지역 방어: 기준 동네 없으면 그대로', filterQueriesByArea(['울산 떡볶이'], '').length === 1);
+
+// 17-4. 전체 흐름: 실제 메타데이터 → 카카오 “강남 디오디아” → 디오디아2.0
+setKeys({ kakao: 'KAKAOKEY' });
+process.env.EXPO_PUBLIC_YOUTUBE_API_KEY = 'YTKEY';
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: DODIA_TITLE, author_name: '먹보' });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({ items: [{ snippet: { title: DODIA_TITLE, description: DODIA_DESC, channelId: UPLOADER_ID } }] });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) {
+    return jsonRes({
+      items: DODIA_COMMENTS.split('\n').map((text, i) => ({
+        snippet: { topLevelComment: { snippet: { textDisplay: text, authorChannelId: { value: 'UC_fan_' + i } } } },
+      })),
+    });
+  }
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    if (q.indexOf('디오디아') >= 0) return jsonRes({ documents: [DODIA_DOC] });
+    if (q.indexOf('울산') >= 0) return jsonRes({ documents: [ULSAN_DOC] });
+    return jsonRes({ documents: [] });
+  }
+  return jsonRes({ items: [], places: [] });
+};
+const dodia = await extractPlaces('https://youtube.com/shorts/WtB53sC3weY?si=YwbpKHoHMGi2ArSd');
+check('디오디아 흐름: 첫 검색어 = 강남 디오디아', dodia.queryList[0] === '강남 디오디아', dodia.queryList.join(' / '));
+check('디오디아 흐름: 첫 시도가 강남 디오디아', dodia.attempts[0].query === '강남 디오디아' && dodia.attempts[0].resultCount >= 1, JSON.stringify(dodia.attempts));
+check('디오디아 흐름: 후보 = 디오디아2.0', (dodia.candidates[0] || {}).name === '디오디아2.0', JSON.stringify((dodia.candidates[0] || {}).name));
+check('디오디아 흐름: 서초/양재 주소', String((dodia.candidates[0] || {}).address).indexOf('강남대로 213') > 0, String((dodia.candidates[0] || {}).address));
+check('디오디아 흐름: 시도한 검색어에 좋다 없음', !hasWord((dodia.attempts || []).map((a) => a.query), '좋다'), JSON.stringify((dodia.attempts || []).map((a) => a.query)));
+check('디오디아 흐름: 댓글은 결과에 그대로 남김', String(dodia.sourceComments).indexOf('좋다') >= 0, String(dodia.sourceComments).slice(0, 40));
+
+// 17-5. 댓글에 다른 동네(울산) 이야기가 섞여도 그 동네로 검색하지 않습니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: DODIA_TITLE });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({ items: [{ snippet: { title: DODIA_TITLE, description: DODIA_DESC, channelId: UPLOADER_ID } }] });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) {
+    return jsonRes({ items: [{ snippet: { topLevelComment: { snippet: { textDisplay: '울산 중구 떡볶이가 좋다', authorChannelId: { value: 'UC_fan_9' } } } } }] });
+  }
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    if (q.indexOf('디오디아') >= 0) return jsonRes({ documents: [DODIA_DOC] });
+    if (q.indexOf('울산') >= 0) return jsonRes({ documents: [ULSAN_DOC] });
+    return jsonRes({ documents: [] });
+  }
+  return jsonRes({ items: [], places: [] });
+};
+const dodiaGuard = await extractPlaces('https://youtube.com/shorts/WtB53sC3weY');
+check('지역 방어 흐름: 울산으로 검색하지 않음', !hasWord((dodiaGuard.attempts || []).map((a) => a.query), '울산'), JSON.stringify((dodiaGuard.attempts || []).map((a) => a.query)));
+check('지역 방어 흐름: 첫 후보는 여전히 디오디아2.0', (dodiaGuard.candidates[0] || {}).name === '디오디아2.0', JSON.stringify((dodiaGuard.candidates[0] || {}).name));
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;

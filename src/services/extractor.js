@@ -622,6 +622,8 @@ export async function fetchPageMeta(rawUrl, options = {}) {
 // ─────────────────────────────────────────────────────────────
 const EMOJI_RE = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF\u2B00-\u2BFF\uFE0F\u200D\u20E3]/g;
 const TAG_SYMBOL_RE = /[#＃]/g;
+/** v2.7 — 설명글의 광고 문의 메일(`clclalsgml@naver.com`)이 검색어로 새지 않게 통째로 지웁니다. */
+const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 const HANDLE_RE = /@[A-Za-z0-9._]{2,}/g;
 const PUNCT_RE = /[~!?.,:;'"“”‘’`^*+=_|\\/<>()\[\]{}·•…\-–—]/g;
 
@@ -651,6 +653,13 @@ export const CAPTION_STOPWORDS = [
   '당일', '전날', '첫번째', '두번째', '마무리', '추천드려요', '궁금하면', '보세요', '거예요',
   // 댓글에서 흔한 군더더기
   '많이', '거의', '아주', '조금', '그냥', '완전', '계속', '다들', '저도', '제가',
+  // v2.7 — 감상·수식 형용사. 상호가 아니라서 검색어가 되면 안 됩니다.
+  //   (제목 “5만원대 강남 럭셔리 뷔페”, 댓글 “항상 솔직하게 말하셔서 좋다”)
+  '럭셔리', '프리미엄', '갓성비', '유명', '유명한', '소문난', '대세', '핫한',
+  '좋다', '맛있다', '맛나다', '예쁘다', '귀엽다', '괜찮다', '웃기다', '고맙다',
+  '멋있다', '재밌다', '재미있다', '훌륭하다', '대단하다', '신기하다', '감동적이다',
+  '좋은', '맛있는', '맛난', '귀여운', '예쁜', '멋진', '훌륭한', '신기한', '행복한',
+  '항상', '늘', '감사', '문의', '이메일', '메일', '연락',
 ];
 
 /** 카테고리 단어는 지우지 않고 '지역 + 카테고리' 검색어 재료로 씁니다. */
@@ -661,6 +670,8 @@ export const CAPTION_CATEGORY_WORDS = [
   '횟집', '초밥집', '이자카야', '포차', '오마카세', '스시', '고기', '해산물', '해물',
   '삼겹살', '곱창', '돈까스', '쌀국수', '피자', '버거', '한식', '일식', '중식', '양식',
   '참치', '장어', '대게', '떡볶이', '마라탕', '쭈꾸미', '닭갈비', '족발', '보쌈', '덮밥',
+  // v2.7 — 제목에만 나오는 업종도 '지역 + 업종' 검색어 재료로 (예: “강남 럭셔리 뷔페”)
+  '뷔페', '한정식', '코스요리', '스테이크', '리조또',
 ];
 
 /** '지역 + 카테고리'를 키워드보다 먼저 쓸 만큼 구체적인 업종인지 */
@@ -731,6 +742,7 @@ function stripTokenSuffixes(token) {
 export function cleanCaptionText(text) {
   return String(text || '')
     .replace(URL_IN_TEXT, ' ')
+    .replace(EMAIL_RE, ' ')
     .replace(EMOJI_RE, ' ')
     .replace(TAG_SYMBOL_RE, ' ')
     .replace(HANDLE_RE, ' ')
@@ -742,6 +754,21 @@ export function cleanCaptionText(text) {
 /** 서술어 꼬리(‘있고·나오는·해요’)를 가진 말은 지명·메뉴가 아니므로 걸러냅니다. */
 const PREDICATE_TAIL_RE =
   /(습니다|입니다|해요|예요|이에요|했어요|했음|됐다|됐어요|되었|있었|없었|나옴|나오고|나오는|갔더니|맞춰|드렸고|해서|했는지|인데|는데|더니|지만|면서|니까|려고|도록|같음|같은|있고|없고|했던|하며|가요|네요|군요|데요|어요|지요|나요|래요|죠)$/;
+
+/**
+ * v2.7 — 형용사·동사 **기본형**('좋다'·'귀엽다'·'고맙다')은 상호가 아닙니다.
+ * 시청자 댓글의 감상(“항상 솔직하게 말하셔서 좋다”)이 검색어가 되는 걸 막습니다.
+ * 상호에 실제로 쓰는 명사('바다')는 예외로 둡니다.
+ * @param {string} token
+ * @returns {boolean}
+ */
+const BASE_PREDICATE_NOUN_ALLOW = ['바다'];
+export function isBasePredicate(token) {
+  const t = String(token || '').trim();
+  if (!t || BASE_PREDICATE_NOUN_ALLOW.indexOf(t) >= 0) return false;
+  // 두 글자('좋다')부터 여섯 글자('기분좋다')까지 — 마지막이 '다'인 기본형
+  return /^[가-힣]{1,8}다$/.test(t);
+}
 
 /** 자주 쓰이는 동네·지역 이름 (동/역 접미사 없이 쓰이는 곳) */
 export const KNOWN_AREAS = [
@@ -767,6 +794,87 @@ function isPlaceLikeDong(name) {
   if (v.length < 2) return false;
   if (DONG_NOUN_BLOCK.indexOf(v) >= 0) return false;
   return true;
+}
+
+// ─────────────────────────────────────────────────────────────
+// v2.7 · 해시태그 상호('#디오디아') · 지역 어긋난 후보 거르기
+// ─────────────────────────────────────────────────────────────
+const HASHTAG_TOKEN_RE = /[#＃]([0-9A-Za-z가-힣_]{2,20})/g;
+
+/**
+ * 원문에서 `#상호` 꼴 **해시태그 낱말만** 따로 모읍니다. (v2.7)
+ * `cleanCaptionText` 는 '#'을 먼저 지우기 때문에 `#디오디아` 가 뒤쪽 일반 단어로 밀려
+ * 검색어 후보에서 아예 빠졌습니다. 그래서 해시태그는 원문에서 미리 읽어 둡니다.
+ * @param {string} rawText
+ * @returns {string[]} 중복 없는 낱말 목록 ('#' 제외)
+ */
+export function extractHashtagTokens(rawText) {
+  const text = String(rawText || '');
+  if (!text) return [];
+  const out = [];
+  HASHTAG_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = HASHTAG_TOKEN_RE.exec(text))) {
+    const tok = m[1];
+    if (tok && out.indexOf(tok) < 0) out.push(tok);
+  }
+  return out;
+}
+
+/** '서울'·'부산' 같은 시·도 낱말과 '중구'·'강남대로' 같은 주소 낱말 */
+const REGION_TOKEN_RE = /^([가-힣]{1,6})(특별시|광역시|특별자치시|특별자치도|시|도|구|군|동|읍|면|역)$/;
+
+/**
+ * 글에 나오는 **지역 낱말**(동네·시·도·구)을 모읍니다. (v2.7)
+ * 제목에서 확정한 동네와 댓글에서 튀어나온 다른 동네를 구분하는 데 씁니다.
+ * @param {string} text
+ * @returns {Set<string>}
+ */
+export function regionWordsOf(text) {
+  const set = new Set();
+  const cleaned = cleanCaptionText(text);
+  if (!cleaned) return set;
+  const area = findAreaFromText(cleaned);
+  if (area) set.add(area);
+  cleaned.split(' ').filter(Boolean).forEach((tok) => {
+    if (CITY_NOISE.indexOf(tok) >= 0) {
+      set.add(tok);
+      return;
+    }
+    // 아는 지명이 들어 있으면 그 낱말도 지역으로 봅니다. ('강남대로' → '강남')
+    KNOWN_AREAS.forEach((known) => {
+      if (tok.indexOf(known) >= 0) set.add(known);
+    });
+    const m = tok.match(REGION_TOKEN_RE);
+    if (!m) return;
+    if (AREA_SUFFIX_BLOCK.indexOf(tok) >= 0) return;
+    if (/[동읍면]$/.test(tok) && !isPlaceLikeDong(tok)) return;
+    set.add(tok);
+    if (m[1].length >= 2) set.add(m[1]);
+  });
+  return set;
+}
+
+/**
+ * 제목·설명글에서 확정한 동네와 **다른 동네**를 가리키는 검색어를 걷어냅니다. (v2.7)
+ * 댓글 폴백이 “울산 중구 떡볶이” 같은 무관한 지역 후보를 1순위로 올리는 걸 막습니다.
+ * 지역 낱말이 아예 없는 검색어(상호만 있는 `디오디아`)는 그대로 둡니다.
+ * @param {string[]} queries
+ * @param {string} area 기준 동네
+ * @returns {string[]}
+ */
+export function filterQueriesByArea(queries, area) {
+  const list = Array.isArray(queries) ? queries : [];
+  const base = String(area || '').trim();
+  if (!base) return list;
+  return list.filter((q) => {
+    const words = regionWordsOf(q);
+    if (!words.size) return true;
+    for (const w of words) {
+      if (w === base || w.indexOf(base) >= 0 || base.indexOf(w) >= 0) return true;
+    }
+    return false;
+  });
 }
 
 /**
@@ -849,6 +957,7 @@ function findStoreNameInText(rawText, area) {
     if (isStopToken(name, stopSet)) continue;
     if (CAPTION_CATEGORY_WORDS.indexOf(name) >= 0) continue;
     if (VERB_TAIL_RE.test(name)) continue;
+    if (isBasePredicate(name)) continue;
     if (area && (name === area || name.indexOf(area) === 0)) continue;
     if (/^[0-9]/.test(name)) continue;
     return name;
@@ -921,6 +1030,8 @@ export function extractSearchQueries(text) {
     const bare = String(rawTok).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
     // 걷어낼 말은 원형 그대로 먼저 걸러냅니다. (단 '맛집'·'카페'는 카테고리 재료로 남깁니다)
     if (bare && isStopToken(bare, stopSet) && CAPTION_CATEGORY_WORDS.indexOf(bare) < 0) return;
+    // '좋다'·'귀엽다' 같은 기본형은 상호가 아닙니다. (시청자 감상어)
+    if (bare && isBasePredicate(bare)) return;
     // '떡볶이'처럼 조사처럼 끝나는 업종 단어는 그대로 카테고리로 남깁니다.
     if (bare && CAPTION_CATEGORY_WORDS.indexOf(bare) >= 0) {
       if (!category) category = bare;
@@ -929,10 +1040,11 @@ export function extractSearchQueries(text) {
     let tok = stripTokenSuffixes(stripParticles(bare));
     if (!tok) return;
     if (/^[0-9]+(개|곳|분|초|원|년|월|일|명|위|차|인)?$/.test(tok)) return;
-    // '35만원짜리' · '350,000원' 같은 금액·수량 표현은 지도 검색어가 되지 않습니다.
-    if (/^[0-9][0-9,.]*\s*(만|천|억|백)?\s*(원|만원|천원|억원)?\s*(짜리|정도|이상|미만|부터|까지)?$/.test(tok)) return;
+    // '35만원짜리' · '350,000원' · '5만원대' 같은 금액·수량 표현은 지도 검색어가 되지 않습니다.
+    if (/^[0-9][0-9,.]*\s*(만|천|억|백)?\s*(원|만원|천원|억원)?\s*(짜리|정도|이상|미만|부터|까지|대)?$/.test(tok)) return;
     if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
     if (PREDICATE_TAIL_RE.test(tok)) return;
+    if (isBasePredicate(tok)) return;
     if (CITY_NOISE.indexOf(tok) >= 0) {
       // '제주도'·'경기도'처럼 시·도 이름만 있어도, 아는 지명이면 지역으로 살립니다. (제목만 있을 때)
       const base = tok.replace(/(특별자치시|특별자치도|특별시|광역시|도)$/, '');
@@ -986,6 +1098,27 @@ export function extractSearchQueries(text) {
     .filter((k) => !storeName || normalizeName(k) !== normalizeName(storeName))
     .slice(0, 8); // 설명글이 길어도 검색어 후보가 후미의 무관한 단어로 넘치지 않게
 
+  // v2.7 — `#디오디아` 처럼 **해시태그로 붙은 상호**는 지역·업종·감상어가 아닌 것만 우선 후보로 살립니다.
+  const hashtagList = [];
+  extractHashtagTokens(raw).forEach((tag) => {
+    const bare = String(tag).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
+    if (!bare || bare.length < 2 || bare.length > 12) return;
+    if (!/[가-힣A-Za-z]/.test(bare)) return;
+    if (/^[0-9]/.test(bare)) return;
+    if (CAPTION_CATEGORY_WORDS.indexOf(bare) >= 0) return;
+    if (isStopToken(bare, stopSet)) return;
+    const tok = stripTokenSuffixes(stripParticles(bare));
+    if (!tok || tok.length < 2) return;
+    if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) return;
+    if (isStopToken(tok, stopSet)) return;
+    if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
+    if (CITY_NOISE.indexOf(tok) >= 0) return;
+    if (KNOWN_AREAS.indexOf(tok) >= 0 || isAreaToken(tok)) return;
+    if (PREDICATE_TAIL_RE.test(tok) || isBasePredicate(tok)) return;
+    if (area && tok === area) return;
+    if (hashtagList.indexOf(tok) < 0) hashtagList.push(tok);
+  });
+
   const queries = [];
   const pushQuery = (parts) => {
     const v = parts
@@ -1000,6 +1133,11 @@ export function extractSearchQueries(text) {
     if (area) pushQuery([area, storeName]);
     pushQuery([storeName]);
   }
+  // 해시태그 상호(‘디오디아’)는 지역과 묶어 먼저 찾습니다. (v2.7)
+  hashtagList.slice(0, 3).forEach((tok) => {
+    if (area) pushQuery([area, tok]);
+    pushQuery([tok]);
+  });
   // 구체적인 업종('횟집'·'초밥집' 등)은 메뉴 키워드보다 먼저 '지역 + 업종'으로 찾습니다.
   const categoryFirst = isSpecificCategory(category);
   if (area && category && categoryFirst) pushQuery([area, category]);
@@ -1009,9 +1147,14 @@ export function extractSearchQueries(text) {
   if (area) pushQuery([area]);
   if (!area && keywordList.length) pushQuery([keywordList[0]]);
   if (!area && keywordList.length > 1) pushQuery(keywordList.slice(0, 2));
+  // v2.7 — 앞 1~2개만 보지 않고 키워드 후보를 최대 5개까지 '지역 + 키워드'로 이어서 시도합니다.
+  keywordList.slice(0, 5).forEach((kw) => {
+    if (area) pushQuery([area, kw]);
+    else pushQuery([kw]);
+  });
   if (!queries.length && cleaned) pushQuery([cleaned.slice(0, 40)]);
 
-  return { queries, area, storeName, category, keywords: keywordList, cleaned };
+  return { queries, area, storeName, category, keywords: keywordList, hashtags: hashtagList, cleaned };
 }
 
 /** 캡션이 아니라 '제목'이 막힌 플랫폼에서 화면에 띄울 안내 문구 */
@@ -1079,6 +1222,7 @@ export function parseListItem(line, index = 0, options = {}) {
       if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) return false;
       if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return false;
       if (PREDICATE_TAIL_RE.test(tok)) return false;
+      if (isBasePredicate(tok)) return false;
       if (isStopToken(tok, stopSet)) return false;
       return true;
     });
@@ -2379,13 +2523,19 @@ export async function extractPlaces(rawInput, options = {}) {
   const comments = String((meta && meta.comments) || '').trim();
   // 같은 문구가 제목·설명글·공유 캡션에 겹쳐 오는 경우가 있어(인스타 공유 캡션), 한 번만 씁니다.
   const primaryText = Array.from(new Set([sourceTitle, description, sharedCaption].filter(Boolean))).join('\n');
-  // 댓글은 잡담이 섞이기 쉬우므로, 제목·설명글에서 **상호를 잡았으면** 검색어에 쓰지 않습니다.
-  // (확인용으로 결과에는 sourceComments 로 내려 보냅니다)
-  const useComments = Boolean(comments) && !extractSearchQueries(primaryText).storeName;
-  const text = (useComments ? [primaryText, comments].filter(Boolean).join('\n') : primaryText) || '';
-  // 댓글에서만 나오는 상호·동네(예: 업로더 댓글 “여기 성수동 카모플라쥬에요!”)를 앞세운 후보
+  // 댓글은 잡담이 섞이기 쉽습니다. (v2.7)
+  //  · 제목·설명글에서 **상호를 잡았으면** 댓글은 아예 쓰지 않습니다.
+  //  · 제목·설명글에서 **동네를 확정했으면**, 댓글이 다른 동네를 가리키는 후보는 걷어냅니다.
+  //    (“항상 솔직하게 말하셔서 좋다” → 댓글 폴백이 '울산 중구 떡볶이' 를 1순위로 올리던 문제)
+  //  · 댓글은 검색어 후보(commentQueries)로만 쓰고, 기본 분석(text)에는 섞지 않습니다.
+  const primary = extractSearchQueries(primaryText);
+  const useComments = Boolean(comments) && !primary.storeName;
+  const text = primaryText || '';
   const commentQueries = useComments
-    ? extractSearchQueries([sourceTitle, comments].filter(Boolean).join('\n')).queries
+    ? filterQueriesByArea(
+        extractSearchQueries([sourceTitle, comments].filter(Boolean).join('\n')).queries,
+        primary.area
+      )
     : [];
 
   // 제목·캡션을 못 읽은 경우를 화면에 그대로 알려 줍니다. (인스타 로그인 월 등)
