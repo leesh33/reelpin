@@ -256,7 +256,8 @@ export default function PasteScreen({
       return;
     }
     const searchMode = meta ? meta.mode === 'search' : isSearch;
-    const sourceUrl = searchMode ? '' : url.trim();
+    // 붙여넣은 게 '문구 + 링크' 덩어리여도 핀에는 링크만 저장합니다. (상세 시트의 [원본 열기]가 깨지지 않게)
+    const sourceUrl = searchMode ? '' : splitSharedText(url).url;
     const platform = searchMode ? 'search' : parseUrl(sourceUrl).platform || 'instagram';
     const pin = buildPin(selectedCandidate, { sourceUrl, platform });
     if (!pin) {
