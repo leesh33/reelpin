@@ -118,7 +118,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
-npm test                           # 단위·통합 524건 통과 (추출기 276 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 69) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 528건 통과 (추출기 276 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 73) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -147,7 +147,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
    이제는 가게 이름 + 동네로 네이버 플레이스를 찾으므로 **저장된 매장 페이지가 없어도** 버튼이 뜹니다. (오른쪽 라벨 `네이버 플레이스`)
 5. **아이폰·안드로이드** — `InAppPlaceModal.js` (네이티브) 는 같은 헤더를 쓰고, iframe 대신
    `[네이버 지도로 열기]` · `[네이버 플레이스 웹으로 열기]` · (있으면) `[저장된 매장 페이지 열기]` 를 제공합니다.
-6. **검증** — `npm test` **524건 통과**(모달 주소·iframe·차단 감지·SSR 안전 검사 24건 추가) · `npx expo export --platform web` 에러 0건
+6. **검증** — `npm test` **528건 통과**(모달 주소·iframe·차단 감지·SSR 안전 검사 28건 추가) · `npx expo export --platform web` 에러 0건
    · `https://reelpin.vercel.app` 라이브에서 핀 클릭 → [매장 정보 보기] → 모달 안에서 네이버 플레이스가 실제로 그려지는지 스크린샷 확인.
 
 ## v1.6에서 달라진 점 (2026-11-15) — 웹 지도를 네이버 지도로
@@ -376,7 +376,7 @@ eas submit --platform ios
 1. `react-native-safe-area-context` / `SafeAreaProvider` **미사용** — iOS 17/18 Expo Go 네이티브 모듈 충돌 회피. RN 기본 `SafeAreaView` + Android `StatusBar.currentHeight` 사용.
 2. `app.json`에 `extra.eas.projectId` **미포함** — `null` 매니페스트 크래시 원인 제거.
 3. `bundleIdentifier: com.odol.reelpin`.
-4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 69건 통과(웹 지도 `RealMapView.web.js` SSR 안전 + 네이버 지도 스크립트 규격 검사 + v1.7 인앱 네이버 플레이스 모달 검사 포함).
+4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 73건 통과(웹 지도 `RealMapView.web.js` SSR 안전 + 네이버 지도 스크립트 규격 검사 + v1.7 인앱 네이버 플레이스 모달 검사 포함).
 5. `.env`는 `.gitignore`에 있어 커밋·ZIP에 포함되지 않습니다. 저장소·배포본에는 빈 값만 있는 `.env.example`만 들어갑니다.
 
 > v1.2는 v1.1에 **유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기**를 더한 버전입니다.

@@ -21,9 +21,33 @@ import { naverMapWebUrl, naverPlaceSearchUrl, openExternalUrl } from '../utils/l
 /** iframe 이 이 시간(ms) 안에 onLoad 를 못 주면 차단으로 간주합니다. */
 export const IFRAME_LOAD_TIMEOUT_MS = 6000;
 
+/** 로드 직후 이 시간이 지나도 빈 about:blank 면 차단으로 봅니다(첫 about:blank 오작동 방지). */
+export const BLANK_SETTLE_MS = 2000;
+
 /** 차단 배너 문구 — 테스트에서 그대로 확인합니다. */
 export const BLOCKED_NOTICE = '네이버 플레이스가 이 화면 안에서 열리지 않아요';
 export const BLOCKED_HINT = '아래 [네이버 지도로 열기]를 누르면 새 화면에서 바로 확인할 수 있어요';
+
+/**
+ * iframe 문서가 '차단된 빈 화면'인지 판정합니다.
+ * · doc 이 null → 다른 출처 페이지가 실제로 열린 것(정상)
+ * · about:blank + 본문이 비어 있음 → 브라우저가 X-Frame-Options 등으로 거부
+ *   단, iframe 이 처음 붙을 때 한 번 오는 about:blank 로드 이벤트와 헷갈리지 않도록
+ *   BLANK_SETTLE_MS 가 지난 뒤(또는 force)에만 차단으로 인정합니다.
+ */
+export function looksLikeBlockedFrame(doc, elapsedMs, force) {
+  if (!doc) return false;
+  let href = '';
+  try {
+    href = doc.location ? doc.location.href : '';
+  } catch (e) {
+    return false;
+  }
+  const empty = !doc.body || doc.body.childElementCount === 0;
+  if (!empty) return false;
+  if (href !== 'about:blank' && href !== '') return false;
+  return !!force || elapsedMs >= BLANK_SETTLE_MS;
+}
 
 export function placeModalTitle(pin) {
   if (!pin) return '';
@@ -35,11 +59,29 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
   const [loaded, setLoaded] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const loadedRef = useRef(false);
+  const mountedAt = useRef(0);
   const frameRef = useRef(null);
+  const verifyTimer = useRef(null);
+
+  /**
+   * iframe 이 실제로 네이버 페이지를 그렸는지 확인합니다.
+   * · contentDocument 가 null 이면 다른 출처 페이지가 정상 로드된 것
+   * · about:blank 에 본문이 없으면 브라우저가 거부한 것(단, 처음 오는 about:blank 이벤트는 무시)
+   */
+  const verifyFrame = useCallback((force) => {
+    let doc = null;
+    try {
+      doc = frameRef.current ? frameRef.current.contentDocument : null;
+    } catch (err) {
+      doc = null;
+    }
+    setBlocked(looksLikeBlockedFrame(doc, Date.now() - mountedAt.current, force));
+  }, []);
 
   // 주소가 바뀌면 로드 상태를 초기화합니다.
   useEffect(() => {
     loadedRef.current = false;
+    mountedAt.current = Date.now();
     setLoaded(false);
     setBlocked(false);
   }, [url]);
@@ -48,10 +90,22 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
   useEffect(() => {
     if (!pin) return undefined;
     const timer = setTimeout(() => {
-      if (!loadedRef.current) setBlocked(true);
+      if (!loadedRef.current) {
+        setBlocked(true);
+        return;
+      }
+      verifyFrame(true);
     }, IFRAME_LOAD_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [pin, url]);
+  }, [pin, url, verifyFrame]);
+
+  // 모달을 닫으면 예약된 확인 작업을 정리합니다.
+  useEffect(
+    () => () => {
+      if (verifyTimer.current) clearTimeout(verifyTimer.current);
+    },
+    []
+  );
 
   // ESC 로 닫기 (웹 전용)
   useEffect(() => {
@@ -67,25 +121,15 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
   }, [pin, onClose]);
 
   /**
-   * iframe onLoad — 실제로 네이버 페이지가 그려졌는지 확인합니다.
-   * · contentDocument 접근이 막히면(SecurityError) = 다른 출처 페이지가 정상 로드됨
-   * · 접근되는데 about:blank 에 본문이 없으면 = 브라우저가 X-Frame-Options 등으로 차단
+   * iframe onLoad — 로드가 끝나면 짧게 기다렸다가 실제로 그려졌는지 확인합니다.
+   * (iframe 이 처음 붙을 때 오는 빈 about:blank 이벤트로 오판하지 않기 위해)
    */
-  const handleFrameLoad = useCallback((event) => {
+  const handleFrameLoad = useCallback(() => {
     loadedRef.current = true;
     setLoaded(true);
-    const frame = (event && event.target) || frameRef.current;
-    try {
-      const doc = frame && frame.contentDocument;
-      const href = doc && doc.location ? doc.location.href : '';
-      const empty = !doc || !doc.body || doc.body.childElementCount === 0;
-      if (empty && (href === 'about:blank' || href === '')) setBlocked(true);
-      else setBlocked(false);
-    } catch (err) {
-      // cross-origin → 네이버 페이지가 실제로 열렸습니다.
-      setBlocked(false);
-    }
-  }, []);
+    if (verifyTimer.current) clearTimeout(verifyTimer.current);
+    verifyTimer.current = setTimeout(() => verifyFrame(false), 1200);
+  }, [verifyFrame]);
 
   const openExternal = useCallback(async () => {
     const result = await openExternalUrl(url);

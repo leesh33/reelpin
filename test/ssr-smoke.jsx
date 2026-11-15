@@ -18,9 +18,11 @@ import RealMapViewWeb, {
   FALLBACK_NOTICE_NETWORK,
 } from '../src/components/RealMapView.web';
 import InAppPlaceModalWeb, {
+  BLANK_SETTLE_MS,
   BLOCKED_HINT,
   BLOCKED_NOTICE,
   IFRAME_LOAD_TIMEOUT_MS,
+  looksLikeBlockedFrame,
   placeModalTitle,
 } from '../src/components/InAppPlaceModal.web';
 import fs from 'node:fs';
@@ -194,6 +196,10 @@ const placeChecks = [
   ['네이티브 모달: 같은 헤더·네이버 지도 열기', nativeModalSource.indexOf('새 창으로 열기') > 0 && nativeModalSource.indexOf('네이버 지도로 열기') > 0],
   ['PinDetailSheet: 모달 사용, openPlace 직접 호출 없음', sheetSource.indexOf('InAppPlaceModal') > 0 && sheetSource.indexOf('openPlace') < 0],
   ['모달 제목: 가게명 · 동네', placeModalTitle(SEARCH_PIN) === '베통 성수 · 성수동', placeModalTitle(SEARCH_PIN)],
+  ['차단 판정: 다른 출처(doc null)는 차단 아님', looksLikeBlockedFrame(null, 99999, true) === false],
+  ['차단 판정: 빈 about:blank + 시간 경과 → 차단', looksLikeBlockedFrame({ location: { href: 'about:blank' }, body: { childElementCount: 0 } }, BLANK_SETTLE_MS, false) === true],
+  ['차단 판정: 로드 직후 about:blank 는 오판 없음', looksLikeBlockedFrame({ location: { href: 'about:blank' }, body: { childElementCount: 0 } }, 300, false) === false],
+  ['차단 판정: 내용이 있으면 차단 아님', looksLikeBlockedFrame({ location: { href: 'about:blank' }, body: { childElementCount: 3 } }, 99999, true) === false],
 ];
 
 for (const [label, ok, extra] of placeChecks) {
