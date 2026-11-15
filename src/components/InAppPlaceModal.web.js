@@ -13,6 +13,7 @@
  * SSR(node renderToString) 안전: window/document 는 useEffect 안에서만 만집니다.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, typography } from '../theme';
@@ -58,6 +59,13 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
   const url = pin ? naverPlaceSearchUrl(pin) : '';
   const [loaded, setLoaded] = useState(false);
   const [blocked, setBlocked] = useState(false);
+  /**
+   * 모달은 document.body 로 포털해 탭바·지도 위에 확실히 올립니다.
+   * (SSR 에서는 document 가 없어 그대로 inline 렌더 → renderToString 안전)
+   */
+  const [portalReady] = useState(
+    () => typeof document !== 'undefined' && !!(document && document.body)
+  );
   const loadedRef = useRef(false);
   const mountedAt = useRef(0);
   const frameRef = useRef(null);
@@ -149,8 +157,14 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
 
   if (!pin) return null;
 
-  return (
+  const modal = (
     <View style={styles.overlay}>
+      <Pressable
+        style={styles.backdropFill}
+        onPress={onClose}
+        accessibilityRole="button"
+        accessibilityLabel="모달 닫기"
+      />
       <View style={styles.panel}>
         {/* ── 헤더: 가게 이름 + 새 창으로 열기 + 닫기 ── */}
         <View style={styles.header}>
@@ -246,6 +260,11 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
       </View>
     </View>
   );
+
+  if (portalReady && typeof document !== 'undefined' && document.body) {
+    return createPortal(modal, document.body);
+  }
+  return modal;
 }
 
 const styles = StyleSheet.create({
@@ -269,6 +288,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     overflow: 'hidden',
     flexDirection: 'column',
+    zIndex: 1,
+  },
+  backdropFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   header: {
     flexDirection: 'row',

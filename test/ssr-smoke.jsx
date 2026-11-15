@@ -192,6 +192,8 @@ const placeChecks = [
   ['웹 모달: 차단 안내 문구 + 원탱 폴백', BLOCKED_NOTICE.indexOf('열리지 않아요') > 0 && BLOCKED_HINT.indexOf('네이버 지도로 열기') > 0],
   ['웹 모달: ESC 로 닫기', webModalSource.indexOf("'Escape'") > 0],
   ['웹 모달: 전체 화면 fixed 오버레이', webModalSource.indexOf("position: 'fixed'") > 0],
+  ['웹 모달: document.body 포털(탭바 위에 올림)', webModalSource.indexOf('createPortal') > 0],
+  ['웹 모달: 바깥(어두운 곳) 누르면 닫기', webModalSource.indexOf('backdropFill') > 0],
   ['웹 모달: iframe sandbox 미사용(네이버 로그인·지도 동작)', webModalSource.indexOf('sandbox') < 0],
   ['네이티브 모달: 같은 헤더·네이버 지도 열기', nativeModalSource.indexOf('새 창으로 열기') > 0 && nativeModalSource.indexOf('네이버 지도로 열기') > 0],
   ['PinDetailSheet: 모달 사용, openPlace 직접 호출 없음', sheetSource.indexOf('InAppPlaceModal') > 0 && sheetSource.indexOf('openPlace') < 0],
