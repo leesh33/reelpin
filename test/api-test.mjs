@@ -391,6 +391,27 @@ r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 const retryBody = JSON.parse((calls[1] || { init: {} }).init.body || '{}');
 check('gemini: 400 이면 한 번 더 시도해 살림', calls.length === 2 && r.body.storeName === '엄마손횟집', calls.length + ' | ' + r.body.storeName);
 check('gemini: 재시도 본문엔 thinkingConfig 없음', !(retryBody.generationConfig || {}).thinkingConfig, JSON.stringify(retryBody.generationConfig && Object.keys(retryBody.generationConfig)));
+
+// 모델이 폐기·미제공(404)이면 다음 모델로 내려감
+calls = [];
+let geminiModelTry = 0;
+handler = () => {
+  geminiModelTry += 1;
+  return geminiModelTry === 1 ? errRes(404) : jsonRes(geminiText(GEMINI_OK));
+};
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check(
+  'gemini: 모델 404 면 gemini-2.0-flash 로 폴백',
+  calls.length === 2 && calls[1].url.indexOf('gemini-2.0-flash') > 0 && r.body.storeName === '엄마손횟집',
+  calls.map((c) => c.url).join(' | ')
+);
+check('gemini: 실제 쓴 모델을 응답에 표시', r.body.model === 'gemini-2.0-flash', r.body.model);
+
+// 쿼타·서버 오류(429·500)는 모델을 바꿔도 같으므로 한 번에 끝냄
+calls = [];
+handler = () => errRes(429);
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: 429 는 모델 폴백 없이 빈 결과', calls.length === 1 && r.body.reason === 'gemini-upstream-429', calls.length + ' | ' + r.body.reason);
 check('gemini: 응답 타임아웃 12초 이상', geminiHandler.GEMINI_TIMEOUT_MS >= 12000, String(geminiHandler.GEMINI_TIMEOUT_MS));
 check(
   'gemini normalize: shorts·embed·watch·youtu.be',

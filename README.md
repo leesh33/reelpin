@@ -155,7 +155,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 1410건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 화면 렌더 스모크 257/257) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 1413건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 화면 렌더 스모크 257/257) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -194,7 +194,8 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - `POST /api/gemini` · body `{ url, title, description }` → `{ storeName, area, menu, category, places: [{ name, area, menu }] }`
 - Google Gemini REST `v1beta/models/gemini-2.5-flash:generateContent` 에 **`fileData: { fileUri: "https://www.youtube.com/watch?v=…", mimeType: "video/*" }`** 로 영상을 직접 넘기고, 제목·설명글은 참고 텍스트로 함께 보냅니다. (모델은 `GEMINI_MODEL` 로 교체 가능)
 - **`responseMimeType: "application/json"` + `responseSchema`** 로 JSON 을 강제하고, 혹시 ```json 울타리·앞뒤 잡담이 붙어도 벗겨서 파싱합니다.
-- **타임아웃 22초**(요구 12초 이상) · `vercel.json` 의 `api/gemini.js` 만 **`maxDuration: 60`** (다른 API 는 10초 유지) — 영상 분석은 10~20초가 걸립니다.
+- **타임아웃 20초**(요구 12초 이상) · 전체 예산 34초 · `vercel.json` 의 `api/gemini.js` 만 **`maxDuration: 60`** (다른 API 는 10초 유지) — 영상 분석은 10~20초가 걸립니다.
+- 모델이 폐기·미제공(404/400)이면 **`gemini-2.0-flash` 로 자동 폴백**(`GEMINI_MODEL` 로 고정 가능), 쿼타(429)·5xx 는 모델을 바꿔도 같으므로 바로 빈 결과입니다.
 - **키 없음 → `503 { error: 'gemini-not-configured' }`**, 유튜브 아님/가게 미확인/업스트림 실패/JSON 아님 → **모두 `200` + 빈 결과**로 조용히 폴백(앱이 멈추지 않음). 실패 응답·로그에 **키와 업스트림 본문을 담지 않습니다.**
 - 키는 쿼리스트링이 아니라 **`x-goog-api-key` 헤더**로 보냅니다(프록시 로그·Referer 에 남지 않게). 유튜브 URL은 `shorts`·`youtu.be`·`watch`·`embed` 를 **watch 주소로 정규화**하고, 유튜브 사칭 호스트(`youtube.com.evil.com`)는 거부합니다.
 - 2.5 flash 의 '생각' 토큰은 `thinkingConfig.thinkingBudget: 0` 으로 끄고(속도), 모델이 이 옵션을 모르면(400) **옵션 없이 한 번 더** 시도합니다.
@@ -225,7 +226,7 @@ extractPlaces(url)
 - `npm run test:api` — `/api/gemini` 단위 31건: 키 없음 503 · GET 405 · 유튜브 아님 200 빈 결과(업스트림 호출 0) · `fileUri` watch 정규화 · `x-goog-api-key` 헤더 · `responseMimeType`·스키마 · ```json 울타리 파싱 · places 만 있어도 상호 채움 · 400 재시도 · 업스트림 500 → 빈 결과 · **키 노출 0건** · `vercel.json maxDuration 60`.
 - `npm run test:proxy` — 웹 흐름 20건: 1차 성공 시 **`/api/gemini` 호출 없음** · 1차 실패 → Gemini → **지도 재조회** → 후보 + `aiNote` · 좌표 못 찾으면 수동 후보 · 빈 결과/503 이면 기존 오프라인 폴백.
 - `npm run test:extract` — 네이티브는 **`/api/gemini` 를 부르지 않음**(키가 번들에 없음) + 기존 오프라인 폴백 유지.
-- `npm test` — **ALL_TESTS_OK**(1410건 · 화면 렌더 스모크 257/257), `npm run export:web` — 에러 0건.
+- `npm test` — **ALL_TESTS_OK**(1413건 · 화면 렌더 스모크 257/257), `npm run export:web` — 에러 0건.
 - 실테스트는 `GEMINI_API_KEY` 를 Vercel 에 넣은 뒤 `LPLE_SH2b9U` 로 확인합니다(키가 없으면 지금과 똑같이 1차 추출만 동작).
 
 ## v2.8에서 달라진 점 (2026-11-16) — 🧹 긴 설명글은 여러 가게가 아님 · 🖼️ 히어로 카드 썸네일

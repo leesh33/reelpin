@@ -24,8 +24,12 @@ const { fetchWithTimeout, sendJson, warn } = require('../server/http.js');
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
 const DEFAULT_MODEL = 'gemini-2.5-flash';
-/** 영상 분석 응답 타임아웃 — Gemini YouTube 분석은 10~20초가 걸립니다. */
-const GEMINI_TIMEOUT_MS = 22000;
+/** 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. */
+const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+/** 한 번의 영상 분석 응답 타임아웃 — Gemini YouTube 분석은 10~20초가 걸립니다. */
+const GEMINI_TIMEOUT_MS = 20000;
+/** 모델 폴백까지 포함한 전체 예산 (서버 maxDuration 60초의 여유 안) */
+const TOTAL_BUDGET_MS = 34000;
 /** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TITLE_CHARS = 200;
@@ -243,7 +247,7 @@ function coerceAnalysis(obj) {
 }
 
 /** Gemini 호출 1회. 실패하면 { ok:false, status } */
-async function callGemini({ apiKey, model, body }) {
+async function callGemini({ apiKey, model, body, timeoutMs }) {
   const endpoint = GEMINI_ENDPOINT + encodeURIComponent(model) + ':generateContent';
   const res = await fetchWithTimeout(
     endpoint,
@@ -256,7 +260,7 @@ async function callGemini({ apiKey, model, body }) {
       },
       body: JSON.stringify(body),
     },
-    GEMINI_TIMEOUT_MS
+    timeoutMs
   );
   if (!res) return { ok: false, status: 0 };
   let json = null;
@@ -266,6 +270,17 @@ async function callGemini({ apiKey, model, body }) {
     json = null;
   }
   return { ok: Boolean(res.ok), status: Number(res.status) || 0, json };
+}
+
+/** 시도할 모델 목록 — GEMINI_MODEL 이 있으면 그것부터, 그 뒤 기본 모델·구형 모델 */
+function modelCandidates() {
+  const preferred = String(process.env.GEMINI_MODEL || '').trim();
+  const list = [];
+  [preferred, DEFAULT_MODEL, ...FALLBACK_MODELS].forEach((m) => {
+    const name = String(m || '').trim();
+    if (name && list.indexOf(name) < 0) list.push(name);
+  });
+  return list;
 }
 
 module.exports = async function handler(req, res) {
@@ -290,25 +305,39 @@ module.exports = async function handler(req, res) {
 
   const title = cleanText(body.title, MAX_TITLE_CHARS);
   const description = cleanText(body.description, MAX_DESCRIPTION_CHARS);
-  const model = String(process.env.GEMINI_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
 
-  let attempt = await callGemini({
-    apiKey,
-    model,
-    body: buildRequestBody({ videoUrl, title, description, withThinkingOff: true }),
-  });
-  // thinkingConfig 를 모르는 모델이면(400) 옵션을 빼고 한 번 더 — 기능이 통째로 죽지 않게.
-  if (!attempt.ok && attempt.status === 400) {
+  // 모델이 폐기·미제공(404/400)이면 다음 모델로 내려갑니다. 그 밖의 실패(429·5xx)는 바로 끝냅니다.
+  const deadline = Date.now() + TOTAL_BUDGET_MS;
+  const models = modelCandidates();
+  let attempt = { ok: false, status: 0, json: null };
+  let usedModel = models[0];
+  for (const model of models) {
+    const left = deadline - Date.now();
+    if (left < 4000) break;
+    usedModel = model;
+    const timeoutMs = Math.min(GEMINI_TIMEOUT_MS, left);
     attempt = await callGemini({
       apiKey,
       model,
-      body: buildRequestBody({ videoUrl, title, description, withThinkingOff: false }),
+      timeoutMs,
+      body: buildRequestBody({ videoUrl, title, description, withThinkingOff: true }),
     });
+    // thinkingConfig 를 모르는 모델이면(400) 옵션을 빼고 한 번 더 — 기능이 통째로 죽지 않게.
+    if (!attempt.ok && attempt.status === 400 && deadline - Date.now() > 4000) {
+      attempt = await callGemini({
+        apiKey,
+        model,
+        timeoutMs: Math.min(GEMINI_TIMEOUT_MS, deadline - Date.now()),
+        body: buildRequestBody({ videoUrl, title, description, withThinkingOff: false }),
+      });
+    }
+    if (attempt.ok) break;
+    if (attempt.status !== 404 && attempt.status !== 400) break;
   }
 
   if (!attempt.ok) {
     // 업스트림 본문·키는 절대 돌려주지 않습니다. (상태 코드만 로그)
-    warn('gemini: upstream failed status=' + attempt.status + ' model=' + model);
+    warn('gemini: upstream failed status=' + attempt.status + ' model=' + usedModel);
     return sendJson(res, 200, emptyResult(attempt.status ? 'gemini-upstream-' + attempt.status : 'gemini-timeout'));
   }
 
@@ -320,7 +349,7 @@ module.exports = async function handler(req, res) {
   }
 
   const analysis = coerceAnalysis(parsed);
-  return sendJson(res, 200, { ...analysis, model, source: 'gemini' });
+  return sendJson(res, 200, { ...analysis, model: usedModel, source: 'gemini' });
 };
 
 function finishReasonOf(json) {
@@ -334,5 +363,7 @@ function finishReasonOf(json) {
 module.exports.normalizeYouTubeUrl = normalizeYouTubeUrl;
 module.exports.parseJsonLoose = parseJsonLoose;
 module.exports.coerceAnalysis = coerceAnalysis;
+module.exports.modelCandidates = modelCandidates;
 module.exports.GEMINI_TIMEOUT_MS = GEMINI_TIMEOUT_MS;
+module.exports.TOTAL_BUDGET_MS = TOTAL_BUDGET_MS;
 module.exports.DEFAULT_MODEL = DEFAULT_MODEL;
