@@ -22,6 +22,12 @@ export const colors = {
   mapText: '#5A6B87',
   mint: '#4ECDB4',
 
+  // 인앱 모달 헤더 (네이버 플레이스의 흰 화면과 확실히 갈라지는 다크 차콜)
+  charcoal: '#1C1C1E',
+  charcoalLine: '#33333A',
+  charcoalSub: '#A1A1AA',
+  charcoalPill: 'rgba(255,255,255,0.14)',
+
   // text
   text: '#111827',
   textSub: '#6B7280',

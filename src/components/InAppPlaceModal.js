@@ -49,35 +49,38 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
       <View style={styles.backdrop}>
         <Pressable style={styles.backdropFill} onPress={onClose} accessibilityLabel="매장 정보 닫기" />
         <View style={styles.sheet}>
-          <View style={styles.handle} />
+          {/* 다크 차콜 헤더 — 네이버 플레이스(흰 화면)와 헷갈리지 않게 위아래를 확실히 나눕니다. */}
+          <View style={styles.headerBlock}>
+            <View style={styles.handle} />
 
-          <View style={styles.header}>
-            <View style={styles.titleWrap}>
-              <Text style={styles.title} numberOfLines={1}>
-                {pin.name}
-              </Text>
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {[pin.area, '네이버 플레이스'].filter(Boolean).join(' · ')}
-              </Text>
+            <View style={styles.header}>
+              <View style={styles.titleWrap}>
+                <Text style={styles.title} numberOfLines={1}>
+                  {pin.name}
+                </Text>
+                <Text style={styles.subtitle} numberOfLines={1}>
+                  {[pin.area, '네이버 플레이스'].filter(Boolean).join(' · ')}
+                </Text>
+              </View>
+              <Pressable
+                style={styles.externalBtn}
+                onPress={openPlaceWeb}
+                accessibilityRole="link"
+                accessibilityLabel="새 창으로 열기"
+              >
+                <Ionicons name="open-outline" size={13} color={colors.white} />
+                <Text style={styles.externalText}>새 창으로 열기</Text>
+              </Pressable>
+              <Pressable
+                style={styles.closeBtn}
+                onPress={onClose}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="닫기"
+              >
+                <Ionicons name="close" size={17} color={colors.white} />
+              </Pressable>
             </View>
-            <Pressable
-              style={styles.externalBtn}
-              onPress={openPlaceWeb}
-              accessibilityRole="link"
-              accessibilityLabel="새 창으로 열기"
-            >
-              <Ionicons name="open-outline" size={13} color={colors.coralDark} />
-              <Text style={styles.externalText}>새 창으로 열기</Text>
-            </Pressable>
-            <Pressable
-              style={styles.closeBtn}
-              onPress={onClose}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="닫기"
-            >
-              <Ionicons name="close" size={18} color={colors.textSub} />
-            </Pressable>
           </View>
 
           <View style={styles.body}>
@@ -132,17 +135,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
-    paddingHorizontal: 20,
-    paddingTop: 10,
     paddingBottom: 26,
     ...sheetShadow,
+  },
+  headerBlock: {
+    backgroundColor: colors.charcoal,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 12,
   },
   handle: {
     alignSelf: 'center',
     width: 42,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.line,
+    backgroundColor: 'rgba(255,255,255,0.28)',
     marginBottom: 12,
   },
   header: {
@@ -154,11 +163,13 @@ const styles = StyleSheet.create({
   title: {
     ...typography.h2,
     fontSize: 17,
+    color: colors.white,
   },
   subtitle: {
     ...typography.tiny,
     fontSize: 10.5,
     marginTop: 2,
+    color: colors.charcoalSub,
   },
   externalBtn: {
     flexDirection: 'row',
@@ -167,23 +178,25 @@ const styles = StyleSheet.create({
     height: 30,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.charcoalPill,
   },
   externalText: {
     fontSize: 11,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.white,
   },
   closeBtn: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: colors.lineSoft,
+    backgroundColor: colors.charcoalPill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   body: {
-    marginTop: 14,
+    marginTop: 0,
+    paddingHorizontal: 20,
+    paddingTop: 14,
     gap: 8,
   },
   noticeCard: {

@@ -179,6 +179,7 @@ export default function InAppPlaceModal({ pin, onClose }) {
       <View style={styles.panel}>
         {/* ── 헤더: 가게 이름 + 새 창으로 열기 + 닫기 ── */}
         <View style={styles.header}>
+          {/* 다크 차콜 헤더 — 아래 네이버 플레이스(흰 배경)와 한 줄로 붙어 보이지 않게 합니다. */}
           <View style={styles.titleWrap}>
             <Text style={styles.title} numberOfLines={1}>
               {pin.name}
@@ -188,7 +189,7 @@ export default function InAppPlaceModal({ pin, onClose }) {
             </Text>
           </View>
           <ExternalLink href={placeUrl} label="새 창으로 열기" style={styles.externalBtn}>
-            <Ionicons name="open-outline" size={13} color={colors.coralDark} />
+            <Ionicons name="open-outline" size={13} color={colors.white} />
             <Text style={styles.externalText}>새 창으로 열기</Text>
           </ExternalLink>
           <Pressable
@@ -198,7 +199,7 @@ export default function InAppPlaceModal({ pin, onClose }) {
             accessibilityRole="button"
             accessibilityLabel="닫기"
           >
-            <Ionicons name="close" size={18} color={colors.textSub} />
+            <Ionicons name="close" size={17} color={colors.white} />
           </Pressable>
         </View>
 
@@ -298,20 +299,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: colors.card,
+    paddingVertical: 11,
+    backgroundColor: colors.charcoal,
     borderBottomWidth: 1,
-    borderBottomColor: colors.line,
+    borderBottomColor: colors.charcoalLine,
   },
   titleWrap: { flex: 1, minWidth: 0 },
   title: {
     ...typography.h3,
     fontSize: 15,
+    color: colors.white,
   },
   subtitle: {
     ...typography.tiny,
     fontSize: 10.5,
     marginTop: 1,
+    color: colors.charcoalSub,
   },
   externalBtn: {
     flexDirection: 'row',
@@ -320,18 +323,18 @@ const styles = StyleSheet.create({
     height: 30,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.charcoalPill,
   },
   externalText: {
     fontSize: 11,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.white,
   },
   closeBtn: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: colors.lineSoft,
+    backgroundColor: colors.charcoalPill,
     alignItems: 'center',
     justifyContent: 'center',
   },
