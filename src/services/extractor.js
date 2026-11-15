@@ -496,6 +496,83 @@ export function isNativeRuntime() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// v1.4 · 동일 출처 API 프록시 (Vercel Serverless Functions)
+//   웹 빌드는 브라우저 CORS·키 노출 때문에 카카오/네이버/유튜브 Data API 를 직접 부를 수 없습니다.
+//   그래서 배포 서버(Vercel)의 `/api/*` 함수가 **서버 키**로 대신 호출해 줍니다.
+//     GET /api/youtube?id=<videoId>        → { title, description, thumbnail, comments, channelId }
+//     GET /api/kakao-local?query=..&size=.. → 카카오 응답 그대로({ documents })
+//     GET /api/naver-local?query=..&display=.. → 네이버 응답 그대로({ items })
+//   · 네이티브(iOS/Android)는 지금처럼 기기에서 직접 호출합니다. (프록시 없이도 동작)
+//   · 프록시가 없는 정적 호스팅(`expo start --web` 개발 서버 등)에서는 실패를 조용히 삼키고
+//     기존 폴백(oEmbed · 오프라인 추출기)으로 이어집니다.
+// ─────────────────────────────────────────────────────────────
+export const API_PROXY = {
+  youtube: '/api/youtube',
+  kakao: '/api/kakao-local',
+  naver: '/api/naver-local',
+};
+/** 프록시 응답을 기다리는 시간 — 서버 함수 자체 타임아웃(4초)보다 살짝 길게 */
+export const API_PROXY_TIMEOUT_MS = 4500;
+
+/** `Platform.OS === 'web'` — 브라우저 웹 빌드인지 */
+export function isWebPlatform() {
+  try {
+    if (typeof Platform === 'undefined' || !Platform) return false;
+    return String(Platform.OS || '') === 'web';
+  } catch (e) {
+    return false;
+  }
+}
+
+/** `/api/kakao-local?query=...&size=3` 같은 동일 출처 프록시 주소를 만듭니다. */
+export function proxyPathOf(name, params = {}) {
+  const base = API_PROXY[name];
+  if (!base) return '';
+  const pairs = Object.keys(params || {})
+    .filter((k) => params[k] != null && String(params[k]).trim() !== '')
+    .map((k) => encodeURIComponent(k) + '=' + encodeURIComponent(String(params[k]).trim()));
+  return pairs.length ? base + '?' + pairs.join('&') : base;
+}
+
+/** 프록시 GET → JSON. 실패·타임아웃·비 JSON 은 예외 없이 null. */
+async function fetchProxyJson(path, options = {}) {
+  if (!path) return null;
+  const timeoutMs =
+    options.timeoutMs == null ? API_PROXY_TIMEOUT_MS : Number(options.timeoutMs) || API_PROXY_TIMEOUT_MS;
+  const res = await fetchWithTimeout(path, { method: 'GET' }, timeoutMs);
+  if (!res || !res.ok || typeof res.json !== 'function') return null;
+  try {
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * 웹에서만: `/api/youtube?id=...` 프록시로 제목·설명글·댓글을 읽습니다. (서버 키 사용)
+ * @returns {Promise<{title:string, description:string, comments:string, thumbnail:string|null,
+ *                    channelId:string, source:string}|null>}
+ */
+export async function fetchYouTubeProxy(parsed, options = {}) {
+  const id = String((parsed && parsed.contentId) || '').trim();
+  if (!id) return null;
+  const json = await fetchProxyJson(proxyPathOf('youtube', { id }), options);
+  if (!json) return null;
+  const title = stripTags(json.title);
+  const description = String(json.description || '').trim();
+  const comments = String(json.comments || '').trim();
+  if (!title && !description && !comments) return null;
+  return {
+    title,
+    description: description.slice(0, 3000),
+    comments: comments.slice(0, 1200),
+    thumbnail: json.thumbnail || null,
+    channelId: String(json.channelId || ''),
+    source: 'youtube-proxy',
+  };
+}
+
 /**
  * 페이지의 OG 메타를 짧은 타임아웃으로 읽어 옵니다. (v1.2)
  * - 네이티브에서만 시도합니다. 웹은 CORS 로 막혀 있어 조용히 건너뜁니다.
@@ -960,20 +1037,30 @@ export const sourceAdapters = {
      */
     async fetchMetadata(parsed) {
       const key = process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+      // v1.4 — 웹에서 번들 키가 없으면 우리 서버 프록시(/api/youtube)가 서버 키로 읽어 줍니다.
+      //   실패하면 oEmbed 로 폴백합니다. (oEmbed 는 CORS 가 열려 있어 웹에서도 동작)
+      const proxyPromise = !key && isWebPlatform() ? fetchYouTubeProxy(parsed) : Promise.resolve(null);
       // 키가 없으면 oEmbed 와 페이지 HTML 을 동시에 읽습니다. (한 번에 기다려 체감 지연을 줄임)
-      const [oembed, page] = await Promise.all([
+      const [oembed, page, proxied] = await Promise.all([
         fetchYouTubeOembed(parsed),
         key ? Promise.resolve(null) : fetchYouTubePageMeta(parsed),
+        proxyPromise,
       ]);
       const base = {
-        title: (oembed && oembed.title) || (page && page.title) || '',
-        description: (page && page.description) || '',
-        thumbnail: oembed ? oembed.thumbnail : null,
+        title: (proxied && proxied.title) || (oembed && oembed.title) || (page && page.title) || '',
+        description: (proxied && proxied.description) || (page && page.description) || '',
+        // 프록시가 상위·업로더 댓글을 한 덩어리 텍스트로 줍니다. (없으면 빈 문자열)
+        comments: (proxied && proxied.comments) || '',
+        thumbnail: (proxied && proxied.thumbnail) || (oembed ? oembed.thumbnail : null),
         authorName: (oembed && oembed.authorName) || '',
-        source: page && page.description ? 'youtube-oembed+page' : 'youtube-oembed',
+        source: proxied
+          ? 'youtube-proxy'
+          : page && page.description
+          ? 'youtube-oembed+page'
+          : 'youtube-oembed',
       };
       if (!key && !base.title && !base.description) return null;
-      if (!key) return base; // 키가 없어도 oEmbed 제목(+페이지 설명글)으로 충분합니다.
+      if (!key) return base; // 키가 없어도 oEmbed 제목(+프록시/페이지 설명글)으로 충분합니다.
       try {
         const endpoint =
           'https://www.googleapis.com/youtube/v3/videos?part=snippet&id=' +
@@ -1253,12 +1340,55 @@ function pickArea(address) {
   return gu ? gu[1] : '';
 }
 
-/**
- * 엑스포 웹(브라우저) 빌드 여부.
- * 네이버 지역검색은 응답에 CORS 헤더를 주지 않아 브라우저에서 호출하면 막힙니다(아래 주석 참고).
- */
-function isWebRuntime() {
-  return typeof window !== 'undefined' && typeof document !== 'undefined';
+/** 카카오 documents[] → 앱 후보 (직접 호출·프록시 공통) */
+function mapKakaoDocuments(documents) {
+  const docs = Array.isArray(documents) ? documents : [];
+  return docs.map((d, i) => {
+    const address = d.road_address_name || d.address_name || '';
+    return {
+      id: 'kakao-' + (d.id || i),
+      name: d.place_name || '',
+      area: pickArea(d.address_name) || pickArea(d.road_address_name),
+      category: mapCategory(d.category_name, d.category_group_code),
+      rawCategory: d.category_name || '',
+      menuTags: [],
+      address,
+      lat: Number(d.y),
+      lng: Number(d.x),
+      phone: d.phone || '',
+      placeUrl: toOpenableUrl(d.place_url),
+      placeUrlLabel: placeUrlLabelOf(d.place_url),
+      provider: 'kakao',
+      manual: false,
+    };
+  });
+}
+
+/** 네이버 items[] → 앱 후보 (직접 호출·프록시 공통) */
+function mapNaverItems(items) {
+  const list = Array.isArray(items) ? items : [];
+  return list.map((it, i) => {
+    const name = stripTags(it.title);
+    const address = it.roadAddress || it.address || '';
+    return {
+      id: 'naver-' + i,
+      name,
+      area: pickArea(it.address) || pickArea(address),
+      category: mapCategory(it.category),
+      rawCategory: it.category || '',
+      menuTags: [],
+      address,
+      // 네이버는 mapx/mapy를 소수점 제거한 정수(1e7 스케일)로 줍니다.
+      lat: Number(it.mapy) / 1e7,
+      lng: Number(it.mapx) / 1e7,
+      phone: it.telephone || '',
+      // 지도사가 주는 link 는 업체 홈페이지·SNS 일 수 있고, 없으면 비워 둡니다.
+      placeUrl: toOpenableUrl(it.link),
+      placeUrlLabel: placeUrlLabelOf(it.link),
+      provider: 'naver',
+      manual: false,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1269,7 +1399,8 @@ export const kakaoLocalAdapter = {
   label: '카카오 로컬',
   keyEnv: 'EXPO_PUBLIC_KAKAO_REST_API_KEY',
   isConfigured() {
-    return Boolean(process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY);
+    // 웹은 번들 키가 없어도 같은 출처 프록시(/api/kakao-local)가 서버 키로 대신 부릅니다.
+    return Boolean(process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY) || isWebPlatform();
   },
   /**
    * GET https://dapi.kakao.com/v2/local/search/keyword.json?query=성수 소금빵집&size=3
@@ -1279,7 +1410,14 @@ export const kakaoLocalAdapter = {
    */
   async search({ query, limit = 3 }) {
     const key = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY;
-    if (!key || !query) return [];
+    if (!query) return [];
+    // 카카오 로컬(dapi.kakao.com)도 브라우저 CORS 를 열지 않습니다 → 웹은 프록시가 답합니다.
+    if (isWebPlatform()) {
+      const proxied = await this.searchViaProxy({ query, limit });
+      if (proxied) return proxied; // [] (결과 없음) 과 null(실패) 을 구분합니다
+      if (!key) return [];
+    }
+    if (!key) return [];
     const url =
       KAKAO_KEYWORD_ENDPOINT +
       '?query=' +
@@ -1293,26 +1431,18 @@ export const kakaoLocalAdapter = {
     });
     if (!res.ok) throw new Error('kakao ' + res.status);
     const json = await res.json();
-    const docs = (json && json.documents) || [];
-    return docs.map((d, i) => {
-      const address = d.road_address_name || d.address_name || '';
-      return {
-        id: 'kakao-' + (d.id || i),
-        name: d.place_name || '',
-        area: pickArea(d.address_name) || pickArea(d.road_address_name),
-        category: mapCategory(d.category_name, d.category_group_code),
-        rawCategory: d.category_name || '',
-        menuTags: [],
-        address,
-        lat: Number(d.y),
-        lng: Number(d.x),
-        phone: d.phone || '',
-        placeUrl: toOpenableUrl(d.place_url),
-        placeUrlLabel: placeUrlLabelOf(d.place_url),
-        provider: 'kakao',
-        manual: false,
-      };
-    });
+    return mapKakaoDocuments(json && json.documents);
+  },
+  /**
+   * 웹 전용: `/api/kakao-local?query=..&size=..` → 카카오 응답을 앱 후보로 옮깁니다.
+   * @returns {Promise<Array<object>|null>} 실패는 null, 성공(결과 0개 포함)은 배열
+   */
+  async searchViaProxy({ query, limit = 3 }) {
+    const json = await fetchProxyJson(
+      proxyPathOf('kakao', { query, size: clamp(Number(limit) || 3, 1, 15) })
+    );
+    if (!json) return null;
+    return mapKakaoDocuments(json.documents);
   },
 };
 
@@ -1347,7 +1477,8 @@ export const naverLocalAdapter = {
     return null;
   },
   isConfigured() {
-    return Boolean(this.credentials());
+    // v1.4 — 웹은 번들 키가 없어도 같은 출처 프록시(/api/naver-local)가 서버 키로 대신 부릅니다.
+    return Boolean(this.credentials()) || isWebPlatform();
   },
   /**
    * 환경변수 → 요청 URL·헤더. 규격 분기를 테스트에서 그대로 확인하려고 메서드로 분리했습니다.
@@ -1398,43 +1529,35 @@ export const naverLocalAdapter = {
    *    { title(<b>태그 포함>), category, address, roadAddress, mapx(경도), mapy(위도) }
    *
    * ⚠️ 브라우저 CORS: 네이버는 두 규격 모두 Access-Control-Allow-Origin을 주지 않습니다(HUB 포함).
-   *    → iOS/Android(Expo Go·네이티브 빌드)에서는 그대로 동작하지만,
-   *      `expo start --web` / `expo export --platform web` 브라우저에서는 요청이 차단됩니다.
-   *    그래서 웹 런타임에서는 이 어댑터를 건너뛰고(콘솔 에러 방지) 카카오·구글 결과로 채웁니다.
-   *    웹에서도 네이버 결과가 꼭 필요하면 서버리스 프록시(예: /api/naver-local)를 두고
-   *    그 주소로 fetch하는 방식으로 우회해야 합니다. (키를 브라우저에 노출하지 않는 편이 안전)
+   *    → iOS/Android(Expo Go·네이티브 빌드)에서는 그대로 동작합니다.
+   *    → 웹(v1.4)에서는 아래처럼 **같은 출처 프록시 `/api/naver-local`** 을 씁니다.
+   *      Vercel 함수가 서버 키로 대신 호출하므로 웹에서도 네이버 결과가 나오고,
+   *      키는 브라우저 번들에 들어가지 않습니다.
+   *      (프록시가 없는 정적 호스팅·`expo start --web` 개발 서버에서는 실패를 실패로 기록하고
+   *       카카오·구글 결과로 계속 진행합니다 — 앱은 멈지지 않습니다.)
    */
   async search({ query, limit = 3 }) {
-    const req = this.buildRequest({ query, limit });
+    const q = String(query || '').trim();
+    if (!q) return [];
+    if (isWebPlatform()) return this.searchViaProxy({ query: q, limit });
+    const req = this.buildRequest({ query: q, limit });
     if (!req) return [];
-    if (isWebRuntime()) return []; // 위 CORS 주석 참고 — 웹에서는 조용히 건너뜁니다.
-
     const res = await fetch(req.url, { method: 'GET', headers: req.headers });
     if (!res.ok) throw new Error('naver ' + res.status);
     const json = await res.json();
-    const items = (json && json.items) || [];
-    return items.map((it, i) => {
-      const name = stripTags(it.title);
-      const address = it.roadAddress || it.address || '';
-      return {
-        id: 'naver-' + i,
-        name,
-        area: pickArea(it.address) || pickArea(address),
-        category: mapCategory(it.category),
-        rawCategory: it.category || '',
-        menuTags: [],
-        address,
-        // 네이버는 mapx/mapy를 소수점 제거한 정수(1e7 스케일)로 줍니다.
-        lat: Number(it.mapy) / 1e7,
-        lng: Number(it.mapx) / 1e7,
-        phone: it.telephone || '',
-        // 지도사가 주는 link 는 업체 홈페이지·SNS 일 수 있고, 없으면 비워 둡니다.
-        placeUrl: toOpenableUrl(it.link),
-        placeUrlLabel: placeUrlLabelOf(it.link),
-        provider: 'naver',
-        manual: false,
-      };
-    });
+    return mapNaverItems(json && json.items);
+  },
+  /**
+   * 웹 전용: `/api/naver-local?query=..&display=..` → 네이버 응답({ items })을 앱 후보로 옮깁니다.
+   * 프록시가 없거나 실패하면 던집니다(→ searchPlaceProviders 가 failure 로 기록).
+   * @returns {Promise<Array<object>>}
+   */
+  async searchViaProxy({ query, limit = 3 }) {
+    const json = await fetchProxyJson(
+      proxyPathOf('naver', { query, display: clamp(Number(limit) || 3, 1, 5) })
+    );
+    if (!json) throw new Error('naver-proxy');
+    return mapNaverItems(json.items);
   },
 };
 

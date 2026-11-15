@@ -1,0 +1,199 @@
+/**
+ * test/proxy-test.mjs
+ * ─────────────────────────────────────────────────────────────
+ * v1.4 — **웹(Platform.OS='web')** 에서 동일 출처 프록시(/api/*)를 타는지 검증합니다.
+ *
+ *   node 로 src 를 번들할 때 react-native 를 `test/stubs/react-native-web.js` 로 치환해
+ *   Platform.OS === 'web' 인 상황을 만듭니다. (네이티브 동작은 extractor-test.mjs 가 검증)
+ */
+import {
+  API_PROXY,
+  API_PROXY_TIMEOUT_MS,
+  isWebPlatform,
+  isNativeRuntime,
+  proxyPathOf,
+  fetchYouTubeProxy,
+  naverLocalAdapter,
+  kakaoLocalAdapter,
+  searchPlaceProviders,
+  searchPlacesDirect,
+  extractPlaces,
+  parseUrl,
+} from '../src/services/extractor.js';
+
+let fails = 0;
+const check = (label, cond, extra) => {
+  if (cond) console.log('OK   ' + label);
+  else {
+    fails++;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+};
+
+// ── 0. 환경 맞추기: 웹 런타임 + 번들 키 없음 (배포된 Vercel 웹앱과 같은 상태) ──
+['EXPO_PUBLIC_KAKAO_REST_API_KEY', 'EXPO_PUBLIC_NAVER_HUB_CLIENT_ID', 'EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET',
+ 'EXPO_PUBLIC_NAVER_CLIENT_ID', 'EXPO_PUBLIC_NAVER_CLIENT_SECRET', 'EXPO_PUBLIC_YOUTUBE_API_KEY',
+ 'EXPO_PUBLIC_GOOGLE_MAPS_API_KEY', 'EXPO_PUBLIC_OPENAI_API_KEY'].forEach((k) => delete process.env[k]);
+
+let calls = [];
+let handler = () => ({ ok: true, status: 200, json: async () => ({}) });
+const jsonRes = (data) => ({ ok: true, status: 200, json: async () => data });
+const errRes = (status) => ({ ok: false, status, json: async () => ({}) });
+globalThis.fetch = async (url, init = {}) => {
+  calls.push({ url: String(url), init });
+  return handler(String(url), init);
+};
+
+const KAKAO_DOC = {
+  id: '12345',
+  place_name: '성수동 소금빵집',
+  category_name: '음식점 > 간식 > 제과,베이커리',
+  category_group_code: 'FD6',
+  phone: '02-123-4567',
+  address_name: '서울 성동구 성수동2가 123-4',
+  road_address_name: '서울 성동구 연무장길 45',
+  x: '127.0557',
+  y: '37.5445',
+  place_url: 'http://place.map.kakao.com/12345',
+};
+const NAVER_ITEM = {
+  title: '<b>성수동</b> 소금빵집',
+  link: 'http://map.naver.com/p/entry/place/12345',
+  category: '음식점>간식>제과,베이커리',
+  address: '서울 성동구 성수동2가 123-4',
+  roadAddress: '서울 성동구 연무장길 45',
+  mapx: '1270557000',
+  mapy: '375445000',
+};
+
+// ── 1. 런타임 판별 ────────────────────────────────────────────
+check('web: isWebPlatform = true', isWebPlatform() === true);
+check('web: isNativeRuntime = false', isNativeRuntime() === false);
+check('web: 프록시 주소 상수', API_PROXY.youtube === '/api/youtube' && API_PROXY.kakao === '/api/kakao-local' && API_PROXY.naver === '/api/naver-local');
+check('web: 프록시 타임아웃 4.5초(서버 4초보다 김)', API_PROXY_TIMEOUT_MS > 4000 && API_PROXY_TIMEOUT_MS < 6000, String(API_PROXY_TIMEOUT_MS));
+check(
+  'web: proxyPathOf 인코딩',
+  proxyPathOf('naver', { query: '성수 소금빵', display: 3 }) ===
+    '/api/naver-local?query=' + encodeURIComponent('성수 소금빵') + '&display=3',
+  proxyPathOf('naver', { query: '성수 소금빵', display: 3 })
+);
+check('web: proxyPathOf 빈 값 제거', proxyPathOf('youtube', { id: 'abc', q: '' }) === '/api/youtube?id=abc', proxyPathOf('youtube', { id: 'abc', q: '' }));
+check('web: proxyPathOf 모르는 이름', proxyPathOf('nope', {}) === '');
+
+// ── 2. 네이버 지역검색 = /api/naver-local ────────────────────
+check('web/naver: 키 없이도 configured (프록시)', naverLocalAdapter.isConfigured() === true);
+
+calls = [];
+handler = (url) => {
+  if (url.indexOf('/api/naver-local') === 0) return jsonRes({ items: [NAVER_ITEM] });
+  if (url.indexOf('/api/kakao-local') === 0) return jsonRes({ documents: [KAKAO_DOC] });
+  return errRes(404);
+};
+const naverWeb = await naverLocalAdapter.search({ query: '성수 소금빵', limit: 3 });
+check('web/naver: 프록시 1회 호출', calls.length === 1 && calls[0].url.indexOf('/api/naver-local?') === 0, calls.map((c) => c.url).join(' | '));
+check('web/naver: query·display 전달', calls[0].url === '/api/naver-local?query=' + encodeURIComponent('성수 소금빵') + '&display=3', calls[0].url);
+check('web/naver: 키 헤더 없음(서버가 붙임)', !calls[0].init.headers, JSON.stringify(calls[0].init.headers));
+check('web/naver: 후보 매핑', naverWeb.length === 1 && naverWeb[0].name === '성수동 소금빵집', JSON.stringify(naverWeb[0] && naverWeb[0].name));
+check('web/naver: 좌표 1e7 스케일', Math.abs(naverWeb[0].lat - 37.5445) < 1e-6 && Math.abs(naverWeb[0].lng - 127.0557) < 1e-6, naverWeb[0].lat + ',' + naverWeb[0].lng);
+calls = [];
+await naverLocalAdapter.search({ query: 'x', limit: 99 });
+check('web/naver: display 상한 5', calls[0].url.indexOf('&display=5') > 0, calls[0].url);
+
+// ── 3. 카카오 로컬 = /api/kakao-local ────────────────────────
+check('web/kakao: 키 없이도 configured (프록시)', kakaoLocalAdapter.isConfigured() === true);
+calls = [];
+const kakaoWeb = await kakaoLocalAdapter.search({ query: '성수 소금빵집', limit: 4 });
+check('web/kakao: 프록시 호출', calls.length === 1 && calls[0].url.indexOf('/api/kakao-local?') === 0, calls.map((c) => c.url).join(' | '));
+check('web/kakao: size 전달', calls[0].url.indexOf('&size=4') > 0, calls[0].url);
+check('web/kakao: 후보 매핑', kakaoWeb.length === 1 && kakaoWeb[0].name === '성수동 소금빵집' && kakaoWeb[0].provider === 'kakao', JSON.stringify(kakaoWeb[0] && kakaoWeb[0].name));
+
+// ── 4. 두 지도사 병렬 조회 (웹) — 프록시만 쓰고 직접 호출은 없음 ──
+calls = [];
+const chain = await searchPlaceProviders({ query: '성수 소금빵' });
+const hosts = calls.map((c) => c.url);
+check('web/chain: 프록시 2곳 호출', hosts.length === 2, hosts.join(' | '));
+check('web/chain: 외부 도메인 직접 호출 없음', !hosts.some((u) => u.indexOf('http') === 0), hosts.join(' | '));
+check('web/chain: 후보 병합', chain.candidates.length === 1 && chain.candidates[0].providers.length === 2, JSON.stringify(chain.candidates[0] && chain.candidates[0].providers));
+check('web/chain: providersTried', JSON.stringify(chain.providersTried.sort()) === '["kakao","naver"]', JSON.stringify(chain.providersTried));
+
+// ── 5. 프록시가 없거나 실패하면: 조용한 실패 + 다른 지도사 결과 유지 ──
+calls = [];
+handler = (url) => {
+  if (url.indexOf('/api/naver-local') === 0) return errRes(404);
+  if (url.indexOf('/api/kakao-local') === 0) return jsonRes({ documents: [KAKAO_DOC] });
+  return errRes(404);
+};
+const partial = await searchPlaceProviders({ query: '성수 소금빵' });
+check('web/실패: 네이버는 failure 로 기록', partial.failures.some((f) => f.provider === 'naver'), JSON.stringify(partial.failures));
+check('web/실패: 카카오 결과로 진행', partial.candidates.length === 1 && partial.candidates[0].name === '성수동 소금빵집', JSON.stringify(partial.candidates.map((c) => c.name)));
+
+// ── 6. 유튜브 = /api/youtube (키 없이 웹) ────────────────────
+calls = [];
+handler = (url) => {
+  if (url.indexOf('/api/youtube') === 0) {
+    return jsonRes({
+      title: '제주 연동 엄마손횟집 다녀왔어요',
+      description: '제주시 연동 “엄마손횟집”\n자연산 돌돔을 먹을 수 있는 집',
+      thumbnail: 'https://i.ytimg.com/vi/2QZPPEle9IY/hq.jpg',
+      comments: '여기 제주 연동 엄마손횟집이에요',
+      channelId: 'UC_owner',
+    });
+  }
+  if (url.indexOf('https://www.youtube.com/oembed') === 0) {
+    return jsonRes({ title: '제목( oEmbed )', author_name: '호키도리', thumbnail_url: 'https://i.ytimg.com/vi/2QZPPEle9IY/hq.jpg' });
+  }
+  if (url.indexOf('https://www.googleapis.com') === 0) return errRes(500);
+  return jsonRes({ documents: [KAKAO_DOC], items: [NAVER_ITEM] });
+};
+const ytUrl = 'https://youtube.com/shorts/2QZPPEle9IY';
+const ytProxy = await fetchYouTubeProxy(parseUrl(ytUrl));
+check('web/youtube: 프록시 응답 파싱', ytProxy && ytProxy.title.includes('엄마손횟집') && ytProxy.source === 'youtube-proxy', JSON.stringify(ytProxy && ytProxy.title));
+check('web/youtube: 설명글·댓글 유지', String(ytProxy.description).includes('엄마손횟집') && ytProxy.comments.includes('엄마손횟집'));
+
+calls = [];
+const ytFlow = await extractPlaces(ytUrl);
+const urlList = calls.map((c) => c.url);
+check('web/youtube: /api/youtube?id= 호출', urlList.some((u) => u === '/api/youtube?id=2QZPPEle9IY'), urlList.join(' | '));
+check('web/youtube: Data API 직접 호출 없음(키 없음)', !urlList.some((u) => u.indexOf('googleapis.com') === 0), urlList.join(' | '));
+check('web/youtube: 제목은 프록시/ oEmbed 로', String(ytFlow.sourceTitle).includes('엄마손횟집'), ytFlow.sourceTitle);
+check('web/youtube: titleStatus=video', ytFlow.titleStatus === 'video', ytFlow.titleStatus);
+check('web/youtube: 검색어에 상호 반영', ytFlow.queryList[0] === '연동 엄마손횟집', ytFlow.queryList.join(' / '));
+
+// ── 7. 프록시 실패 → oEmbed 폴백 (앱이 멈지지 않음) ──────────
+calls = [];
+handler = (url) => {
+  if (url.indexOf('/api/youtube') === 0) return errRes(404);
+  if (url.indexOf('https://www.youtube.com/oembed') === 0) {
+    return jsonRes({ title: '연남동 딸기 케이크 맛집', thumbnail_url: 'https://i.ytimg.com/vi/9Xk2mQpLz7A/hq.jpg' });
+  }
+  return jsonRes({ documents: [], items: [] });
+};
+const fallbackFlow = await extractPlaces('https://youtube.com/shorts/9Xk2mQpLz7A');
+check('web/폴백: oEmbed 로 제목 확보', fallbackFlow.sourceTitle === '연남동 딸기 케이크 맛집', fallbackFlow.sourceTitle);
+check('web/폴백: oEmbed 는 CORS 열려 있어 웹에서 동작', calls.some((c) => c.url.indexOf('youtube.com/oembed') > 0), calls.map((c) => c.url).join(' | '));
+check('web/폴백: ok 결과 유지', fallbackFlow.ok === true && fallbackFlow.candidates.length > 0, String(fallbackFlow.candidates.length));
+
+// ── 8. 직접 검색('가게명으로 찾기')도 웹에서 동작 ────────────
+handler = (url) => {
+  if (url.indexOf('/api/kakao-local') === 0) return jsonRes({ documents: [KAKAO_DOC] });
+  if (url.indexOf('/api/naver-local') === 0) return jsonRes({ items: [NAVER_ITEM] });
+  return errRes(404);
+};
+const direct = await searchPlacesDirect('성수 소금빵');
+check('web/direct: 결과 있음', direct.ok === true && direct.candidates.length >= 1, JSON.stringify(direct.candidates.map((c) => c.name)));
+check('web/direct: usedAdapter = kakao+naver', direct.usedAdapter === 'kakao+naver', String(direct.usedAdapter));
+
+// ── 9. 네트워크 예외도 앱을 멈추지 않음 ─────────────────────
+globalThis.fetch = async () => {
+  throw new Error('network-down');
+};
+const thrown = await searchPlacesDirect('성수 소금빵');
+check('web/예외: 조용히 실패 처리', thrown.ok === false && thrown.candidates.length === 0, JSON.stringify(thrown.reason));
+const thrownExtract = await extractPlaces(ytUrl);
+check('web/예외: 추출기는 오프라인 폴백', thrownExtract.ok === true && thrownExtract.candidates.length > 0, thrownExtract.usedAdapter);
+
+if (fails) {
+  console.log('\nPROXY_TEST_FAILED (' + fails + ')');
+  process.exit(1);
+}
+console.log('\nPROXY_TESTS_OK');

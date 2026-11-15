@@ -1,7 +1,8 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.3
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.4
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
-> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web
+> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions
+> **v1.4 (2026-11-15)** **Vercel 무료 웹 배포** — PC 없이 아이폰·아이패드 사파리('홈 화면에 추가')에서 그대로 사용 · `api/*` **서버리스 프록시**로 웹에서도 네이버 지역검색·카카오 로컬·유튜브 설명글/댓글 동작 · **웹 번들에 API 키 0건**
 > **v1.3 (2026-11-15)** 유튜브 **설명글(description)·댓글(고정/상위)** 파싱 · 동네 판별(`연동`)·업종 단어·불용어 보강 · `연동 엄마손횟집` 회귀 케이스
 > v1.2 유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기
 
@@ -36,14 +37,82 @@ npx expo start --web      # 또는 npm run web
 npx expo export --platform web
 ```
 
+## 4. Vercel 무료 웹 배포 — PC 없이 아이폰·아이패드에서 쓰기 ⭐
+
+아이폰 **사파리로 주소만 열면** 릴스핀이 그대로 뜨고, 공유 → **홈 화면에 추가**를 누르면 앱처럼 아이콘이 생깁니다.
+PC를 켜 둘 필요도, Expo Go를 설치할 필요도 없습니다.
+
+### 4-1. 배포 (처음 5분)
+
+1. [vercel.com](https://vercel.com) → GitHub 계정으로 로그인
+2. **Add New… → Project** → `leesh33/reelpin` **Import**
+3. **Environment Variables** 에 **서버 전용 이름**으로 키를 넣습니다 (아래 표). `EXPO_PUBLIC_` 은 **넣지 않습니다.**
+4. **Deploy** → `https://reelpin-xxxx.vercel.app` 주소가 나옵니다
+5. 아이폰 사파리에서 그 주소 열기 → 공유 버튼 → **홈 화면에 추가**
+
+`vercel.json` 이 빌드·출력·라우팅을 이미 잡아 두었습니다.
+
+| 설정 | 값 |
+| --- | --- |
+| Build Command | `npx expo export --platform web` (vercel.json) |
+| Output Directory | `dist` (vercel.json) |
+| `/api/*` | `api/*.js` 서버리스 함수 (자동) |
+| 나머지 경로 | `index.html` (SPA 라우팅, vercel.json) |
+
+### 4-2. Vercel 환경변수 (서버 전용 이름)
+
+| 변수 | 쓰는 곳 | 없으면 |
+| --- | --- | --- |
+| `KAKAO_REST_API_KEY` | `/api/kakao-local` | 카카오 결과 없음(나머지 지도사로 계속) |
+| `NAVER_HUB_CLIENT_ID` / `NAVER_HUB_CLIENT_SECRET` | `/api/naver-local` | 네이버 결과 없음 |
+| `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 위 함수의 구 규격 폴백 | (선택) |
+| `YOUTUBE_API_KEY` | `/api/youtube` (설명글·댓글) | 제목·썸네일만(oEmbed) |
+| `GOOGLE_MAPS_API_KEY` | (아직 없음 — 구글 Places는 네이티브에서 직접 호출) | 구글 결과 없음 |
+
+> ⚠️ **`EXPO_PUBLIC_...` 이름으로는 넣지 마세요.** Expo는 그 이름의 값을 **빌드 시점에 JS 번들에 박아 넣습니다.**
+> 그러면 브라우저에서 소스 보기로 키가 보입니다. 서버 함수는 위 표의 **접두사 없는 이름**을 먼저 읽습니다.
+> (로컬 `.env` 는 그대로 `EXPO_PUBLIC_...` 을 써도 됩니다 — 앱 빌드용이고, 프록시는 그 이름도 읽습니다.)
+
+### 4-3. 배포 확인 (2줄)
+
+```text
+https://<내주소>/api/naver-local?query=성수%20소금빵   → {"items":[...]} 이 나오면 성공
+https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","description":"..."}
+```
+
+### 4-4. 웹에서 되는 것 / 안 되는 것
+
+- ✅ **네이버 지역검색** — 예전에는 CORS로 웹에서 늘 막혔지만, 이제 `/api/naver-local` 프록시가 서버 키로 호출합니다.
+- ✅ **카카오 로컬** — `/api/kakao-local` 프록시로 동작 (키는 브라우저에 없음).
+- ✅ **유튜브 쇼츠** — `/api/youtube` 가 제목·설명글·상위/업로더 댓글을 읽어 검색어를 만듭니다. 키가 없거나 프록시가 없으면 oEmbed 제목으로 폴백합니다.
+- ✅ **가게명으로 찾기·지도·핀 저장** — 모두 그대로 (저장은 브라우저 localStorage/AsyncStorage).
+- ⚠️ **인스타 릴스 캡션** — 인스타는 로그인 월로 막혀 있어 웹·앱 모두 못 읽습니다. 공유할 때 복사되는 **문구+링크를 같이 붙여넣으면** 그 문구로 찾습니다.
+- ⚠️ **매장 정보 열기** — 웹에서는 각 사의 **웹 지도**(네이버지도·카카오맵)로 열립니다.
+- ⚠️ **로컬 개발(`npx expo start --web`)** — 개발 서버에는 `/api` 함수가 없어 네이버는 건너뜁니다. 프록시까지 로컬에서 시험하려면 `npx vercel dev` 를 쓰세요.
+
+### 4-5. 프록시가 하는 일 (보안)
+
+| 함수 | 입력 | 하는 일 |
+| --- | --- | --- |
+| `api/youtube.js` | `?id=<videoId>` | `videos?part=snippet` + `commentThreads?order=relevance&maxResults=5` 병렬 호출 → `{ title, description, thumbnail, comments, channelId }`. 키가 없으면 oEmbed만 |
+| `api/kakao-local.js` | `?query=..&size=..` | 카카오 키워드 검색 → 카카오 응답 그대로 |
+| `api/naver-local.js` | `?query=..&display=..` | 네이버 지역검색(HUB/구 규격) → 네이버 응답 그대로 |
+
+- 빈 검색어 → `400`, 허용하지 않는 메서드 → `405`, 업스트림 실패 → `502`, 4초 타임아웃 → `504`
+- **실패 응답에 키·업스트림 본문을 담지 않습니다.** (로그에도 키를 찍지 않음)
+- CORS 헤더를 열지 않아 **우리 사이트에서만** 호출됩니다 (다른 사이트가 우리 키로 검색하지 못함).
+- 공용 도우미는 `server/http.js` 에 두었습니다 (Vercel이 `api/` 안의 파일만 함수로 배포하므로 안전).
+
 ---
 
 ## 개발 검증 (실제로 돌린 것)
 
 ```bash
-npx expo export --platform web     # 번들 빌드 → 에러 0건
-npm test                           # 단위·통합 297건 통과 (추출기 269 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
+npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
+npm test                           # 단위·통합 394건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 59 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
+npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
+npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
 npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+설명글(+댓글, 키 있을 때) → 카카오+네이버 HUB 실검색 (.env 키 필요)
 ```
 
@@ -52,6 +121,21 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v1.4에서 달라진 점 (2026-11-15) — Vercel 웹 배포 + 서버리스 프록시
+
+상훈 님이 **PC를 켜지 않고 아이폰·아이패드 사파리('홈 화면에 추가')에서 릴스핀을 쓰기 위해** 웹 배포를 준비한 버전입니다.
+
+1. **`api/*.js` 서버리스 프록시 3개** — `youtube` · `kakao-local` · `naver-local`.
+   서버 환경변수의 키로 대신 호출하고, **웹 번들에는 키가 한 개도 들어가지 않습니다.**
+   빈 입력은 `400`, 4초 넘으면 `504`, 실패 응답에는 **키·업스트림 본문을 담지 않습니다.**
+2. **`vercel.json`** — `npx expo export --platform web` → `dist`, `/api/*` 는 함수, 나머지 경로만 `index.html`.
+3. **웹에서 네이버 지역검색이 실제로 동작** — `naverLocalAdapter`는 웹이면 `/api/naver-local` 을 탑니다.
+   (예전엔 CORS 때문에 웹에서 조용히 건너뛰었습니다. 네이티브 앱은 그대로 직접 호출)
+4. **웹에서 카카오 로컬도 프록시로** — `kakaoLocalAdapter` 웹 경로 추가(직접 호출은 CORS 로 막힘).
+5. **웹에서 유튜브 설명글·댓글까지** — `EXPO_PUBLIC_YOUTUBE_API_KEY` 가 없으면 `/api/youtube` 를 먼저 시도하고,
+   실패하면 oEmbed 제목으로 폴백합니다. `titleStatus` 는 여전히 `video`.
+6. **검증** — `npm test` 394건 통과 · **키 없는 상태로 `expo export` → `dist/` 안 실제 키 값 0건**(스크립트로 확인) · `vercel.json` 필드(framework·buildCommand·outputDirectory·functions·rewrites)를 Vercel 스키마 정의와 대조 확인.
 
 ## v1.3에서 달라진 점 (2026-11-15)
 
@@ -135,7 +219,10 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - `src/components/MapCanvas.js` — 좌표 → 화면 투영 지도 캔버스(드래그 팬, 핀, 이름표)
 - `src/components/ProviderBadge.js` — 카카오·네이버·구글 출처 배지 (`providerIds()`로 후보의 providers를 정리)
 - `src/components/ExtractedTitleNote.js` — 결과 상단 `읽어온 제목: "..."` + 인스타 안내·[가게명으로 찾기] 원탭 버튼
-- `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(**유튜브 무인증 oEmbed + 설명글(description) 파싱** + Data API 설명 보강 / 인스타 공유 캡션·OG / **카카오 로컬·네이버 지역검색·구글 Places 3사 지도 체인**) + `splitSharedText()` · `fetchPageMeta()` · `parseYouTubePageMeta()` · `extractSearchQueries()` + `searchPlacesDirect()`(가게명 직접 검색) + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
+- `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(**유튜브 무인증 oEmbed + 설명글(description) 파싱** + Data API 설명 보강 / 인스타 공유 캡션·OG / **카카오 로컬·네이버 지역검색·구글 Places 3사 지도 체인**) + `splitSharedText()` · `fetchPageMeta()` · `parseYouTubePageMeta()` · `extractSearchQueries()` + `searchPlacesDirect()`(가게명 직접 검색) + **웹 프록시 경로(`isWebPlatform()` · `proxyPathOf()`)** + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
+- `api/youtube.js` · `api/kakao-local.js` · `api/naver-local.js` — **Vercel 서버리스 프록시** (서버 키로 대신 호출, 웹 번들에 키 없음)
+- `server/http.js` — 프록시 공용 도우미(4초 타임아웃·JSON 응답·키 비노출)
+- `vercel.json` — 빌드(`npx expo export --platform web`)·출력(`dist`)·`/api/*` 함수·SPA 라우팅
 - `src/utils/pins.js` — 후보 → 핀 변환(`buildPin`), v1.0 핀 마이그레이션(`normalizePins`), 중복 판정(`findExistingPin`)
 - `src/storage.js` — AsyncStorage 저장/불러오기 (핀·반경·플랜)
 - `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백, `openPlace()`(매장 정보 열기)
@@ -182,9 +269,10 @@ HUB 키 두 개가 모두 있을 때만 HUB 규격을 쓰고, 없으면 기존 �
 - **매장 정보 링크(`placeUrl`)** — 카카오 `place_url`(https로 올림) · 네이버 `link` · 구글 `googleMapsUri`를 저장합니다.
   라벨은 주소로 판별합니다: 카카오맵 / 네이버 / 구글 지도 / 그 외는 **매장 홈페이지**.
 - **가게명 직접 검색** — `searchPlacesDirect('성수동 소금빵')`이 위 체인을 그대로 호출합니다. 키가 없으면 안내 문구로 끝나고, 결과가 없으면 동네를 붙여 다시 찾도록 안내합니다.
-- ⚠️ **네이버 지역검색은 브라우저 CORS 로 막힙니다.** iOS/Android 앱에서는 정상 동작하고,
-  웹(`expo start --web`)에서는 그 요청만 건너뛰고 카카오·구글 결과를 씁니다.
-  웹에서도 네이버 결과가 필요하면 키를 브라우저에 두지 말고 서버리스 프록시를 두고 호출하세요.
+- ⚠️ **웹(브라우저)에서는 CORS 를 피해 같은 출처 프록시를 씁니다.** (v1.4)
+  네이버·카카오 모두 브라우저에 CORS 헤더를 주지 않습니다. 그래서 `Platform.OS === 'web'` 이면
+  `/api/naver-local` · `/api/kakao-local` 로 호출하고, Vercel 함수가 **서버 키**로 대신 부릅니다(키는 브라우저에 없음).
+  프록시가 없는 정적 호스팅·개발 서버에서는 그 요청을 실패로 기록하고 나머지 지도사 결과로 계속 진행합니다.
 
 ---
 

@@ -58,6 +58,27 @@ if (!only || only === 'extract') {
   });
 }
 
+if (!only || only === 'proxy') {
+  // v1.4 — 웹 빌드(Platform.OS='web')에서 동일 출처 프록시(/api/*)를 타는지
+  failed += await runSuite({
+    name: '웹 프록시 연동 테스트',
+    entry: 'proxy-test.mjs',
+    out: 'proxy-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native-web.js' },
+  });
+}
+
+if (!only || only === 'api') {
+  // Vercel Serverless Functions(api/*.js) 핸들러 단위 테스트 — 네트워크는 fetch 스텁
+  failed += await runSuite({
+    name: '서버리스 API 핸들러 테스트',
+    entry: 'api-test.mjs',
+    out: 'api-test.bundle.mjs',
+    format: 'esm',
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',
