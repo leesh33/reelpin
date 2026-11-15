@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme';
-import { customCategoryColor, isDefaultCategory } from '../utils/categories';
+import { getCategoryColor, hexToRgba } from '../utils/categories';
 
 // 지도 투영 범위 (서울 서부 ~ 인천 검단)
 export const MAP_BOUNDS = {
@@ -57,18 +57,14 @@ const PARKS = [
   { left: '70%', top: '76%', w: '11%', h: '8%' },
 ];
 
-// 카테고리 색 — 기본은 그대로(맛집·베이커리 주황, 카페 민트), 커스텀 분류는 이름마다 고정된 색
-function pinColor(pin, selected) {
-  if (selected) return colors.coral;
-  const category = (pin && pin.category) || '';
-  if (category === '카페') return colors.mint;
-  if (!category || isDefaultCategory(category) || category === '디저트' || category === '베이커리') {
-    return '#FF8A6E';
-  }
-  return customCategoryColor(category);
+// v2.4 — 카테고리 색은 웹 지도·필터 칩·상세 배지와 같은 getCategoryColor 하나로 정합니다.
+//   맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 색
+//   선택된 핀도 분류 색을 유지하고, 강조는 크기·라벨 색으로 합니다.
+function pinColor(pin, selected, categories) {
+  return getCategoryColor((pin && pin.category) || '', categories);
 }
 
-export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
+export default function MapCanvas({ pins, selectedId, onSelect, radius, categories }) {
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const offsetRef = useRef({ x: 0, y: 0 });
@@ -173,7 +169,7 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
         {size.width > 0 &&
         projected.map(({ pin, x, y }) => {
           const isOn = pin.id === selectedId;
-          const color = pinColor(pin, isOn);
+          const color = pinColor(pin, isOn, categories);
           const head = isOn ? 34 : 27;
           return (
             <React.Fragment key={pin.id}>
@@ -220,7 +216,13 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
                 pointerEvents="none"
                 style={[styles.pinLabelWrap, { left: clamp(x - 52, 4, Math.max(4, size.width - 108)), top: y + 6 }]}
               >
-                <View style={[styles.pinLabel, isOn && styles.pinLabelOn]}>
+                <View
+                  style={[
+                    styles.pinLabel,
+                    { borderColor: isOn ? hexToRgba(color, 0.9) : hexToRgba(color, 0.55) },
+                    isOn && { backgroundColor: color },
+                  ]}
+                >
                   <Text
                     style={[styles.pinLabelText, isOn && styles.pinLabelTextOn]}
                     numberOfLines={1}
@@ -384,10 +386,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.94)',
     borderWidth: 1,
     borderColor: 'rgba(15,23,42,0.12)',
-  },
-  pinLabelOn: {
-    backgroundColor: colors.coral,
-    borderColor: 'rgba(232,70,31,0.62)',
   },
   pinLabelText: {
     fontSize: 10.5,

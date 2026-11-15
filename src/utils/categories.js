@@ -9,7 +9,7 @@
  *   · 이름 다듬기 · 검증 (빈 이름 / 길이 / 중복 / 기본 분류 보호)
  *   · 추가 · 이름 바꾸기 · 삭제 → 저장할 커스텀 이름 목록을 돌려줍니다
  *   · 이름을 바꾸거나 지울 때 **기존 핀의 category 를 한꺼번에** 옮기는 함수
- *   · 지도 필터 매칭 · 개수 세기 · 커스텀 분류 핀 색
+ *   · 지도 필터 매칭 · 개수 세기 · 분류 색(getCategoryColor 하나로 통일)
  * 저장(AsyncStorage)은 src/storage.js 가 맡습니다. (웹=localStorage, 앱=AsyncStorage)
  */
 
@@ -20,8 +20,26 @@ export const CATEGORY_MAX_LENGTH = 10;
 export const CATEGORY_FALLBACK = '맛집';
 /** v1.0 핀의 세부 업종 — 지도에서는 '맛집'으로 함께 보여 줍니다. */
 export const LEGACY_CATEGORY_LABELS = { 베이커리: '맛집', 디저트: '맛집' };
-/** 커스텀 분류 핀 색 — 이름에서 고정된 색을 골라 씁니다(퍼플·블루·코랄·앰버·틸) */
-export const CUSTOM_PIN_COLORS = ['#7C6CF0', '#3B82F6', '#FF7A9C', '#F59E0B', '#0FA3A3'];
+// ── 분류 색 (v2.4) ─────────────────────────────────────────────
+/**
+ * 분류 색은 **getCategoryColor 한 곳**에서만 정합니다.
+ * 지도 핀 · 상단 필터 칩 · 분류 고르기 칩 · 핀 상세 배지 · 내 정보 '분류 관리' 점이
+ * 모두 같은 함수를 쓰므로, 같은 분류는 어디서나 같은 색입니다.
+ *   · 기본 3개 … 확실히 구분되는 고유 색 (코랄 · 민트 · 블루)
+ *   · 커스텀    … 기본 3색과 겹치지 않는 팔레트에서 **목록 순서대로** 서로 다른 색
+ */
+export const DEFAULT_CATEGORY_COLORS = {
+  맛집: '#FF5A36', // 코랄 오렌지
+  카페: '#14B8A6', // 민트 그린
+  가볼곳: '#3B82F6', // 선명한 블루
+};
+/**
+ * 커스텀 분류 팔레트 — 기본 3색(코랄·민트·블루)과 겹치지 않는 색만 모았습니다.
+ * 앞쪽 색부터 차례로 배정되어, 새로 만든 분류가 앞선 분류와 같은 색이 되지 않습니다.
+ */
+export const CUSTOM_CATEGORY_COLORS = ['#8B5CF6', '#F59E0B', '#EC4899', '#22C55E', '#06B6D4', '#6366F1'];
+/** 예전 이름(호환) — 커스텀 분류 팔레트 */
+export const CUSTOM_PIN_COLORS = CUSTOM_CATEGORY_COLORS;
 
 /** 앞뒤 공백·연속 공백·맨 앞 '#' 을 정리합니다. ('  # 아이랑  데이트 ' → '아이랑 데이트') */
 export function normalizeCategoryName(value) {
@@ -278,6 +296,61 @@ export function nextFilterAfterRename(filter, oldRaw, newRaw) {
 export function nextFilterAfterRemoval(filter, raw) {
   if (!filter || filter === CATEGORY_ALL) return CATEGORY_ALL;
   return sameCategory(filter, raw) ? CATEGORY_ALL : filter;
+}
+
+/**
+ * 분류 이름 → 색. (핀·칩·배지 공용 단일 진실 공급원)
+ *
+ * @param {string} category        분류 이름 (베이커리·디저트 같은 옛 이름도 맛집 색으로)
+ * @param {Array}  customCategories 내 커스텀 분류 목록 (기본 3개가 섞여 있어도 걸러 냅니다)
+ * @returns {string} '#RRGGBB'
+ *
+ * 커스텀 분류는 **목록에서의 순서**로 색을 받습니다 → 서로 겹치지 않습니다.
+ * 목록에 없는 이름(공유 지도·다른 기기에서 온 핀)은 이름 해시로 고정 색을 받습니다.
+ */
+export function getCategoryColor(category, customCategories) {
+  const name = mapLegacyCategory(category) || CATEGORY_FALLBACK;
+  if (Object.prototype.hasOwnProperty.call(DEFAULT_CATEGORY_COLORS, name)) {
+    return DEFAULT_CATEGORY_COLORS[name];
+  }
+  const list = normalizeCustomCategories(customCategories);
+  const index = list.findIndex((c) => sameCategory(c, name));
+  if (index >= 0) return CUSTOM_CATEGORY_COLORS[index % CUSTOM_CATEGORY_COLORS.length];
+  return customCategoryColor(name);
+}
+
+/** '#RRGGBB' → 'rgba(r,g,b,a)' — 칩 배경 틴트·라벨 테두리에 씁니다. */
+export function hexToRgba(hex, alpha) {
+  const a = typeof alpha === 'number' ? Math.min(1, Math.max(0, alpha)) : 1;
+  const raw = String(hex == null ? '' : hex).replace('#', '').trim();
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return 'rgba(255,90,54,' + a + ')';
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+/** 분류 색을 조금 어둡게 — 밝은 틴트 배경 위 글씨가 읽히게 */
+export function darkenHex(hex, amount) {
+  const ratio = typeof amount === 'number' ? Math.min(0.9, Math.max(0, amount)) : 0.25;
+  const raw = String(hex == null ? '' : hex).replace('#', '').trim();
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return hex;
+  const ch = (i) => {
+    const v = Math.round(parseInt(raw.slice(i, i + 2), 16) * (1 - ratio));
+    return ('0' + v.toString(16)).slice(-2);
+  };
+  return '#' + ch(0) + ch(2) + ch(4);
+}
+
+/** 분류 색의 **연한 배경** (핀 상세 배지·칩 틴트) */
+export function categoryTint(category, customCategories, alpha) {
+  return hexToRgba(getCategoryColor(category, customCategories), typeof alpha === 'number' ? alpha : 0.13);
+}
+
+/** 분류 색의 **진한 글씨색** — 연한 틴트 배경 위에서 읽히는 같은 계열 색 */
+export function categoryTextColor(category, customCategories, amount) {
+  return darkenHex(getCategoryColor(category, customCategories), typeof amount === 'number' ? amount : 0.26);
 }
 
 /** 커스텀 분류 핀 색 — 같은 이름은 언제나 같은 색 (이름 해시) */

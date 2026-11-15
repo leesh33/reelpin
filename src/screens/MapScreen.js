@@ -363,6 +363,7 @@ export default function MapScreen({
         focus={focus}
         focusKey={focusKey}
         radiusMeters={NEARBY_RADIUS_M}
+        categories={categories}
       />
 
       {/* 상단 오버레이: 공유받은 지도 배너 + 실시간 배너 + 카테고리 필터 */}

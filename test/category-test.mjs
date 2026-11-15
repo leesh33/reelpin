@@ -17,8 +17,10 @@ import {
   CATEGORY_ALL,
   CATEGORY_FALLBACK,
   CATEGORY_MAX_LENGTH,
+  CUSTOM_CATEGORY_COLORS,
   CUSTOM_PIN_COLORS,
   DEFAULT_CATEGORIES,
+  DEFAULT_CATEGORY_COLORS,
   addCategory,
   allCategories,
   applyCategoryRemoval,
@@ -26,6 +28,10 @@ import {
   countByCategory,
   customCategoryColor,
   filterOptions,
+  getCategoryColor,
+  hexToRgba,
+  categoryTint,
+  categoryTextColor,
   isDefaultCategory,
   isLegacyCategory,
   mapLegacyCategory,
@@ -179,6 +185,38 @@ check('색은 커스텀 팔레트 안에서 고름', CUSTOM_PIN_COLORS.indexOf(c
 check('이름이 다르면 (대체로) 다른 색', customCategoryColor('술집') !== colorA || customCategoryColor('데이트') !== colorB);
 check('빈 이름도 팔레트 안의 색', CUSTOM_PIN_COLORS.indexOf(customCategoryColor('')) >= 0);
 
+// ── 8-1. v2.4 — 기본 3개 + 커스텀 분류 색 구분 (핀·칩 단일 함수) ──
+const BASE = ['맛집', '카페', '가볼곳'];
+const CUSTOMS = ['아이랑', '술집', '데이트'];
+const baseColorList = BASE.map((c) => getCategoryColor(c, CUSTOMS));
+check('맛집·카페·가볼곳 색이 모두 다름', new Set(baseColorList).size === 3, baseColorList);
+check(
+  '맛집=코랄 #FF5A36 · 카페=민트 #14B8A6 · 가볼곳=블루 #3B82F6',
+  baseColorList[0] === '#FF5A36' && baseColorList[1] === '#14B8A6' && baseColorList[2] === '#3B82F6',
+  baseColorList
+);
+const customColorList = CUSTOMS.map((c) => getCategoryColor(c, CUSTOMS));
+check('커스텀 분류끼리 서로 다른 색', new Set(customColorList).size === customColorList.length, customColorList);
+check(
+  '커스텀 색은 기본 3색과 겹치지 않음',
+  customColorList.every((c) => baseColorList.indexOf(c) < 0),
+  customColorList
+);
+check(
+  '새로 만든 분류는 앞선 분류와 다른 색 (추가 순서)',
+  getCategoryColor('새분류', ['아이랑', '술집', '데이트', '새분류']) !== getCategoryColor('데이트', ['아이랑', '술집', '데이트', '새분류'])
+);
+check(
+  '목록에 없는 이름(공유 지도)도 팔레트 안의 고정 색',
+  CUSTOM_CATEGORY_COLORS.indexOf(getCategoryColor('처음보는분류', CUSTOMS)) >= 0,
+  getCategoryColor('처음보는분류', CUSTOMS)
+);
+check('베이커리·디저트는 맛집 색', getCategoryColor('베이커리', CUSTOMS) === '#FF5A36' && getCategoryColor('디저트', CUSTOMS) === '#FF5A36');
+check('분류 없는 예전 핀은 맛집 색', getCategoryColor('', CUSTOMS) === '#FF5A36' && getCategoryColor(undefined, CUSTOMS) === '#FF5A36');
+check('같은 분류는 언제 불러도 같은 색', getCategoryColor('술집', CUSTOMS) === getCategoryColor(' 술집 ', CUSTOMS));
+check('틴트는 rgba, 글씨색은 같은 계열 더 진하게', /^rgba\(\d+,\d+,\d+,0\.13\)$/.test(categoryTint('가볼곳', CUSTOMS)) && categoryTextColor('가볼곳', CUSTOMS) !== '#3B82F6');
+check('hexToRgba — 짧은 표기·잘못된 값도 안전', hexToRgba('#fff', 0.5) === 'rgba(255,255,255,0.5)' && hexToRgba('nope', 0.2).indexOf('rgba(') === 0);
+
 // ── 9. 저장소 (웹 localStorage / 앱 AsyncStorage 공통 경로) ──
 const emptyBefore = await loadCategories();
 check('처음엔 커스텀 분류 없음', Array.isArray(emptyBefore) && emptyBefore.length === 0, emptyBefore);
@@ -218,7 +256,13 @@ const wiring = [
   ['내 정보: 기본 분류는 잠금 표시', profileSource.indexOf('lock-closed') > 0 && profileSource.indexOf('기본') > 0],
   ['필터 칩: 커스텀 분류를 이어서 그림', chipsSource.indexOf('filterOptions(categories)') > 0],
   ['분류 고르기: [분류 추가] 인라인 입력', pickerSource.indexOf('분류 추가') > 0 && pickerSource.indexOf('maxLength={CATEGORY_MAX_LENGTH}') > 0],
-  ['지도 핀 색: 커스텀 분류는 고정 색', mapWebSource.indexOf('customCategoryColor') > 0 && canvasSource.indexOf('customCategoryColor') > 0],
+  ['지도 핀 색: 기본·커스텀 모두 getCategoryColor 한 함수', mapWebSource.indexOf('getCategoryColor') > 0 && canvasSource.indexOf('getCategoryColor') > 0],
+  ['지도: 분류 목록을 지도에 넘겨 핀 색을 칩과 맞춤', mapSource.indexOf('categories={categories}') > 0 && mapWebSource.indexOf('categories') > 0],
+  ['필터 칩: 분류 색 점 + 켜지면 그 색 배경', chipsSource.indexOf('getCategoryColor') > 0 && chipsSource.indexOf('backgroundColor: color') > 0],
+  ['분류 고르기: 분류 색 점 + 켜지면 그 색 배경', pickerSource.indexOf('getCategoryColor') > 0 && pickerSource.indexOf('backgroundColor: chipColor') > 0],
+  ['핀 상세: 분류 배지가 그 분류 색', sheetSource.indexOf('categoryTint') > 0 && sheetSource.indexOf('categoryTextColor') > 0],
+  ['내 정보: 분류 관리 점이 같은 색', profileSource.indexOf('getCategoryColor') > 0],
+  ['저장 화면: 후보 행 분류 색 점', pasteSource.indexOf('getCategoryColor') > 0],
 ];
 for (const [label, ok] of wiring) {
   check(label, ok);

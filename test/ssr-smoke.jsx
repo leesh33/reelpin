@@ -42,8 +42,11 @@ import { injectPwaHead, PWA_REQUIRED_MARKERS } from '../scripts/patch-web-html.m
 import { colors, mapControls } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
 import {
+  CUSTOM_CATEGORY_COLORS,
   CUSTOM_PIN_COLORS,
+  DEFAULT_CATEGORY_COLORS,
   allCategories,
+  getCategoryColor,
   matchesFilter,
 } from '../src/utils/categories';
 
@@ -469,22 +472,22 @@ const v23Checks = [
   ['핀 라벨: `한성치킨`(4글자)은 말줄임 없이 다 보이는 폭',
     PIN_LABEL_MAX_WIDTH >= 4 * PIN_LABEL_FONT_SIZE + 12,
     PIN_LABEL_MAX_WIDTH + 'px ≥ ' + (4 * PIN_LABEL_FONT_SIZE + 12) + 'px'],
-  ['핀 라벨: 선택된 핀은 코랄 알약 + 흰 글씨로 강조',
-    onIcon.indexOf('background:' + colors.coral) > 0 && onIcon.indexOf('color:#FFFFFF') > 0 &&
+  ['핀 라벨: 선택된 핀은 그 분류 색 알약 + 흰 글씨로 강조',
+    onIcon.indexOf('background:' + DEFAULT_CATEGORY_COLORS['맛집']) > 0 && onIcon.indexOf('color:#FFFFFF') > 0 &&
       plainIcon.indexOf('color:' + colors.charcoal) > 0,
-    colors.coral],
+    DEFAULT_CATEGORY_COLORS['맛집']],
   ['핀 앵커: 라벨이 붙어도 동그라미 중심 = 위경도 (0, size/2)',
     anchorOff.x === 0 && anchorOff.y === pinSize(false) / 2 && anchorOn.x === 0 && anchorOn.y === pinSize(true) / 2 &&
       pinSize(false) === 18 && pinSize(true) === 26,
     JSON.stringify([anchorOff, anchorOn])],
   ['핀 앵커: 네이버 마커가 위 anchor 를 그대로 사용',
-    mapSource.indexOf('new nv.Point(anchor.x, anchor.y)') > 0 && mapSource.indexOf('pinIconHtml(pin, selected)') > 0],
+    mapSource.indexOf('new nv.Point(anchor.x, anchor.y)') > 0 && mapSource.indexOf('pinIconHtml(pin, selected, categories)') > 0],
   ['핀 라벨: 라벨도 마커 content 라 탭하면 핀 상세가 열림',
     mapSource.indexOf("nv.Event.addListener(marker, 'click'") > 0 && plainIcon.indexOf('cursor:pointer') > 0 &&
       mapSource.indexOf('clickable: true') > 0],
   ['폴백 지도(Leaflet)도 같은 라벨 divIcon 사용',
     mapSource.indexOf('L.divIcon(') > 0 && mapSource.indexOf('iconAnchor: [anchor.x, anchor.y]') > 0 &&
-      mapSource.indexOf('pinIconHtml(pin, isOn)') > 0],
+      mapSource.indexOf('pinIconHtml(pin, isOn, categories)') > 0],
   ['네이티브 도식 지도(MapCanvas)도 핀 아래 이름 라벨',
     mapCanvasSource.indexOf('pinLabelWrap') > 0 && mapCanvasSource.indexOf('pinLabelText') > 0 &&
       /\{pin\.name\}/.test(mapCanvasSource)],
@@ -543,8 +546,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.3.0', pkg.version === '2.3.0', pkg.version],
-  ['버전: app.json 2.3.0', expoConfig.version === '2.3.0', expoConfig.version],
+  ['버전: package.json 2.4.0', pkg.version === '2.4.0', pkg.version],
+  ['버전: app.json 2.4.0', expoConfig.version === '2.4.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -612,10 +615,67 @@ const v22Checks = [
   ['분류: 이름을 바꾸면 핀 일괄 반영', categorySource.indexOf('applyCategoryRename') > 0 && categorySource.indexOf('category: to, updatedAt') > 0],
   ['분류: 지우면 핀은 맛집으로 안전 이동', categorySource.indexOf('applyCategoryRemoval') > 0 && categorySource.indexOf('CATEGORY_FALLBACK') > 0],
   ['핀 색: 커스텀 분류는 고정 팔레트 색', CUSTOM_PIN_COLORS.indexOf(pinColor({ category: '아이랑' })) >= 0, pinColor({ category: '아이랑' })],
-  ['핀 색: 기본 분류 색은 그대로(맛집 코랄·카페 민트)', pinColor({ category: '맛집' }) === '#FF7A5C' && pinColor({ category: '카페' }) === colors.mint],
+  ['핀 색: 기본 분류는 고유 색 (맛집 코랄·카페 민트·가볼곳 블루)',
+    pinColor({ category: '맛집' }) === DEFAULT_CATEGORY_COLORS['맛집'] &&
+      pinColor({ category: '카페' }) === DEFAULT_CATEGORY_COLORS['카페'] &&
+      pinColor({ category: '가볼곳' }) === DEFAULT_CATEGORY_COLORS['가볼곳'],
+    [pinColor({ category: '맛집' }), pinColor({ category: '카페' }), pinColor({ category: '가볼곳' })].join(' ')],
   ['분류 고르기: 이름 입력 + [추가] + 글자 수 제한', pickerSource.indexOf('새 분류 이름 (예: 아이랑)') > 0 && pickerSource.indexOf('maxLength={CATEGORY_MAX_LENGTH}') > 0],
 ];
 for (const [label, ok, extra] of v22Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.4: 분류별 색 통일 (핀 = 칩 = 배지 = 내 정보) ──────────────
+const CUSTOMS = ['아이랑', '술집', '데이트'];
+const chipsSource24 = fs.readFileSync(path.join(process.cwd(), 'src/components/FilterChips.js'), 'utf8');
+const pickerSource24 = fs.readFileSync(path.join(process.cwd(), 'src/components/CategoryPicker.js'), 'utf8');
+const sheetSource24 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
+const profileSource24 = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const pasteSource24 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const baseColors = ['맛집', '카페', '가볼곳'].map((c) => getCategoryColor(c, CUSTOMS));
+const customColors = CUSTOMS.map((c) => getCategoryColor(c, CUSTOMS));
+const stripSpaces = (html) => String(html).replace(/\s+/g, '', '').toLowerCase();
+const chipsHtml = stripSpaces(renderToString(<FilterChips value="카페" onChange={noop} categories={CUSTOMS} />));
+const pickerHtml = stripSpaces(renderToString(<CategoryPicker value="가볼곳" onChange={noop} categories={CUSTOMS} />));
+const sheetHtmlPin = { id: 'pin-color-1', name: '색 확인', category: '가볼곳', area: '검단', platform: 'instagram' };
+const sheetHtml = stripSpaces(renderToString(<PinDetailSheet pin={sheetHtmlPin} radiusMeters={500} onClose={noop} categories={CUSTOMS} />));
+const rgbOf = (hex) => {
+  const h = String(hex).replace('#', '');
+  return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' + parseInt(h.slice(4, 6), 16);
+};
+const v24Checks = [
+  ['색: 맛집·카페·가볼곳은 서로 다른 고유 색', new Set(baseColors).size === 3, baseColors.join(' ')],
+  ['색: 맛집=코랄 #FF5A36 · 카페=민트 #14B8A6 · 가볼곳=블루 #3B82F6',
+    DEFAULT_CATEGORY_COLORS['맛집'] === '#FF5A36' && DEFAULT_CATEGORY_COLORS['카페'] === '#14B8A6' &&
+      DEFAULT_CATEGORY_COLORS['가볼곳'] === '#3B82F6', Object.values(DEFAULT_CATEGORY_COLORS).join(' ')],
+  ['색: 커스텀 분류끼리 서로 다른 색', new Set(customColors).size === customColors.length, customColors.join(' ')],
+  ['색: 커스텀 색은 기본 3색과 겹치지 않음',
+    customColors.every((c) => baseColors.indexOf(c) < 0) &&
+      CUSTOM_CATEGORY_COLORS.every((c) => baseColors.indexOf(c) < 0), customColors.join(' ')],
+  ['색: 목록에 없는 커스텀(공유 지도)도 팔레트 안의 고정 색',
+    CUSTOM_CATEGORY_COLORS.indexOf(getCategoryColor('낯선분류', CUSTOMS)) >= 0, getCategoryColor('낯선분류', CUSTOMS)],
+  ['색: 베이커리·디저트는 맛집 색', getCategoryColor('베이커리', CUSTOMS) === baseColors[0] && getCategoryColor('디저트', CUSTOMS) === baseColors[0]],
+  ['색: 카페 색과 예전 민트 토큰은 다름(핀·칩 혼동 방지)', DEFAULT_CATEGORY_COLORS['카페'] !== colors.mint, colors.mint],
+  ['핀: 선택해도 분류 색 유지 (선택 표시는 크기·라벨)', pinColor({ category: '카페' }, true, CUSTOMS) === getCategoryColor('카페', CUSTOMS) &&
+    pinColor({ category: '가볼곳' }, true, CUSTOMS) === getCategoryColor('가볼곳', CUSTOMS)],
+  ['핀: 커스텀 분류도 내 목록 순서 색', pinColor({ category: '술집' }, false, CUSTOMS) === getCategoryColor('술집', CUSTOMS)],
+  ['핀: MapCanvas 도 같은 함수 사용', mapCanvasSource.indexOf('getCategoryColor') > 0 && mapCanvasSource.indexOf('pinColor(pin, isOn, categories)') > 0],
+  ['핀: 웹 지도도 같은 함수 사용', mapSource.indexOf('getCategoryColor') > 0 && mapSource.indexOf('getCategoryColor((pin && pin.category)') > 0],
+  ['칩: 필터 칩이 분류 색 점 + 켜지면 그 색 배경', chipsSource24.indexOf('getCategoryColor') > 0 && chipsSource24.indexOf('backgroundColor: color') > 0],
+  ['칩: 분류 고르기도 색 점 + 켜지면 그 색 배경', pickerSource24.indexOf('getCategoryColor') > 0 && pickerSource24.indexOf('backgroundColor: chipColor') > 0],
+  ['배지: 핀 상세 분류 배지가 그 분류 색 틴트 + 진한 글씨', sheetSource24.indexOf('categoryTint') > 0 && sheetSource24.indexOf('categoryTextColor') > 0],
+  ['내 정보: 분류 관리 점이 같은 함수', profileSource24.indexOf('getCategoryColor') > 0 && profileSource24.indexOf('category-dot-') > 0],
+  ['저장 화면: 후보 행의 분류 색 점', pasteSource24.indexOf('getCategoryColor') > 0 && pasteSource24.indexOf('candCatDot') > 0],
+  ['렌더: 필터 칩 — 켜진 카페 칩이 민트 배경', chipsHtml.indexOf('background-color:' + rgbOf(DEFAULT_CATEGORY_COLORS['카페'])) > 0 && chipsHtml.indexOf('카페') > 0],
+  ['렌더: 분류 고르기 — 켜진 가볼곳 칩이 블루 배경', pickerHtml.indexOf('background-color:' + rgbOf(DEFAULT_CATEGORY_COLORS['가볼곳'])) > 0],
+  ['렌더: 핀 상세 — 가볼곳 배지가 블루 계열', sheetHtml.indexOf('가볼곳') > 0 && sheetHtml.indexOf(rgbOf(DEFAULT_CATEGORY_COLORS['가볼곳'])) > 0],
+];
+for (const [label, ok, extra] of v24Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -638,6 +698,7 @@ const total =
   2 +
   v213Checks.length +
   v22Checks.length +
+  v24Checks.length +
   pwaChecks.length +
   assetChecks.length +
   2;

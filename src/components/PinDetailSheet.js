@@ -8,7 +8,7 @@ import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
 import ProviderBadges from './ProviderBadge';
 import CategoryPicker from './CategoryPicker';
-import { DEFAULT_CATEGORIES } from '../utils/categories';
+import { DEFAULT_CATEGORIES, categoryTextColor, categoryTint, getCategoryColor } from '../utils/categories';
 
 const PLATFORM_LABEL = {
   instagram: '인스타 릴스',
@@ -42,6 +42,12 @@ export default function PinDetailSheet({
   const phone = String(pin.phone || '');
   const address = String(pin.address || '');
   const hasAddress = Boolean(address) && address !== '주소 미확인';
+  // v2.4 — 상단 분류 배지도 그 분류의 고유 색 (연한 틴트 + 진한 같은 색 글씨)
+  const categoryName = pin.category || '맛집';
+  const categoryBadgeBg = categoryTint(categoryName, categories, 0.13);
+  const categoryBadgeBorder = categoryTint(categoryName, categories, 0.3);
+  const categoryBadgeText = categoryTextColor(categoryName, categories);
+  const categoryDot = getCategoryColor(categoryName, categories);
 
   /** v2.0 — 전화번호 원탭 연결 (기기 기본 전화앱의 tel: 링크) */
   const handlePhone = async () => {
@@ -88,8 +94,17 @@ export default function PinDetailSheet({
             {pin.name}
           </Text>
           <View style={styles.chipRow}>
-            <View style={styles.chipCoral}>
-              <Text style={styles.chipCoralText}>{pin.category || '맛집'}</Text>
+            <View
+              style={[
+                styles.chipCoral,
+                { backgroundColor: categoryBadgeBg, borderColor: categoryBadgeBorder },
+              ]}
+              testID="pin-category-badge"
+            >
+              <View style={[styles.chipDot, { backgroundColor: categoryDot }]} />
+              <Text style={[styles.chipCoralText, { color: categoryBadgeText }]}>
+                {categoryName}
+              </Text>
             </View>
             {!!pin.area && (
               <View style={styles.chipGray}>
@@ -292,10 +307,20 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   chipCoral: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: colors.coralSoft,
+    borderWidth: 1,
+    borderColor: colors.coralSoft2,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
+  },
+  chipDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   chipCoralText: {
     color: colors.coralDark,

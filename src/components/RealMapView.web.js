@@ -1,7 +1,11 @@
 /**
  * src/components/RealMapView.web.js
  * ─────────────────────────────────────────────────────────────
- * v2.3 — 핀 **아래에 가게 이름 라벨**을 붙였습니다(흰 알약 + 진한 글씨, 선택 시 코랄).
+ * v2.4 — 분류별 **핀 색을 getCategoryColor 하나로 통일** (상단 필터 칩·상세 배지·내 정보 점과 같은 색)
+ *   · 맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 고유 색
+ *   · 선택된 핀도 분류 색을 유지 — 강조는 크기(18→26) + 두꺼운 흰 테두리 + 라벨이 그 분류 색으로 채워짐
+ *
+ * v2.3 — 핀 **아래에 가게 이름 라벨**을 붙였습니다(흰 알약 + 진한 글씨 + 분류 색 얇은 테두리).
  *   · 라벨은 핀 content 안에서 **동그라미 아래 가운데**에 붙고, content 를 `translateX(-50%)`
  *     로 가운데 정렬한 뒤 anchor 를 (0, size/2) 로 두어 **라벨 폭과 상관없이 동그라미 중심이
  *     정확히 위경도에** 옵니다(네이버 지도 마커 element 는 overflow: visible).
@@ -25,7 +29,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, typography } from '../theme';
-import { customCategoryColor, isDefaultCategory } from '../utils/categories';
+import { getCategoryColor, hexToRgba } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
 
 // ── 네이버 지도 설정 ──────────────────────────────────────────
@@ -106,13 +110,19 @@ export function pinAnchor(selected) {
   return { x: 0, y: pinSize(selected) / 2 };
 }
 
-/** 가게 이름 라벨 HTML — 흰 알약 + 진한 글씨, 선택된 핀은 코랄 알약 + 흰 글씨 */
-export function pinLabelHtml(pin, selected) {
+/**
+ * 가게 이름 라벨 HTML
+ *   · 선택 안 됨 … 흰 알약 + 진한 글씨 + **그 분류 색의 얇은 테두리**
+ *   · 선택됨    … **그 분류 색 알약 + 흰 글씨** (크기 확대와 함께 선택 표시)
+ *     → 선택해도 분류 색이 그대로 보여, 어떤 분류인지 헷갈리지 않습니다.
+ */
+export function pinLabelHtml(pin, selected, categories) {
   const name = String((pin && pin.name) || '').trim();
   if (!name) return '';
-  const background = selected ? colors.coral : 'rgba(255,255,255,0.96)';
-  const color = selected ? '#FFFFFF' : colors.charcoal;
-  const border = selected ? 'rgba(232,70,31,0.55)' : 'rgba(15,23,42,0.14)';
+  const color = pinColor(pin, selected, categories);
+  const background = selected ? color : 'rgba(255,255,255,0.96)';
+  const textColor = selected ? '#FFFFFF' : colors.charcoal;
+  const border = selected ? 'rgba(255,255,255,0.85)' : hexToRgba(color, 0.55);
   return (
     '<div style="margin-top:' +
     PIN_LABEL_GAP +
@@ -123,7 +133,7 @@ export function pinLabelHtml(pin, selected) {
     ';border:1px solid ' +
     border +
     ';color:' +
-    color +
+    textColor +
     ';font-family:' +
     PIN_LABEL_FONT_STACK +
     ';font-size:' +
@@ -135,19 +145,20 @@ export function pinLabelHtml(pin, selected) {
 }
 
 /**
- * 마커 content HTML = [카테고리 색 동그라미] 아래 [가게 이름 라벨].
+ * 마커 content HTML = [분류 색 동그라미] 아래 [가게 이름 라벨].
  * 네이버 지도·Leaflet(divIcon) 이 같은 HTML 을 씁니다.
  */
-export function pinIconHtml(pin, selected) {
+export function pinIconHtml(pin, selected, categories) {
   const size = pinSize(selected);
   const border = selected ? 3 : 2;
+  const color = pinColor(pin, selected, categories);
   const circle =
     '<div style="width:' +
     size +
     'px;height:' +
     size +
     'px;box-sizing:border-box;border-radius:50%;background:' +
-    pinColor(pin, selected) +
+    color +
     ';border:' +
     border +
     'px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
@@ -155,20 +166,18 @@ export function pinIconHtml(pin, selected) {
     '<div style="display:flex;flex-direction:column;align-items:center;width:max-content;' +
     'transform:translateX(-50%);cursor:pointer;-webkit-tap-highlight-color:transparent;">' +
     circle +
-    pinLabelHtml(pin, selected) +
+    pinLabelHtml(pin, selected, categories) +
     '</div>'
   );
 }
 
-/** 카테고리별 핀 색 — 앱 지도(MapCanvas)와 같은 결. 커스텀 분류는 이름 해시로 고정 색 */
-export function pinColor(pin, selected) {
-  if (selected) return colors.coral;
-  const category = (pin && pin.category) || '';
-  if (category === '카페') return colors.mint;
-  if (category === '디저트') return '#FFB86B';
-  if (category === '베이커리') return '#FF8A6E';
-  if (!category || isDefaultCategory(category)) return '#FF7A5C';
-  return customCategoryColor(category);
+/**
+ * 분류별 핀 색 — **getCategoryColor 하나**로 지도·칩·배지가 같은 색을 씁니다.
+ *   맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 고유 색
+ * 선택된 핀도 같은 분류 색을 유지합니다(강조는 크기·테두리·라벨 색으로).
+ */
+export function pinColor(pin, selected, categories) {
+  return getCategoryColor((pin && pin.category) || '', categories);
 }
 
 // ── 네이버 지도 로더 (브라우저에서만) ─────────────────────────
@@ -349,6 +358,7 @@ function NaverMap({
   radiusMeters = 500,
   initialCenter,
   initialZoom = 13,
+  categories,
   controlsRef,
   onReady,
   onFail,
@@ -488,7 +498,7 @@ function NaverMap({
       alive.add(pin.id);
       const isOn = pin.id === selectedId;
       const position = new nv.LatLng(coords.lat, coords.lng);
-      const icon = pinIcon(nv, pin, isOn);
+      const icon = pinIcon(nv, pin, isOn, categories);
 
       let marker = markersRef.current.get(pin.id);
       if (!marker) {
@@ -533,7 +543,7 @@ function NaverMap({
       } catch (e) {}
       markersRef.current.delete(id);
     });
-  }, [pins, selectedId, ready]);
+  }, [pins, selectedId, ready, categories]);
 
   // 3) 내 위치 파란 점 + 반경 500m 원
   useEffect(() => {
@@ -616,9 +626,9 @@ function NaverMap({
 }
 
 /** 저장 핀 — 카테고리 색 원형 + 흰 테두리(선택 시 확대) 아래에 가게 이름 라벨 */
-function pinIcon(nv, pin, selected) {
+function pinIcon(nv, pin, selected, categories) {
   const anchor = pinAnchor(selected);
-  return { content: pinIconHtml(pin, selected), anchor: new nv.Point(anchor.x, anchor.y) };
+  return { content: pinIconHtml(pin, selected, categories), anchor: new nv.Point(anchor.x, anchor.y) };
 }
 
 /** 내 위치 파란 점 */
@@ -642,6 +652,7 @@ function LeafletMap({
   radiusMeters = 500,
   initialCenter,
   initialZoom = 13,
+  categories,
   controlsRef,
   onReady,
   onFail,
@@ -794,7 +805,7 @@ function LeafletMap({
       const isOn = pin.id === selectedId;
       const anchor = pinAnchor(isOn);
       const icon = L.divIcon({
-        html: pinIconHtml(pin, isOn),
+        html: pinIconHtml(pin, isOn, categories),
         className: 'reelpin-pin',
         iconSize: [0, 0],
         iconAnchor: [anchor.x, anchor.y],
@@ -835,7 +846,7 @@ function LeafletMap({
       } catch (e) {}
       markersRef.current.delete(id);
     });
-  }, [pins, selectedId, ready]);
+  }, [pins, selectedId, ready, categories]);
 
   // 내 위치 파란 점 + 반경 원
   useEffect(() => {
@@ -923,6 +934,7 @@ export default function RealMapView({
   radiusMeters = 500,
   initialCenter,
   initialZoom = 13,
+  categories,
   onStatus,
 }) {
   const controlsRef = useRef(null);
@@ -972,6 +984,7 @@ export default function RealMapView({
     radiusMeters,
     initialCenter,
     initialZoom,
+    categories,
     controlsRef,
   };
 

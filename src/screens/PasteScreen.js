@@ -24,7 +24,7 @@ import ProviderBadges from '../components/ProviderBadge';
 import ExtractedTitleNote from '../components/ExtractedTitleNote';
 import CategoryPicker from '../components/CategoryPicker';
 import { buildPin } from '../utils/pins';
-import { DEFAULT_CATEGORIES, mapLegacyCategory } from '../utils/categories';
+import { DEFAULT_CATEGORIES, getCategoryColor, mapLegacyCategory } from '../utils/categories';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 const EMOJI_BY_CATEGORY = {
@@ -615,6 +615,10 @@ export default function PasteScreen({
                     </Text>
                     <View style={styles.candMetaRow}>
                       <ProviderBadges item={c} size="sm" />
+                      {/* v2.4 — 이 후보의 분류 색 (지도 핀·분류 칩과 같은 색) */}
+                      <View
+                        style={[styles.candCatDot, { backgroundColor: getCategoryColor(c.category, categories) }]}
+                      />
                       <Text style={styles.candAddr} numberOfLines={1}>
                         {c.address} · {mapLegacyCategory(c.category)}
                       </Text>
@@ -1016,6 +1020,11 @@ const styles = StyleSheet.create({
   },
   heroBadges: {
     marginTop: 5,
+  },
+  candCatDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   candCard: {
     flexDirection: 'row',

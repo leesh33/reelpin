@@ -6,6 +6,7 @@ import {
   CATEGORY_MAX_LENGTH,
   DEFAULT_CATEGORIES,
   allCategories,
+  getCategoryColor,
   sameCategory,
 } from '../utils/categories';
 
@@ -16,6 +17,8 @@ import {
  *   · 끝의 [+ 분류 추가] 를 누르면 그 자리에서 이름을 적어 바로 만들고, 만든 분류가 곧바로 선택됩니다
  *   · 이름 검사(빈 이름 · 10자 제한 · 중복 · 기본 분류와 같은 이름)는 utils/categories 가 맡고,
  *     이 컴포넌트는 돌려받은 안내 문구를 칩 아래에 그대로 보여 줍니다
+ *   · v2.4 — 칩마다 그 분류의 **고유 색 점**을 붙이고, 선택되면 **그 분류 색 배경 + 흰 글씨**
+ *     (지도 핀·상단 필터 칩과 같은 색 — getCategoryColor 하나를 씁니다)
  */
 export default function CategoryPicker({
   value,
@@ -68,17 +71,25 @@ export default function CategoryPicker({
       <View style={styles.row}>
         {options.map((name) => {
           const on = sameCategory(value, name);
+          const chipColor = getCategoryColor(name, categories);
           return (
             <Pressable
               key={name}
-              style={[styles.chip, on && styles.chipOn]}
+              style={[
+                styles.chip,
+                on && { backgroundColor: chipColor, borderColor: chipColor },
+              ]}
               onPress={() => typeof onChange === 'function' && onChange(name)}
               accessibilityRole="radio"
               accessibilityState={{ selected: on, checked: on }}
               accessibilityLabel={'분류 ' + name}
               testID={'category-chip-' + name}
             >
-              {on ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
+              {on ? (
+                <Ionicons name="checkmark" size={12} color={colors.white} />
+              ) : (
+                <View style={[styles.dot, { backgroundColor: chipColor }]} />
+              )}
               <Text style={[styles.chipText, on && styles.chipTextOn]}>{name}</Text>
             </Pressable>
           );
@@ -170,17 +181,18 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     height: 32,
-    paddingHorizontal: 12,
+    paddingHorizontal: 11,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.card,
   },
-  chipOn: {
-    backgroundColor: colors.coral,
-    borderColor: colors.coral,
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   chipText: {
     fontSize: 12.5,

@@ -9,7 +9,7 @@ import { SUPABASE_SETUP_HINT } from '../services/supabase';
 import {
   CATEGORY_MAX_LENGTH,
   allCategories,
-  customCategoryColor,
+  getCategoryColor,
   isDefaultCategory,
   pinsInCategory,
 } from '../utils/categories';
@@ -383,7 +383,10 @@ function CategoryManager({
         return (
           <View key={category}>
             <View style={styles.catRow}>
-              <View style={[styles.catDot, { backgroundColor: customCategoryColor(category) }]} />
+              <View
+                style={[styles.catDot, { backgroundColor: getCategoryColor(category, list) }]}
+                testID={'category-dot-' + category}
+              />
               <Text style={styles.catName} numberOfLines={1}>
                 {category}
               </Text>
