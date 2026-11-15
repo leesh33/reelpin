@@ -660,6 +660,9 @@ export const CAPTION_STOPWORDS = [
   '멋있다', '재밌다', '재미있다', '훌륭하다', '대단하다', '신기하다', '감동적이다',
   '좋은', '맛있는', '맛난', '귀여운', '예쁜', '멋진', '훌륭한', '신기한', '행복한',
   '항상', '늘', '감사', '문의', '이메일', '메일', '연락',
+  // v2.8 — 설명글 줄글의 서술 명사. 목록 줄 판정에서 상호로 오인되지 않게 합니다.
+  //   ("특이한 비주얼이 압권" → '압권'은 가게가 아님)
+  '압권', '끝내줌', '꿀맛', '존맛', '굿',
 ];
 
 /** 카테고리 단어는 지우지 않고 '지역 + 카테고리' 검색어 재료로 씁니다. */
@@ -1174,6 +1177,28 @@ export const MAX_MULTI_CANDIDATES = 8;
 const LIST_MARKER_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\d{1,2}\s*\uBC88[.)]?|\[[0-9]{1,2}\]|[-\u2022*\u00b7\u2023\u25aa\u25e6])\s*/;
 /** 번호가 붙은 줄인지 — 2줄 이상이면 '여러 곳 목록'으로 봅니다. */
 const NUMBERED_LINE_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\d{1,2}\s*\uBC88[.)]?)\s*\S/;
+/**
+ * v2.8 — 불릿·체크·핀처럼 **사람이 목록으로 쓴 표식**으로 시작하는 줄.
+ *   `- 성수동 베통` · `• 연남 뚜레쥬르` · `✅ 꿉당` · `📍 런던베이글`
+ */
+const BULLET_LINE_RE = /^\s*(?:[•*·‣▪◦]\s*|[-–—]\s+|[✅✔☑📍🔸🔹▶►→⭐]\uFE0F?\s*)/;
+
+/** 명시적 목록 표식(번호·불릿·체크·핀)이 있는 줄인지 */
+export function hasExplicitListMarker(line) {
+  const raw = String(line || '');
+  if (!raw.trim()) return false;
+  return NUMBERED_LINE_RE.test(raw) || BULLET_LINE_RE.test(raw);
+}
+
+/**
+ * v2.8 — 문장 꼬리(‘…했고’·‘…이면’·‘…세요’·‘…지만’).
+ * `PREDICATE_TAIL_RE` 가 놓치는 연결형 어미까지 잡아, 줄글 설명이 목록으로 새지 않게 합니다.
+ */
+const SENTENCE_TAIL_RE =
+  /(습니다|입니다|해요|예요|이에요|세요|했어요|했고|았고|었고|하고|되고|있고|없고|하며|되며|되었|했음|나옴|나오고|나오는|갔더니|해서|했는지|인데|는데|더니|지만|면서|니까|려고|도록|같음|같은|같으면서|이라면|있으면|없으면|있다면|없다면|하니|으니|어서|아서|여서|가요|네요|군요|데요|어요|지요|나요|래요|죠|하겠|되겠|면|음|함|됨)$/;
+
+/** 가격·영업시간 같은 정보 조각 (`350,000원` · `19:00-21:30`) — 상호가 아닙니다. */
+const PRICE_OR_TIME_RE = /[0-9][0-9,.]*\s*(?:만원|천원|원)|[0-9]{1,2}\s*:\s*[0-9]{2}/;
 /** 한 줄 안에서 가게를 나누는 구분자 (`|` `·` `→` `-`) */
 const ITEM_SPLIT_RE = /\s*[|\u00b7\u2022\u2023\u2192>]\s*|\s+[-\u2013\u2014]\s+/;
 
@@ -1222,8 +1247,12 @@ export function parseListItem(line, index = 0, options = {}) {
       if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) return false;
       if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return false;
       if (PREDICATE_TAIL_RE.test(tok)) return false;
+      if (SENTENCE_TAIL_RE.test(tok)) return false;
       if (isBasePredicate(tok)) return false;
       if (isStopToken(tok, stopSet)) return false;
+      // '350' · '000원' · '3곳' 같은 수량·금액 토큰은 상호가 아닙니다.
+      if (/^[0-9]/.test(tok)) return false;
+      if (/^[0-9]+(?:개|곳|분|초|원|년|월|일|명|위|차|인|타임)$/.test(tok)) return false;
       return true;
     });
   let usable = pickUsable(cleanedHead.split(' ').filter(Boolean));
@@ -1259,25 +1288,50 @@ export function parseListItem(line, index = 0, options = {}) {
 }
 
 /**
- * (번호 없는) 한 줄이 '가게 이름 줄'처럼 보이는지
- *   · 24자 이하로 짧고, 문장부호(? ! ..)나 서술어로 끝나지 않아야 합니다.
- *   → 설명글의 문장(“결론적으로 말씀 드리면 비쌉니다..”)을 가게로 오인하지 않습니다.
+ * (번호 없는) 한 줄이 '가게 이름 줄'처럼 보이는지 (v2.8 강화)
+ *   · 24자 이하로 짧고, 문장부호(? ! ..)·웃음(ㅋㅋ)으로 끝나지 않아야 합니다.
+ *   · **세 낱말을 넘으면 문장**으로 봅니다. ("가격만 생각 안하면 너무 만족스럽게 다녀 온")
+ *   · 이름 자리(마지막 낱말)가 조사·서술어·감탄·불용어·지역명이면 목록 줄이 아닙니다.
+ *     ("특이한 비주얼이 압권", "벤자리 26만원 주문이 가능했고", "예약 해보세요")
+ *   → 긴 줄글 설명이 '여러 가게 목록'으로 잘못 갈라지지 않게 합니다.
  */
 export function looksLikeListLine(line) {
   const raw = String(line || '');
-  const cleaned = cleanCaptionText(stripListMarker(raw));
+  const bare = stripListMarker(raw);
+  const cleaned = cleanCaptionText(bare);
   if (cleaned.length < 2 || cleaned.length > 24) return false;
-  if (/[?!]|\.\./.test(raw)) return false;
-  if (PREDICATE_TAIL_RE.test(cleaned)) return false;
+  // 감탄·말줄임·웃음(ㅋㅋ·ㅠㅠ)은 줄글
+  if (/[?!]|\.\.|…|[\u314B\u314E\u3160\u315C]/.test(raw)) return false;
+  if (PREDICATE_TAIL_RE.test(cleaned) || SENTENCE_TAIL_RE.test(cleaned)) return false;
+  // '자연산 돌돔 350,000원' · '19:00-21:30' 같은 정보 줄은 가게 이름 줄이 아님
+  if (PRICE_OR_TIME_RE.test(bare)) return false;
+  // 대시·콜론 뒤는 메뉴·설명이라 이름은 앞 구획에서 셉니다. (parseListItem 과 같은 규칙)
+  const head = bare.split(/\s+[-–—]\s+|\s*[|:]\s*|\s*→\s*/)[0] || bare;
+  const headCleaned =
+    cleanCaptionText(head.replace(/\([^)]*\)/g, ' ').replace(/\[[^\]]*\]/g, ' ')) || cleaned;
+  const tokens = headCleaned.split(' ').filter(Boolean);
+  // 네 낱말을 넘으면 문장입니다. ('가격만 생각 안하면 너무 만족스럽게 다녀 온')
+  if (tokens.length > 4) return false;
+  const last = tokens[tokens.length - 1] || '';
+  if (last.length < 2) return false;
+  if (PARTICLE_RE.test(last)) return false;
+  if (isBasePredicate(last)) return false;
+  if (isAreaToken(last)) return false;
+  if (CAPTION_CATEGORY_WORDS.indexOf(last) >= 0) return false;
+  if (/^[0-9]/.test(last)) return false;
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  if (isStopToken(last, stopSet)) return false;
   return true;
 }
 
 /**
  * 설명글·댓글·붙여넣은 텍스트 → 여러 가게 후보 (최대 8곳)
- *   판단 순서
+ *   판단 순서 (v2.8 — 명시적 목록 표식을 먼저 봅니다)
  *     1) `1. … 2. …` 처럼 **번호가 붙은 줄**이 2개 이상 → 각 줄이 한 가게
- *     2) 짧고 이름처럼 보이는 줄이 **3개 이상** → 각 줄이 한 가게
- *     3) 한 줄에 `,` `·` 로 나열돼 있으면 → 그 조각들이 각각 한 가게
+ *     2) `• · - ✅ 📍` 같은 **불릿·체크 표식 줄**이 2개 이상 → 각 줄이 한 가게
+ *     3) 표식 없는 줄 중 **이름처럼 보이는 짧은 줄**이 3개 이상 → 각 줄이 한 가게
+ *        (세 낱말 이상·서술어·조사·감탄으로 끝나는 줄글은 배제 — looksLikeListLine)
+ *     4) 한 줄에 `,` `·` 로 나열돼 있으면 → 그 조각들이 각각 한 가게
  *   후보가 1개 이하면 빈 배열을 돌려줍니다(기존 '한 곳' 흐름을 그대로 쓰기 위해).
  *
  * @param {string} text
@@ -1302,19 +1356,35 @@ export function extractCandidatesFromText(text, options = {}) {
 
   if (numbered.length >= 2) {
     items = numbered.map((line, i) => parseListItem(line, i, { allowFallback: true })).filter(Boolean);
-  } else {
-    const listLines = lines.filter(looksLikeListLine);
+  }
+
+  // v2.8 — 번호가 없어도 `• - ✅ 📍` 같은 **명시적 목록 표식**이 2줄 이상이면 목록입니다.
+  //   단, 표식이 붙어 있어도 '가격·영업시간'이나 줄글 문장은 이름 줄이 아니므로 걸러 냅니다.
+  //   (실제 설명글의 `✅자연산 돌돔 350,000원`, `✅19:00-21:30 …` 같은 정보 줄)
+  if (items.length < 2) {
+    const bulleted = lines.filter((l) => !NUMBERED_LINE_RE.test(l) && BULLET_LINE_RE.test(l));
+    const usable = bulleted.filter(looksLikeListLine);
+    if (usable.length >= 2) {
+      items = usable.map((line, i) => parseListItem(line, i)).filter(Boolean);
+    }
+  }
+
+  // 표식 없는 줄은 '이름처럼 보이는 짧은 줄'이 3개 이상일 때만 목록으로 봅니다.
+  if (items.length < 2) {
+    const listLines = lines.filter((l) => !hasExplicitListMarker(l) && looksLikeListLine(l));
     if (listLines.length >= 3) {
       items = listLines.map((line, i) => parseListItem(line, i)).filter(Boolean);
-    } else {
-      // 한 줄에 '베통, 뚜레쥬르, 카페 온도' 처럼 이어 쓴 경우 (조각이 짧을 때만)
-      const parts = raw
-        .split(/,|、|\s[·•]\s/)
-        .map((p) => p.trim())
-        .filter((p) => cleanCaptionText(p).length >= 2 && cleanCaptionText(p).length <= 20);
-      if (parts.length >= 2 && parts.length === raw.split(/,|、|\s[·•]\s/).length) {
-        items = parts.map((p, i) => parseListItem(p, i)).filter(Boolean);
-      }
+    }
+  }
+
+  if (items.length < 2) {
+    // 한 줄에 '베통, 뚜레쥬르, 카페 온도' 처럼 이어 쓴 경우 (조각이 짧을 때만)
+    const parts = raw
+      .split(/,|、|\s[·•]\s/)
+      .map((p) => p.trim())
+      .filter((p) => cleanCaptionText(p).length >= 2 && cleanCaptionText(p).length <= 20);
+    if (parts.length >= 2 && parts.length === raw.split(/,|、|\s[·•]\s/).length) {
+      items = parts.map((p, i) => parseListItem(p, i)).filter(Boolean);
     }
   }
 
@@ -2564,6 +2634,8 @@ export async function extractPlaces(rawInput, options = {}) {
     sourceTitle,
     sourceDescription: description.slice(0, 500),
     sourceComments: comments.slice(0, 300),
+    // v2.8 — 영상 썸네일(유튜브 hqdefault 등). 저장 화면 히어로 카드의 배경으로 씁니다.
+    sourceThumbnail: String((meta && meta.thumbnail) || '').trim(),
     titleStatus,
     titleNotice,
     suggestedQuery,

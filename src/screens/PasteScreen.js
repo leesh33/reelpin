@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -178,6 +179,7 @@ export default function PasteScreen({
         query: result.query || '',
         sources: result.providersUsed || [],
         sourceTitle: result.sourceTitle || '',
+        thumbnail: result.sourceThumbnail || '',
         titleStatus: result.titleStatus || 'none',
         titleNotice: result.titleNotice || '',
         suggestedQuery: result.suggestedQuery || '',
@@ -263,6 +265,17 @@ export default function PasteScreen({
 
   const selectedCandidates = candidates.filter((c) => selectedIds.indexOf(c.id) >= 0);
   const heroCandidate = selectedCandidates[0] || null;
+  /**
+   * v2.8 — 히어로 카드 배경 사진.
+   *   1순위: 고른 후보 자체의 사진(coverImage·thumbnail)
+   *   2순위: 링크에서 읽어 온 영상 썸네일(유튜브 hqdefault 등)
+   *   없으면(가게명 직접 검색 등) 기존처럼 분류 이모지 타일을 보여 줍니다.
+   */
+  const heroThumbnail = String(
+    (heroCandidate && (heroCandidate.coverImage || heroCandidate.thumbnail)) ||
+      (meta && meta.thumbnail) ||
+      ''
+  ).trim();
   const allSelected = candidates.length > 0 && selectedCandidates.length === candidates.length;
 
   /**
@@ -562,12 +575,23 @@ export default function PasteScreen({
             />
 
             <View style={styles.heroCard}>
+              {/* 썸네일이 없을 때의 폴백 — 분류 이모지 타일 */}
               <View style={styles.heroTile}>
                 <Text style={styles.heroEmoji}>
                   {EMOJI_BY_CATEGORY[heroCandidate ? heroCandidate.category : '맛집'] || '📍'}
                 </Text>
               </View>
-              <View style={styles.heroOverlay}>
+              {/* v2.8 — 영상 썸네일이 있으면 카드 전체를 배경 사진으로 (로딩 실패 시 이모지 타일이 그대로 보임) */}
+              {!!heroThumbnail && (
+                <Image
+                  source={{ uri: heroThumbnail }}
+                  style={styles.heroImage}
+                  resizeMode="cover"
+                  accessibilityIgnoresInvertColors
+                />
+              )}
+              {!!heroThumbnail && <View style={styles.heroScrim} pointerEvents="none" />}
+              <View style={[styles.heroOverlay, heroThumbnail && styles.heroOverlayOnPhoto]}>
                 <Text style={styles.heroName} numberOfLines={1}>
                   {heroCandidate ? heroCandidate.name : '저장할 곳을 골라 주세요'}
                 </Text>
@@ -1000,6 +1024,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#F3E6D8',
   },
+  heroImage: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  /** 사진 아래쪽을 살짝 어둡게 — 흰 라벨 칩이 어떤 사진 위에서도 도드라지게 */
+  heroScrim: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 62,
+    backgroundColor: 'rgba(20, 16, 12, 0.28)',
+  },
   heroEmoji: {
     fontSize: 52,
   },
@@ -1012,6 +1048,9 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 10,
     maxWidth: '78%',
+  },
+  heroOverlayOnPhoto: {
+    ...cardShadow,
   },
   heroName: {
     fontSize: 13,

@@ -1206,6 +1206,375 @@ const dupResult = await extractPlaces('https://www.instagram.com/reel/C9multiTes
 check('multi: 공유 캡션 중복이어도 mode=multi', dupResult.mode === 'multi', String(dupResult.mode));
 check('multi: 공유 캡션 중복이어도 3곳', (dupResult.candidates || []).length === 3, JSON.stringify((dupResult.candidates || []).map((c) => c.name)));
 
+
+// 13-5. v2.8 — **긴 줄글 설명글은 여러 가게 목록이 아님**
+//   실제 배포 API 응답 그대로: `/api/youtube?id=2QZPPEle9IY` (제목·설명글·댓글)
+//   예전에는 "짧고 이름처럼 보이는 줄 3개 이상" 규칙 때문에 이 설명글의 줄글 문장들이
+//   '설명글에서 찾은 가게 7곳'(다녀·압권·식사·있어서·가능했고·식당에·반찬들이)으로 잘못 갈라졌습니다.
+const KEUM_REAL_TITLE = "한달 전 예약 필수인 제주도 정말 특별한 횟집. 35만원짜리 자연산 돌돔은 무슨맛일까..? #제주도 #제주도맛집";
+const KEUM_REAL_DESC = `자연산 돌돔을 먹을 수 있는 정말 특별한 횟집?
+
+제주시 연동 “엄마손횟집”
+
+결론적으로 말씀 드리면 비쌉니다..
+그렇지만 너무 특별한 경험할 수 있고
+가격만 생각 안하면 너무 만족스럽게 다녀 온
+엄마손횟집!!
+
+몇년 전 부터 제주도 여행시 꼭 가야지 했던
+먹킷리스트 1순위!
+
+머리와 몸통, 꼬리까지 도마에 통채로 나오는
+특이한 비주얼이 압권
+
+19시 맞춰오래서 딱 맞춰 갔더니 
+이미 많은 분들이 식사 중…
+
+저는 방문 예정일 3일 전에 전화 문의 드렸고
+예약이 다 찼다고 해서 예약 대기를 걸었는데
+너무나 운이 좋게 당일 취소한 팀이 있어서
+운 좋게 식사 ㅋㅋㅋ
+
+제가 방문한 날은 자연산 돌돔/강담동(각각 35만원), 
+벤자리(26만원) 주문이 가능했고
+이곳의 시그니쳐 돌돔으로 선택!
+(예약금 10만원 있어요~)
+
+가정집 같은 식당에 도착하면 
+손질 된 돌돔이 금방 나오고
+처음엔 몇가지 없던 반찬들이
+줄줄이 코스식으로 계속 나옴ㅋㅋ
+
+반찬들이 전라도식이라 다 너무 맛있었고
+돌돔은 꼬독한 껍질 식감이 뭔가 비싼맛(?)이라
+넘 새로웠음!! 처음 먹어 보는 맛에 와…몇번 했는지 ㅋ
+
+내장은 순대 내장 비슷했고
+아귀간(안키모)와 비슷했던 돌돔 간도 존맛!
+
+서비스로 내어주신 벤자리가 완전 내 스타일 이었는데
+숙성회 같으면서 감칠맛이 끝내줌ㅋㅋ
+
+혹시 돌돔과 벤자리 중 고민이라면
+살며시 벤자리 추천…
+
+마무리로 지리탕 나오고
+쌀뜬물 + 돌돔 푹 우려서 입술에 쫙쫙 달라붙는
+국물은 거의 약에 가까움…
+시원 칼칼 진짜 너무 맛있고
+
+밥도 주시길래 양푼이, 참기름 요청해서
+남은 반찬과 비벼 먹으니 
+하~ 이것이 행복이지!!
+
+그리고 한번씩 남자 사장님의
+연주도 볼 수 있다는데
+이날은 안계셔서 볼 수 없었음ㅠ
+
+적극 추천은 못하겠지만 제주도에서
+특별한 경험 하고싶은 분들은
+예약 해보세요~
+
+✅제주시 연동 ”엄마손횟집“
+✅자연산 돌돔 350,000원
+✅19:00-21:30 (딱 1타임만 운영)
+✅한달 전 예약 필수 이지만 당일 취소한 팀 있으면 
+운 좋게 식사 가능! (준비 시간이 있으니 최소한 오전 중 연락 ㄱㄱ)
+전화는 네이버 검색하면 개인 번호가 있습니다.`;
+const KEUM_REAL_COMMENTS = `자연산 돌돔을 먹을 수 있는 정말 특별한 횟집? 제주시 연동 “엄마손횟집” 결론적으로 말씀 드리면 비쌉니다.. 그렇지만 너무 특별한 경험할 수 있고 가격만 생각 안하면 너무 만족스럽게 다녀 온 엄마손횟집!! 몇년 전 부터 제주도 여행시 꼭 가야지 했던 먹킷리스트 1순위! 머리와 몸통, 꼬리까지 도마에 통채로 나오는 특이한 비주얼이 압권 19시 맞춰오래서 딱 맞춰 갔더니 이미 많은 분들이 식사 중… 저는 방문 예정일 3일 전에 전화 문의 드렸고 예약이 다 찼다고 해서 예약 대기를 걸었는데 너무나 운이 좋게 당일 취소한 팀이 있어서 운
+엄청 맛있어 보여요~ 밑반찬은 해산물 위주로 나오면 더 좋겠네요~^.,^
+차라리 제주 동문 또는 올레시장 가서 돌돔 회 떠서 양념집 가는게 더 좋을 듯,,😂❤
+비싸고 그날 잡은 상황에 따라 랜덤임
+제주도 갈 뱅기값으로 근처 500미터 삼정횟집에 15만원짜리 방어가 유명한데 예약하고 가봐야겠습니다`;
+
+check(
+  'multi 회귀: 실제 설명글은 목록이 아님',
+  extractCandidatesFromText(KEUM_REAL_DESC).length === 0,
+  JSON.stringify(extractCandidatesFromText(KEUM_REAL_DESC).map((i) => i.name))
+);
+check(
+  'multi 회귀: 줄글 설명의 문장 줄은 목록 줄이 아님',
+  looksLikeListLine('가격만 생각 안하면 너무 만족스럽게 다녀 온') === false &&
+    looksLikeListLine('특이한 비주얼이 압권') === false &&
+    looksLikeListLine('이미 많은 분들이 식사 중…') === false &&
+    looksLikeListLine('벤자리(26만원) 주문이 가능했고') === false &&
+    looksLikeListLine('먹킷리스트 1순위!') === false &&
+    looksLikeListLine('예약 해보세요~') === false &&
+    looksLikeListLine('제주시 연동 “엄마손횟집”') === true &&
+    looksLikeListLine('성수동 베통') === true,
+  JSON.stringify(extractCandidatesFromText(KEUM_REAL_DESC).map((i) => i.name))
+);
+check(
+  'multi 회귀: 실제 설명글에서 상호·동네는 그대로',
+  extractSearchQueries(KEUM_REAL_TITLE + '\n' + KEUM_REAL_DESC).storeName === '엄마손횟집' &&
+    extractSearchQueries(KEUM_REAL_TITLE + '\n' + KEUM_REAL_DESC).area === '연동',
+  JSON.stringify(extractSearchQueries(KEUM_REAL_TITLE + '\n' + KEUM_REAL_DESC).queries.slice(0, 3))
+);
+check(
+  'multi 회귀: 설명글의 ✅ 정보 줄(가격·영업시간)은 목록으로 오인하지 않음',
+  extractCandidatesFromText('✅제주시 연동 ”엄마손횟집“\n✅자연산 돌돔 350,000원\n✅19:00-21:30 (딱 1타임만 운영)').length === 0,
+  JSON.stringify(extractCandidatesFromText('✅제주시 연동 ”엄마손횟집“\n✅자연산 돌돔 350,000원\n✅19:00-21:30 (딱 1타임만 운영)').map((i) => i.name))
+);
+check(
+  'multi: 불릿 두 줄도 목록 (v2.8)',
+  extractCandidatesFromText('• 성수동 베통\n• 연남동 뚜레쥬르').length === 2,
+  JSON.stringify(extractCandidatesFromText('• 성수동 베통\n• 연남동 뚜레쥬르').map((i) => i.name))
+);
+check(
+  'multi: "성수 맛집 3곳: 뇨끼바, 꿉당, 소문난성수감자탕" 은 3곳',
+  extractCandidatesFromText('성수 맛집 3곳: 뇨끼바, 꿉당, 소문난성수감자탕')
+    .map((i) => i.name)
+    .join(',') === '뇨끼바,꿉당,소문난성수감자탕',
+  JSON.stringify(extractCandidatesFromText('성수 맛집 3곳: 뇨끼바, 꿉당, 소문난성수감자탕').map((i) => i.name))
+);
+
+// 실제 메타데이터(제목·설명글·댓글)를 그대로 넣고 extractPlaces 를 돌립니다.
+// 배포 프록시(/api/youtube)와 같은 경로 — YouTube Data API 응답을 스텁으로 재현합니다.
+setKeys({ kakao: 'KAKAOKEY' });
+process.env.EXPO_PUBLIC_YOUTUBE_API_KEY = 'YTKEY';
+const DOC_KEUM = {
+  ...KAKAO_DOC,
+  id: 'keum1',
+  place_name: '엄마손횟집',
+  address_name: '제주 제주시 연동 123-4',
+  road_address_name: '제주 제주시 연동 123-4',
+  x: '126.4886',
+  y: '33.4891',
+  place_url: 'http://place.map.kakao.com/999',
+};
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: KEUM_REAL_TITLE, author_name: '맛집 채널' });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({
+      items: [
+        {
+          snippet: {
+            title: KEUM_REAL_TITLE,
+            description: KEUM_REAL_DESC,
+            channelId: 'UCWYPyxj_Efa07L-VqmKclvQ',
+            thumbnails: { high: { url: 'https://i.ytimg.com/vi/2QZPPEle9IY/hqdefault.jpg' } },
+          },
+        },
+      ],
+    });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) return jsonRes(KEUM_THREADS);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q.indexOf('엄마손') >= 0 ? [DOC_KEUM] : [] });
+  }
+  return jsonRes({ documents: [], items: [], places: [] });
+};
+const KEUM_THREADS = {
+  "items": [
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "자연산 돌돔을 먹을 수 있는 정말 특별한 횟집? 제주시 연동 “엄마손횟집” 결론적으로 말씀 드리면 비쌉니다.. 그렇지만 너무 특별한 경험할 수 있고 가격만 생각 안하면 너무 만족스럽게 다녀 온 엄마손횟집!! 몇년 전 부터 제주도 여행시 꼭 가야지 했던 먹킷리스트 1순위! 머리와 몸통, 꼬리까지 도마에 통채로 나오는 특이한 비주얼이 압권 19시 맞춰오래서 딱 맞춰 갔더니 이미 많은 분들이 식사 중… 저는 방문 예정일 3일 전에 전화 문의 드렸고 예약이 다 찼다고 해서 예약 대기를 걸었는데 너무나 운이 좋게 당일 취소한 팀이 있어서 운",
+            "authorChannelId": {
+              "value": "UCWYPyxj_Efa07L-VqmKclvQ"
+            },
+            "likeCount": 10
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "엄청 맛있어 보여요~ 밑반찬은 해산물 위주로 나오면 더 좋겠네요~^.,^",
+            "authorChannelId": {
+              "value": "UCviewer1"
+            },
+            "likeCount": 9
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "차라리 제주 동문 또는 올레시장 가서 돌돔 회 떠서 양념집 가는게 더 좋을 듯,,😂❤",
+            "authorChannelId": {
+              "value": "UCviewer2"
+            },
+            "likeCount": 8
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "비싸고 그날 잡은 상황에 따라 랜덤임",
+            "authorChannelId": {
+              "value": "UCviewer3"
+            },
+            "likeCount": 7
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "제주도 갈 뱅기값으로 근처 500미터 삼정횟집에 15만원짜리 방어가 유명한데 예약하고 가봐야겠습니다",
+            "authorChannelId": {
+              "value": "UCviewer4"
+            },
+            "likeCount": 6
+          }
+        }
+      }
+    }
+  ]
+};
+const keumResult = await extractPlaces('https://youtube.com/shorts/2QZPPEle9IY');
+check('multi 회귀: mode 가 multi 가 아님', keumResult.mode === 'single', String(keumResult.mode));
+check(
+  'multi 회귀: 후보는 엄마손횟집 1곳',
+  (keumResult.candidates || []).length === 1 && keumResult.candidates[0].name === '엄마손횟집',
+  JSON.stringify((keumResult.candidates || []).map((c) => c.name))
+);
+check(
+  'multi 회귀: 첫 검색어 = 연동 엄마손횟집',
+  keumResult.queryList[0] === '연동 엄마손횟집',
+  keumResult.queryList.join(' / ')
+);
+
+// 디오디아2.0 (WtB53sC3weY) 도 실제 메타데이터 그대로 '한 곳' 흐름
+const DIO_REAL_TITLE = "5만원대 강남 럭셔리 뷔페 #shorts #디오디아 #리뷰";
+const DIO_REAL_DESC = `clclalsgml@naver.com - 광고/문의🎖️`;
+const DIO_REAL_COMMENTS = `따봉을 날리는 와중에도 오물오물 꼭꼭 씹어 먹는게 졸귀시네용😊
+항상 솔직하게 말하셔서 좋다😊
+진짜... 아침부터 기분좋게 웃자나요
+일단 뷔페는 됐고, 난 알아요를 아신다는건.. 저.. 실례지만 연배가 어떻게 되십니까?;;; ㅋㅋㅋ ㄷㄷㄷ
+난~~ 알아요 하자마자 구독하고감니다,,, 쯔왕돈까스도 솔직 리뷰해주셔셔 지방러는 못가지만 가본 너낌이네유 🤗🤗`;
+const DIO_THREADS = {
+  "items": [
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "따봉을 날리는 와중에도 오물오물 꼭꼭 씹어 먹는게 졸귀시네용😊",
+            "authorChannelId": {
+              "value": "UCy84pu9zehcKYZ40jU595aA"
+            },
+            "likeCount": 10
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "항상 솔직하게 말하셔서 좋다😊",
+            "authorChannelId": {
+              "value": "UCviewer1"
+            },
+            "likeCount": 9
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "진짜... 아침부터 기분좋게 웃자나요",
+            "authorChannelId": {
+              "value": "UCviewer2"
+            },
+            "likeCount": 8
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "일단 뷔페는 됐고, 난 알아요를 아신다는건.. 저.. 실례지만 연배가 어떻게 되십니까?;;; ㅋㅋㅋ ㄷㄷㄷ",
+            "authorChannelId": {
+              "value": "UCviewer3"
+            },
+            "likeCount": 7
+          }
+        }
+      }
+    },
+    {
+      "snippet": {
+        "topLevelComment": {
+          "snippet": {
+            "textDisplay": "난~~ 알아요 하자마자 구독하고감니다,,, 쯔왕돈까스도 솔직 리뷰해주셔셔 지방러는 못가지만 가본 너낌이네유 🤗🤗",
+            "authorChannelId": {
+              "value": "UCviewer4"
+            },
+            "likeCount": 6
+          }
+        }
+      }
+    }
+  ]
+};
+check(
+  'multi 회귀: 디오디아 설명글·댓글은 목록이 아님',
+  extractCandidatesFromText(DIO_REAL_DESC + '\n' + DIO_REAL_COMMENTS).length === 0,
+  JSON.stringify(extractCandidatesFromText(DIO_REAL_DESC + '\n' + DIO_REAL_COMMENTS).map((i) => i.name))
+);
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title: DIO_REAL_TITLE, author_name: '디오디아' });
+  if (u.includes('/youtube/v3/videos')) {
+    return jsonRes({
+      items: [
+        {
+          snippet: {
+            title: DIO_REAL_TITLE,
+            description: DIO_REAL_DESC,
+            channelId: 'UCy84pu9zehcKYZ40jU595aA',
+            thumbnails: { high: { url: 'https://i.ytimg.com/vi/WtB53sC3weY/hqdefault.jpg' } },
+          },
+        },
+      ],
+    });
+  }
+  if (u.includes('/youtube/v3/commentThreads')) return jsonRes(DIO_THREADS);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({
+      documents:
+        q.indexOf('디오디아') >= 0
+          ? [{ ...KAKAO_DOC, id: 'dio1', place_name: '디오디아2.0', address_name: '서울 서초구 양재동 1', x: '127.0400', y: '37.4700' }]
+          : [],
+    });
+  }
+  return jsonRes({ documents: [], items: [], places: [] });
+};
+const dioResult = await extractPlaces('https://www.youtube.com/shorts/WtB53sC3weY');
+check('multi 회귀: 디오디아 mode=single', dioResult.mode === 'single', String(dioResult.mode));
+check(
+  'multi 회귀: 디오디아 후보 1곳',
+  (dioResult.candidates || []).length === 1 && String(dioResult.candidates[0].name).indexOf('디오디아') >= 0,
+  JSON.stringify((dioResult.candidates || []).map((c) => c.name))
+);
+check(
+  'multi 회귀: 영상 썸네일이 결과에 남음(히어로 카드 배경용)',
+  String(keumResult.sourceThumbnail || '').indexOf('2QZPPEle9IY') >= 0,
+  String(keumResult.sourceThumbnail)
+);
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+
 // ═════════════════════════════════════════════════════════════
 // 14. v2.0 — 네이버 지도 링크 직행 + 상세 시트 정보(전화·주소)
 // ═════════════════════════════════════════════════════════════

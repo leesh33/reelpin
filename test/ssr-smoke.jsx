@@ -380,6 +380,25 @@ const v2Checks = [
   ['ProfileScreen: [내 지도 공유하기] 버튼', profileSource.indexOf('내 지도 공유하기') > 0 && profileSource.indexOf('buildShareUrl(pins)') > 0],
   ['App: 공유 링크(?share=) 읽어 배너로', appSource.indexOf('readShareFromLocation') > 0 && appSource.indexOf('handleAddSharedPins') > 0],
   ['App: 일괄 저장 시 이름+좌표 중복 제거', appSource.indexOf('splitNewPins') > 0],
+  // v2.8 — 추출 결과 히어로 카드: 영상 썸네일을 배경 사진으로, 없으면 분류 이모지 폴백
+  [
+    'PasteScreen: 히어로 카드 썸네일 배경(Image + cover)',
+    pasteSource.indexOf('heroThumbnail') > 0 &&
+      pasteSource.indexOf('source={{ uri: heroThumbnail }}') > 0 &&
+      pasteSource.indexOf('resizeMode="cover"') > 0,
+  ],
+  [
+    'PasteScreen: 썸네일 없으면 분류 이모지 타일 폴백',
+    pasteSource.indexOf('heroTile') > 0 && pasteSource.indexOf('EMOJI_BY_CATEGORY') > 0 && pasteSource.indexOf('heroImage') > 0,
+  ],
+  [
+    'PasteScreen: 사진 위 라벨 가독용 스크림',
+    pasteSource.indexOf('heroScrim') > 0 && pasteSource.indexOf('rgba(20, 16, 12, 0.28)') > 0,
+  ],
+  [
+    'PasteScreen: 추출 메타의 thumbnail 을 화면 상태로',
+    pasteSource.indexOf('thumbnail: result.sourceThumbnail') > 0,
+  ],
 ];
 
 for (const [label, ok] of v2Checks) {
@@ -578,8 +597,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.7.0', pkg.version === '2.7.0', pkg.version],
-  ['버전: app.json 2.7.0', expoConfig.version === '2.7.0', expoConfig.version],
+  ['버전: package.json 2.8.0', pkg.version === '2.8.0', pkg.version],
+  ['버전: app.json 2.8.0', expoConfig.version === '2.8.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
