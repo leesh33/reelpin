@@ -87,7 +87,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 - ✅ **카카오 로컬** — `/api/kakao-local` 프록시로 동작 (키는 브라우저에 없음).
 - ✅ **유튜브 쇼츠** — `/api/youtube` 가 제목·설명글·상위/업로더 댓글을 읽어 검색어를 만듭니다. 키가 없거나 프록시가 없으면 oEmbed 제목으로 폴백합니다.
 - ✅ **가게명으로 찾기·핀 저장** — 모두 그대로 (저장은 브라우저 localStorage/AsyncStorage).
-- ✅ **실제 지도(Leaflet)** — OpenStreetMap/CartoDB 타일을 쓰므로 **지도 키가 필요 없습니다.** 확대·축소·드래그, 핀 색 구분, 내 위치 파란 점 + 500m 원.
+- ✅ **실제 지도(Leaflet)** — **OpenStreetMap 표준 타일**(지도 키 필요 없음)로 확대·축소·드래그, 핀 색 구분, 내 위치 파란 점 + 500m 원. CartoDB Voyager 는 2026-11 부터 키 없는 타일에 워터마크가 찍혀 OSM 표준으로 바꿨습니다.
 - ✅ **내 위치·500m 알림** — 사파리가 위치를 허용하면 실제 거리와 500m 진입 알림. 알림창은 iOS 16.4+ **홈 화면에 추가한 웹 앱**에서 동작하고, 그 전에는 앱 안 배너로 알려줍니다.
 - ⚠️ **인스타 릴스 캡션** — 인스타는 로그인 월로 막혀 있어 웹·앱 모두 못 읽습니다. 공유할 때 복사되는 **문구+링크를 같이 붙여넣으면** 그 문구로 찾습니다.
 - ⚠️ **매장 정보 열기** — 웹에서는 각 사의 **웹 지도**(네이버지도·카카오맵)로 열립니다.
@@ -130,7 +130,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 상훈 님이 **진짜 지도에서 내 위치 기준 500m 안의 저장 맛집을 알려주는** 모습을 요청해 만든 버전입니다.
 
-1. **실제 인터랙티브 지도** — `src/components/RealMapView.web.js` 가 웹에서 **Leaflet + OpenStreetMap/CartoDB Voyager 타일**로 진짜 지도를 그립니다.
+1. **실제 인터랙티브 지도** — `src/components/RealMapView.web.js` 가 웹에서 **Leaflet + OpenStreetMap 표준 타일**로 진짜 지도를 그립니다(지도 키 없음, 출처 표기).
    **지도 키가 필요 없고**, 확대·축소·드래그가 됩니다. 핀은 카테고리별 색(카페 민트 / 디저트 주황 / 베이크리 살구 / 기본 코랄)이고 선택하면 커집니다.
    Leaflet 은 **`useEffect` 안에서만** 불러오므로, `npm test` 의 node SSR 렌더에서도 `window is not defined` 가 나지 않습니다.
    네이티브(Expo Go)는 `RealMapView.js` 가 v1.4 의 `MapCanvas` 를 그대로 그립니다 — 동작 변화 없음.

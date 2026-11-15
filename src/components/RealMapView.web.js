@@ -18,11 +18,12 @@ const LEAFLET_VERSION = '1.9.4';
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@' + LEAFLET_VERSION + '/dist/leaflet.css';
 const LEAFLET_JS = 'https://unpkg.com/leaflet@' + LEAFLET_VERSION + '/dist/leaflet.js';
 
-// 타일: CartoDB Voyager (OpenStreetMap 기반, 무료 · 키 없음)
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+// 타일: OpenStreetMap 표준 지도 (무료 · 키 없음)
+// · 2026-11 CartoDB Voyager 는 키 없는 타일에 'API KEY REQUIRED' 워터마크를 넣어 OSM 표준으로 바꿨습니다.
+// · OSM 타일 이용 정책: 출처 표기 필수 · 대량 수집 금지 (개인용 앱 수준 사용은 문제 없음)
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTRIBUTION =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> ' +
-  '&copy; <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">CARTO</a>';
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors';
 
 const SEOUL = { lat: 37.5665, lng: 126.978 };
 
@@ -111,12 +112,18 @@ export default function RealMapView({
   const leafletRef = useRef(null);
   const markersRef = useRef(new Map());
   const meRef = useRef({ dot: null, circle: null });
+  const didFitRef = useRef(false);
+  const myCoordsRef = useRef(myCoords);
   const onSelectRef = useRef(onSelect);
   const [status, setStatus] = useState('loading'); // loading | ready | error
 
   useEffect(() => {
     onSelectRef.current = onSelect;
   }, [onSelect]);
+
+  useEffect(() => {
+    myCoordsRef.current = myCoords;
+  }, [myCoords]);
 
   useEffect(() => {
     if (typeof onStatus === 'function') onStatus(status);
@@ -150,10 +157,9 @@ export default function RealMapView({
         });
 
         L.tileLayer(TILE_URL, {
-          subdomains: 'abcd',
-          maxZoom: 20,
+          maxZoom: 19,
           minZoom: 3,
-          detectRetina: true,
+          detectRetina: false,
           attribution: TILE_ATTRIBUTION,
         }).addTo(map);
 
@@ -232,7 +238,7 @@ export default function RealMapView({
       alive.add(pin.id);
       const isOn = pin.id === selectedId;
       const style = {
-        radius: isOn ? 11 : 7,
+        radius: isOn ? 12 : 8,
         color: '#FFFFFF',
         weight: isOn ? 3 : 2,
         fillColor: pinColor(pin, isOn),
@@ -254,6 +260,20 @@ export default function RealMapView({
       marker.bindTooltip(pin.name || '', { direction: 'top', offset: [0, -8], opacity: 0.95 });
       if (isOn && typeof marker.bringToFront === 'function') marker.bringToFront();
     });
+
+    // 첫 렌더에서 핀이 여러 개면 한눈에 보이게 범위를 맞춥니다 (내 위치가 이미 있으면 그대로).
+    if (!didFitRef.current) {
+      const points = (pins || [])
+        .map((pin) => normalizeCoords(pin))
+        .filter(Boolean)
+        .map((c) => [c.lat, c.lng]);
+      if (!normalizeCoords(myCoordsRef.current) && points.length >= 2) {
+        didFitRef.current = true;
+        try {
+          map.fitBounds(L.latLngBounds(points), { padding: [56, 56], maxZoom: 15 });
+        } catch (e) {}
+      }
+    }
 
     Array.from(markersRef.current.keys()).forEach((id) => {
       if (alive.has(id)) return;
