@@ -20,7 +20,7 @@ import { colors, radius, typography } from '../theme';
 
 /** 위치를 아직 모를 때의 기본 안내 문구 (상위 화면이 hintTitle 로 바꿀 수 있음) */
 export const NEEDS_LOCATION_TITLE = '내 위치를 켜면 가까운 맛집과 500m 알림이 보여요';
-export const NEEDS_LOCATION_SUB = '지금 있는 곳을 기준으로 실제 거리를 알려드려요';
+export const NEEDS_LOCATION_SUB = '지금 있는 곳 기준으로 알려드려요';
 export const NEEDS_LOCATION_ACTION = '내 위치';
 
 export default function GeofenceBanner({

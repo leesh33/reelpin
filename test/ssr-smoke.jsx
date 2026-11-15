@@ -134,7 +134,7 @@ const contentCases = [
   ['MapScreen: 공유받은 지도 배너 + 모두 추가', <MapScreen pins={[]} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} sharedPins={SHARED_PINS} onAddSharedPins={noop} onDismissShared={noop} />, ['공유받은 맛집 지도 (2곳)', '내 지도에 모두 추가', '지도에 미리보기로 띄웠어요']],
   ['MapScreen: 지도 공유 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['지도 공유']],
   // v2.1.3 — 위치를 아직 모를 때의 정직한 안내 배너 (가짜 '뚝섬' 문구 금지)
-  ['MapScreen: 위치 전 안내 배너 + [내 위치] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['내 위치를 켜면 가까운 맛집과 500m 알림이 보여요', '지금 있는 곳을 기준으로 실제 거리를 알려드려요', '내 위치']],
+  ['MapScreen: 위치 전 안내 배너 + [내 위치] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['내 위치를 켜면 가까운 맛집과 500m 알림이 보여요', '지금 있는 곳 기준으로 알려드려요', '내 위치']],
   ['PinDetailSheet: 전화 걸기(tel 링크)', <PinDetailSheet pin={{ ...SEARCH_PIN, phone: '0507-1375-1660' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['0507-1375-1660', '전화 걸기 0507-1375-1660', '전화']],
   ['PinDetailSheet: 주소 원탭 복사', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['서울특별시 성동구 연무장7가길 8', '주소 복사', '복사']],
   ['PinDetailSheet: naverPlaceId 있으면 상세 페이지 표기', <PinDetailSheet pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['네이버 플레이스 상세']],
