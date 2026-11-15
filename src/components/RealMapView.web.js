@@ -426,8 +426,8 @@ const styles = StyleSheet.create({
   },
   zoomCol: {
     position: 'absolute',
-    right: 12,
-    bottom: 14,
+    right: 68,
+    bottom: 12,
     borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,

@@ -286,7 +286,7 @@ export default function MapScreen({
         <View style={styles.chipWrap}>
           <FilterChips value={filter} onChange={setFilter} counts={counts} />
         </View>
-        {!myCoords && (
+        {!myCoords && !locationError && (
           <Text style={styles.locationHint} numberOfLines={1}>
             {'내 위치를 켜면 실제 거리와 반경 ' + NEARBY_RADIUS_M + 'm 알림이 켜져요'}
           </Text>
@@ -461,11 +461,16 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   locationHint: {
+    alignSelf: 'flex-start',
     marginTop: 6,
     marginHorizontal: 16,
-    color: '#93A2BC',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.78)',
+    color: '#D7E0EF',
     fontSize: 10.5,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   errorChip: {
     marginTop: 6,
