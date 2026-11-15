@@ -1,4 +1,6 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v2.3
+# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.3
+
+> **브랜드 표기** **릴스핀 · Reelspin** 으로 통일 (앱 로고·문서·패키지 설명). `reelpin.vercel.app`·`reelpin://`·`com.odol.reelpin`·`reelpin.*` 저장 키 같은 **기술 식별자는 그대로** 둡니다 (로그인·데이터 유지).
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · **Supabase(로그인·클라우드 동기화)** · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백

@@ -334,7 +334,7 @@ export default function PasteScreen({
           <View style={styles.brandPin}>
             <Ionicons name="location" size={16} color={colors.white} />
           </View>
-          <Text style={styles.brandText}>ReelPin</Text>
+          <Text style={styles.brandText}>Reelspin</Text>
           <View style={styles.brandBadge}>
             <Text style={styles.brandBadgeText}>저장</Text>
           </View>

@@ -38,7 +38,7 @@ import InAppPlaceModalWeb, {
 } from '../src/components/InAppPlaceModal.web';
 import fs from 'node:fs';
 import path from 'node:path';
-import { injectPwaHead, PWA_REQUIRED_MARKERS } from '../scripts/patch-web-html.mjs';
+import { injectPwaHead, PWA_REQUIRED_MARKERS, PWA_APP_TITLE } from '../scripts/patch-web-html.mjs';
 import { colors, mapControls } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
 import {
@@ -683,6 +683,42 @@ for (const [label, ok, extra] of v24Checks) {
   }
 }
 
+// ── v2.4.1: 브랜드 표기 통일 — 눈에 보이는 이름은 Reelspin · 릴스핀, 기술 식별자(reelpin 소문자)는 그대로 ──
+const brandSources = (() => {
+  const files = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(js|jsx)$/.test(entry.name)) files.push(full);
+    }
+  };
+  walk(path.join(process.cwd(), 'src'));
+  files.push(path.join(process.cwd(), 'App.js'));
+  return files;
+})();
+const brandOffenders = brandSources.filter((file) => /Reel[Pp]in/.test(fs.readFileSync(file, 'utf8')));
+const pasteBrandHtml = renderToString(
+  <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />
+);
+const brandChecks = [
+  ['브랜드: src·App.js 에 ReelPin/Reelpin 표기 0건', brandOffenders.length === 0, brandOffenders.map((f) => path.relative(process.cwd(), f)).join(' ')],
+  ['브랜드: 저장 화면 상단 로고 Reelspin', pasteBrandHtml.indexOf('Reelspin') > 0 && pasteBrandHtml.indexOf('ReelPin') < 0],
+  ['브랜드: 스플래시 로고 Reelspin', appSource.indexOf('splashTitle}>Reelspin<') > 0],
+  ['브랜드: 앱 이름(app.json)·PWA 이름은 릴스핀', expoConfig.name === '릴스핀' && manifest.short_name === '릴스핀' && PWA_APP_TITLE === '릴스핀', expoConfig.name + ' / ' + manifest.short_name],
+  ['브랜드: 기술 식별자는 그대로 (스킴·번들 ID·저장 키·배포 주소)',
+    expoConfig.scheme === 'reelpin' && expoConfig.ios.bundleIdentifier === 'com.odol.reelpin' &&
+      fs.readFileSync(path.join(process.cwd(), 'src/storage.js'), 'utf8').indexOf("'reelpin.pins.v1'") > 0 &&
+      fs.readFileSync(path.join(process.cwd(), 'src/utils/shareMap.js'), 'utf8').indexOf("'https://reelpin.vercel.app'") > 0],
+];
+for (const [label, ok, extra] of brandChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -701,6 +737,7 @@ const total =
   v24Checks.length +
   pwaChecks.length +
   assetChecks.length +
+  brandChecks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);
