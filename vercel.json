@@ -5,11 +5,11 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "functions": {
-    "api/*.js": {
-      "maxDuration": 10
-    },
     "api/gemini.js": {
       "maxDuration": 30
+    },
+    "api/*.js": {
+      "maxDuration": 10
     }
   },
   "rewrites": [

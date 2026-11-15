@@ -578,9 +578,16 @@ check('vercel.json: PWA 메타 주입 스크립트 존재', fs.existsSync(path.j
 check('vercel.json: 출력 폴더 dist', vercel.outputDirectory === 'dist', vercel.outputDirectory);
 check('vercel.json: api/*.js 함수 설정', Object.keys(vercel.functions || {}).indexOf('api/*.js') >= 0, JSON.stringify(Object.keys(vercel.functions || {})));
 check(
-  'vercel.json: /api/gemini 는 maxDuration 30초(영상 분석)',
-  (vercel.functions['api/gemini.js'] || {}).maxDuration === 30,
-  JSON.stringify(vercel.functions['api/gemini.js'])
+  'vercel.json: /api/gemini 만 maxDuration 30초 · 나머지는 10초',
+  (vercel.functions['api/gemini.js'] || {}).maxDuration === 30 && (vercel.functions['api/*.js'] || {}).maxDuration === 10,
+  JSON.stringify(vercel.functions)
+);
+// Vercel 은 파일마다 '처음 매칭되는 키' 하나만 씁니다. 와이드 패턴이 먼저 오면 api/gemini.js 키는
+// 'unused_function' 빌드 오류가 됩니다 → 구체 패턴이 반드시 앞에 와야 합니다.
+check(
+  'vercel.json: 구체 패턴(api/gemini.js)이 와이드(api/*.js)보다 앞',
+  Object.keys(vercel.functions || {})[0] === 'api/gemini.js',
+  JSON.stringify(Object.keys(vercel.functions || {}))
 );
 const rewrite = (vercel.rewrites || [])[0] || {};
 check('vercel.json: SPA rewrite → index.html', rewrite.destination === '/index.html', JSON.stringify(rewrite));
