@@ -1,7 +1,8 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.5
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.6
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
-> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions · Leaflet(웹 지도, 무키)
+> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v1.6 (2026-11-15)** 웹 지도를 **네이버 지도**로 교체 — `ncpKeyId` 규격, 카테고리 색 핀·내 위치 파란 점·반경 500m 원·확대축소·`fitBounds`/`morph`, **인증 실패 시 안내 배너 + Leaflet 자동 폴백**
 > **v1.5 (2026-11-15)** **실제 지도(Leaflet·OpenStreetMap)** + **내 위치(GPS)** + **반경 500m 주변 맛집 알림** — 핀마다 `320m`·`2.4km` 실제 거리, 500m 안에 들어오면 배너·브라우저 알림
 > **v1.4 (2026-11-15)** **Vercel 무료 웹 배포** — PC 없이 아이폰·아이패드 사파리('홈 화면에 추가')에서 그대로 사용 · `api/*` **서버리스 프록시**로 웹에서도 네이버 지역검색·카카오 로컬·유튜브 설명글/댓글 동작 · **웹 번들에 API 키 0건**
 > **v1.3 (2026-11-15)** 유튜브 **설명글(description)·댓글(고정/상위)** 파싱 · 동네 판별(`연동`)·업종 단어·불용어 보강 · `연동 엄마손횟집` 회귀 케이스
@@ -69,10 +70,14 @@ PC를 켜 둘 필요도, Expo Go를 설치할 필요도 없습니다.
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 위 함수의 구 규격 폴백 | (선택) |
 | `YOUTUBE_API_KEY` | `/api/youtube` (설명글·댓글) | 제목·썸네일만(oEmbed) |
 | `GOOGLE_MAPS_API_KEY` | (아직 없음 — 구글 Places는 네이티브에서 직접 호출) | 구글 결과 없음 |
+| `EXPO_PUBLIC_NAVER_MAP_CLIENT_ID` | **웹 지도(네이버 지도)** — 빌드 시점 주입 | 기본값 `a1mxcz4n34` 사용 |
 
 > ⚠️ **`EXPO_PUBLIC_...` 이름으로는 넣지 마세요.** Expo는 그 이름의 값을 **빌드 시점에 JS 번들에 박아 넣습니다.**
 > 그러면 브라우저에서 소스 보기로 키가 보입니다. 서버 함수는 위 표의 **접두사 없는 이름**을 먼저 읽습니다.
 > (로컬 `.env` 는 그대로 `EXPO_PUBLIC_...` 을 써도 됩니다 — 앱 빌드용이고, 프록시는 그 이름도 읽습니다.)
+>
+> 예외 — **네이버 지도 클라이언트 ID(`a1mxcz4n34`)** 는 원래 웹 JS 스크립트에 노출되는 **공개 ID**입니다(도메인 제한용).
+> 그래서 `.env`/Vercel 어디에도 넣지 않으면 코드에 박힌 기본값을 씁니다. 지도가 뜨지 않으면 NCP 콘솔의 **Web 서비스 URL** 에 도메인을 등록했는지 먼저 확인하세요(아래 표).
 
 ### 4-3. 배포 확인 (2줄)
 
@@ -87,7 +92,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 - ✅ **카카오 로컬** — `/api/kakao-local` 프록시로 동작 (키는 브라우저에 없음).
 - ✅ **유튜브 쇼츠** — `/api/youtube` 가 제목·설명글·상위/업로더 댓글을 읽어 검색어를 만듭니다. 키가 없거나 프록시가 없으면 oEmbed 제목으로 폴백합니다.
 - ✅ **가게명으로 찾기·핀 저장** — 모두 그대로 (저장은 브라우저 localStorage/AsyncStorage).
-- ✅ **실제 지도(Leaflet)** — **OpenStreetMap 표준 타일**(지도 키 필요 없음)로 확대·축소·드래그, 핀 색 구분, 내 위치 파란 점 + 500m 원. CartoDB Voyager 는 2026-11 부터 키 없는 타일에 워터마크가 찍혀 OSM 표준으로 바꿨습니다.
+- ✅ **실제 지도(네이버 지도)** — NCP **Maps Dynamic Map v3**(`ncpKeyId`)로 확대·축소·드래그, 카테고리 색 핀, 내 위치 파란 점 + **반경 500m 원(`naver.maps.Circle`)**. 도메인 미등록 등으로 인증이 실패하면 **안내 배너 + Leaflet(OSM) 임시 지도**로 자동 폴백합니다(하얀 화면 없음).
 - ✅ **내 위치·500m 알림** — 사파리가 위치를 허용하면 실제 거리와 500m 진입 알림. 알림창은 iOS 16.4+ **홈 화면에 추가한 웹 앱**에서 동작하고, 그 전에는 앱 안 배너로 알려줍니다.
 - ⚠️ **인스타 릴스 캡션** — 인스타는 로그인 월로 막혀 있어 웹·앱 모두 못 읽습니다. 공유할 때 복사되는 **문구+링크를 같이 붙여넣으면** 그 문구로 찾습니다.
 - ⚠️ **매장 정보 열기** — 웹에서는 각 사의 **웹 지도**(네이버지도·카카오맵)로 열립니다.
@@ -112,7 +117,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
-npm test                           # 단위·통합 485건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 37) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 500건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 52) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -125,6 +130,28 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v1.6에서 달라진 점 (2026-11-15) — 웹 지도를 네이버 지도로
+
+상훈 님이 발급한 **NCP Maps Dynamic Map v3 키(`a1mxcz4n34`)** 로 웹 지도를 네이버 지도로 바꾼 버전입니다.
+
+1. **네이버 지도 JS v3 규격** — `https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=...`
+   (2025년 3월 NCP 콘솔 개편 이후 **신규 앱은 `ncpKeyId`**, 구 콘솔 앱만 `ncpClientId` 입니다. 이 앱은 신규 키라 `ncpKeyId` 를 씁니다.)
+   클라이언트 ID는 `EXPO_PUBLIC_NAVER_MAP_CLIENT_ID` → 없으면 `a1mxcz4n34`. (웹 스크립트에 그대로 노출되는 **공개 ID**이고, NCP 콘솔에 등록한 도메인에서만 동작합니다. Client Secret 은 쓰지 않습니다.)
+2. **지도 위 동작** — 저장 핀은 카테고리별 색 원형 마커(`naver.maps.Marker` + HTML 아이콘, 선택 시 확대·`zIndex` 위로), 클릭하면 그 핀의 상세 시트가 열립니다.
+   내 위치는 **파란 점** + **반경 500m 원**(`naver.maps.Circle`), 확대·축소는 지도 위 버튼, 핀을 고르면 `morph` 로 부드럽게 이동하고, 첫 화면에서는 핀이 한눈에 들어오도록 `fitBounds` 를 씁니다.
+3. **안전 폴백** — 스크립트를 못 받아오거나(`script.onerror`) **인증 실패**(`window.navermap_authFailure`)면
+   `네이버 콘솔에 도메인 등록 확인 중 · 임시 지도 표시` 배너와 함께 **기존 Leaflet(OSM) 지도로 자동 전환**합니다. 하얀 화면으로 멈추지 않습니다.
+   인증 실패는 세션 동안 기억해 두어 다시 시도하지 않고, 새로고침하면 다시 네이버 지도를 먼저 시도합니다.
+4. **SSR 안전** — 네이버/Leaflet 스크립트 모두 **`useEffect` 안에서만** 불러와 `npm test` 의 node 렌더(`renderToString`)에서도 `window is not defined` 가 나지 않습니다.
+5. **검증** — `npm test` **500건 통과**(네이버 스크립트 규격·폴백 문구·인증 훅·비밀키 미참조 검사 15건 추가) · `npx expo export --platform web` 에러 0건.
+
+### 네이버 지도가 뜨려면 (NCP 콘솔)
+
+1. `console.ncloud.com` → **Services → Maps → Application** → 앱 선택
+2. **Dynamic Map** 사용 체크 (꺼져 있으면 429 Quota Exceed)
+3. **Web 서비스 URL** 에 실제 도메인을 **호스트만** 등록: `https://reelpin.vercel.app`, 로컬 개발용 `http://localhost`
+4. 저장 후 새로고침 — 인증이 실패하면 지도 대신 폴백 배너가 뜨므로, 그 문구가 보이면 위 3번을 확인하면 됩니다.
 
 ## v1.5에서 달라진 점 (2026-11-15) — 실제 지도 + 내 위치 + 반경 500m 알림
 
@@ -233,13 +260,13 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 | 탭 | 파일 | 내용 |
 | --- | --- | --- |
-| 📍 지도 | `src/screens/MapScreen.js` | **실제 지도(웹 Leaflet)** + **내 위치·반경 500m 원**, [📍 내 위치] · [주변 500m] 버튼, 500m 진입 배너(실제 거리), 주변 목록(거리순) + 근처 알림 토글, 핀 상세 시트(출처 배지 + **내 위치에서 320m** + 원본 릴스 + 매장 정보 + 네이버지도·카카오맵) |
+| 📍 지도 | `src/screens/MapScreen.js` | **실제 지도(웹 네이버 지도)** + **내 위치·반경 500m 원**, [📍 내 위치] · [주변 500m] 버튼, 500m 진입 배너(실제 거리), 주변 목록(거리순) + 근처 알림 토글, 핀 상세 시트(출처 배지 + **내 위치에서 320m** + 원본 릴스 + 매장 정보 + 네이버지도·카카오맵) |
 | 🔗 저장 | `src/screens/PasteScreen.js` | **릴스 링크 ↔ 가게명으로 찾기** 모드 전환, 클립보드 자동 감지, 장소 추출·직접 검색, **출처 배지가 붙은 후보 라디오 선택**, [지도에 핀 꽂기] → AsyncStorage 저장 후 지도 탭 이동 |
 | 👤 내 정보 | `src/screens/ProfileScreen.js` | 저장 핀 카운터(N/10 무료), 지오펜스 반경 300m·500m·1km, 프로 플랜 카드(월 2,900원), 내 릴스 지도 링크 복사 |
 
 ### 핵심 파일
 
-- `src/components/RealMapView.web.js` — **웹 실제 지도**(Leaflet CDN 동적 로드, CartoDB Voyager 타일, 핀·내 위치 점·500m 원·flyTo·확대축소)
+- `src/components/RealMapView.web.js` — **웹 실제 지도** — 1순위 **네이버 지도**(`ncpKeyId`, 핀·내 위치 점·500m 원·`fitBounds`/`morph`/확대축소) + **Leaflet 폴백**(OSM 타일), 둘 다 `useEffect` 안에서만 로드
 - `src/components/RealMapView.js` — 네이티브 폴백(기존 `MapCanvas` 그대로)
 - `src/components/MapCanvas.js` — 좌표 → 화면 투영 지도 캔버스(드래그 팬, 핀, 이름표)
 - `src/services/location.js` — `distanceMeters`(Haversine) · `formatDistance` · `findNearbyPins` · `nearestPin` · `requestCurrentPosition` · `watchPosition` + 한국어 권한 안내
@@ -265,6 +292,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 cp .env.example .env     # 그리고 값을 채운 뒤 npx expo start -c 로 재시작
 
 EXPO_PUBLIC_KAKAO_REST_API_KEY=      # 카카오 로컬 — 국내 장소 1순위
+EXPO_PUBLIC_NAVER_MAP_CLIENT_ID=     # 네이버 지도 Dynamic Map v3 클라이언트 ID (없으면 a1mxcz4n34)
 EXPO_PUBLIC_NAVER_HUB_CLIENT_ID=     # 네이버 지역검색 (NAVER API HUB, 2026 최신 규격)
 EXPO_PUBLIC_NAVER_HUB_CLIENT_SECRET=
 EXPO_PUBLIC_NAVER_CLIENT_ID=         # 네이버 지역검색 (구 개발자센터 — 하위 호환, HUB 키가 있으면 안 씀)
@@ -327,7 +355,7 @@ eas submit --platform ios
 1. `react-native-safe-area-context` / `SafeAreaProvider` **미사용** — iOS 17/18 Expo Go 네이티브 모듈 충돌 회피. RN 기본 `SafeAreaView` + Android `StatusBar.currentHeight` 사용.
 2. `app.json`에 `extra.eas.projectId` **미포함** — `null` 매니페스트 크래시 원인 제거.
 3. `bundleIdentifier: com.odol.reelpin`.
-4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 37건 통과(웹 지도 `RealMapView.web.js` SSR 안전 검사 포함).
+4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 52건 통과(웹 지도 `RealMapView.web.js` SSR 안전 + 네이버 지도 스크립트 규격 검사 포함).
 5. `.env`는 `.gitignore`에 있어 커밋·ZIP에 포함되지 않습니다. 저장소·배포본에는 빈 값만 있는 `.env.example`만 들어갑니다.
 
 > v1.2는 v1.1에 **유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기**를 더한 버전입니다.

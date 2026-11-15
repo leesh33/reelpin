@@ -10,7 +10,15 @@ import GeofenceBanner from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
 import TabBar from '../src/components/TabBar';
 import MapCanvas from '../src/components/MapCanvas';
-import RealMapViewWeb from '../src/components/RealMapView.web';
+import RealMapViewWeb, {
+  NAVER_MAP_CLIENT_ID,
+  buildNaverScriptUrl,
+  resolveNaverClientId,
+  FALLBACK_NOTICE,
+  FALLBACK_NOTICE_NETWORK,
+} from '../src/components/RealMapView.web';
+import fs from 'node:fs';
+import path from 'node:path';
 import { SEED_PINS } from '../src/data/seedPins';
 
 const noop = () => {};
@@ -110,5 +118,50 @@ if (searchPinHtml.indexOf('instagram.com') >= 0) {
   console.log('OK   PinDetailSheet: 원본 링크 없는 핀은 링크 행 없음');
 }
 
+// ── v1.6: 네이버 지도(NAVER Maps Dynamic Map v3) 스크립트 규격 ──────
+const mapSource = fs.readFileSync(path.join(process.cwd(), 'src/components/RealMapView.web.js'), 'utf8');
+
+const mapChecks = [
+  ['네이버 지도: 신규 규격 ncpKeyId 사용', buildNaverScriptUrl('a1mxcz4n34') === 'https://oapi.map.naver.com/openapi/v3/maps.js?ncpKeyId=a1mxcz4n34', buildNaverScriptUrl('a1mxcz4n34')],
+  ['네이버 지도: 구 규격 ncpClientId 미사용', buildNaverScriptUrl(NAVER_MAP_CLIENT_ID).indexOf('ncpClientId') < 0],
+  ['네이버 지도: 기본 클라이언트 ID', NAVER_MAP_CLIENT_ID === 'a1mxcz4n34', NAVER_MAP_CLIENT_ID],
+  ['네이버 지도: 값 없으면 기본 ID 로 폴백', buildNaverScriptUrl('').indexOf('ncpKeyId=a1mxcz4n34') > 0],
+  ['폴백 배너: 도메인 등록 안내 문구', FALLBACK_NOTICE === '네이버 콘솔에 도메인 등록 확인 중 · 임시 지도 표시', FALLBACK_NOTICE],
+  ['폴백 배너: 네트워크 실패 문구', FALLBACK_NOTICE_NETWORK.indexOf('임시 지도 표시') > 0, FALLBACK_NOTICE_NETWORK],
+  ['인증 실패 훅: window.navermap_authFailure 처리', mapSource.indexOf('navermap_authFailure') > 0],
+  ['스크립트 로드 실패 처리(onerror)', mapSource.indexOf("script.onerror") > 0],
+  ['반경 500m 원: naver.maps.Circle', mapSource.indexOf('new nv.Circle') > 0],
+  ['fitBounds · morph · panTo 사용', mapSource.indexOf('fitBounds') > 0 && mapSource.indexOf('morph') > 0 && mapSource.indexOf('panTo') > 0],
+  ['내 위치 파란 점 마커', mapSource.indexOf('myDotIcon') > 0],
+  ['폴백 지도(Leaflet) 유지', mapSource.indexOf('leaflet.js') > 0 && mapSource.indexOf('tile.openstreetmap.org') > 0],
+  ['비밀키 참조 없음', !/CLIENT_SECRET|Client-Secret|SECRET/.test(mapSource)],
+];
+
+for (const [label, ok, extra] of mapChecks) {
+  if (ok) {
+    console.log('OK   ' + label);
+  } else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
+// EXPO_PUBLIC_NAVER_MAP_CLIENT_ID 가 있으면 그 값이 우선합니다.
+process.env.EXPO_PUBLIC_NAVER_MAP_CLIENT_ID = 'env-key-999';
+if (resolveNaverClientId() === 'env-key-999' && buildNaverScriptUrl(resolveNaverClientId()).indexOf('ncpKeyId=env-key-999') > 0) {
+  console.log('OK   네이버 지도: EXPO_PUBLIC_NAVER_MAP_CLIENT_ID 우선');
+} else {
+  failed += 1;
+  console.log('FAIL 네이버 지도: EXPO_PUBLIC_NAVER_MAP_CLIENT_ID 우선 -> ' + resolveNaverClientId());
+}
+delete process.env.EXPO_PUBLIC_NAVER_MAP_CLIENT_ID;
+if (resolveNaverClientId() === NAVER_MAP_CLIENT_ID) {
+  console.log('OK   네이버 지도: env 없으면 기본 ID 로 복귀');
+} else {
+  failed += 1;
+  console.log('FAIL 네이버 지도: env 없으면 기본 ID 로 복귀');
+}
+
+const total = cases.length + contentCases.length + 1 + mapChecks.length + 2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
-console.log('SMOKE_OK ' + (cases.length + contentCases.length + 1) + '/' + (cases.length + contentCases.length + 1));
+console.log('SMOKE_OK ' + total + '/' + total);
