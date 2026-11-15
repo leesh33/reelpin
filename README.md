@@ -1,7 +1,8 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.4
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.5
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
-> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions
+> **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions · Leaflet(웹 지도, 무키)
+> **v1.5 (2026-11-15)** **실제 지도(Leaflet·OpenStreetMap)** + **내 위치(GPS)** + **반경 500m 주변 맛집 알림** — 핀마다 `320m`·`2.4km` 실제 거리, 500m 안에 들어오면 배너·브라우저 알림
 > **v1.4 (2026-11-15)** **Vercel 무료 웹 배포** — PC 없이 아이폰·아이패드 사파리('홈 화면에 추가')에서 그대로 사용 · `api/*` **서버리스 프록시**로 웹에서도 네이버 지역검색·카카오 로컬·유튜브 설명글/댓글 동작 · **웹 번들에 API 키 0건**
 > **v1.3 (2026-11-15)** 유튜브 **설명글(description)·댓글(고정/상위)** 파싱 · 동네 판별(`연동`)·업종 단어·불용어 보강 · `연동 엄마손횟집` 회귀 케이스
 > v1.2 유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기
@@ -85,7 +86,9 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 - ✅ **네이버 지역검색** — 예전에는 CORS로 웹에서 늘 막혔지만, 이제 `/api/naver-local` 프록시가 서버 키로 호출합니다.
 - ✅ **카카오 로컬** — `/api/kakao-local` 프록시로 동작 (키는 브라우저에 없음).
 - ✅ **유튜브 쇼츠** — `/api/youtube` 가 제목·설명글·상위/업로더 댓글을 읽어 검색어를 만듭니다. 키가 없거나 프록시가 없으면 oEmbed 제목으로 폴백합니다.
-- ✅ **가게명으로 찾기·지도·핀 저장** — 모두 그대로 (저장은 브라우저 localStorage/AsyncStorage).
+- ✅ **가게명으로 찾기·핀 저장** — 모두 그대로 (저장은 브라우저 localStorage/AsyncStorage).
+- ✅ **실제 지도(Leaflet)** — OpenStreetMap/CartoDB 타일을 쓰므로 **지도 키가 필요 없습니다.** 확대·축소·드래그, 핀 색 구분, 내 위치 파란 점 + 500m 원.
+- ✅ **내 위치·500m 알림** — 사파리가 위치를 허용하면 실제 거리와 500m 진입 알림. 알림창은 iOS 16.4+ **홈 화면에 추가한 웹 앱**에서 동작하고, 그 전에는 앱 안 배너로 알려줍니다.
 - ⚠️ **인스타 릴스 캡션** — 인스타는 로그인 월로 막혀 있어 웹·앱 모두 못 읽습니다. 공유할 때 복사되는 **문구+링크를 같이 붙여넣으면** 그 문구로 찾습니다.
 - ⚠️ **매장 정보 열기** — 웹에서는 각 사의 **웹 지도**(네이버지도·카카오맵)로 열립니다.
 - ⚠️ **로컬 개발(`npx expo start --web`)** — 개발 서버에는 `/api` 함수가 없어 네이버는 건너뜁니다. 프록시까지 로컬에서 시험하려면 `npx vercel dev` 를 쓰세요.
@@ -109,10 +112,11 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
-npm test                           # 단위·통합 400건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 65 + 화면 렌더 스모크 28) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 485건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 37) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
+npm run test:location              # 거리 계산·반경 500m·위치 권한 안내·브라우저 알림
 npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+설명글(+댓글, 키 있을 때) → 카카오+네이버 HUB 실검색 (.env 키 필요)
 ```
 
@@ -121,6 +125,25 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v1.5에서 달라진 점 (2026-11-15) — 실제 지도 + 내 위치 + 반경 500m 알림
+
+상훈 님이 **진짜 지도에서 내 위치 기준 500m 안의 저장 맛집을 알려주는** 모습을 요청해 만든 버전입니다.
+
+1. **실제 인터랙티브 지도** — `src/components/RealMapView.web.js` 가 웹에서 **Leaflet + OpenStreetMap/CartoDB Voyager 타일**로 진짜 지도를 그립니다.
+   **지도 키가 필요 없고**, 확대·축소·드래그가 됩니다. 핀은 카테고리별 색(카페 민트 / 디저트 주황 / 베이크리 살구 / 기본 코랄)이고 선택하면 커집니다.
+   Leaflet 은 **`useEffect` 안에서만** 불러오므로, `npm test` 의 node SSR 렌더에서도 `window is not defined` 가 나지 않습니다.
+   네이티브(Expo Go)는 `RealMapView.js` 가 v1.4 의 `MapCanvas` 를 그대로 그립니다 — 동작 변화 없음.
+2. **내 위치(GPS)** — `src/services/location.js` 의 `requestCurrentPosition()` / `watchPosition()`.
+   권한 거부·미지원·타임아웃·https 아님을 모두 **한국어 안내 문구**로 돌려줍니다.
+   사파리에서 위치를 허용하면 지도에 **파란 점 + 반경 500m 원**이 뜨고, [📍 내 위치] 버튼으로 부드럽게 이동합니다.
+3. **실제 거리 표시** — `distanceMeters()`(Haversine) · `formatDistance()`(`320m`, `1.4km`) · `findNearbyPins()`.
+   핀 상세 시트와 [주변 500m] 목록에 **내 위치에서 320m** 처럼 실제 거리가 붙습니다.
+4. **500m 진입 배너** — 반경 500m 안에 저장한 곳이 있으면 상단 배너가 `반경 500m 앞, 저장한 맛집이 있어요 — 가게명 · 320m` 로 바뀌고, 탭하면 그 핀의 상세 시트가 열립니다.
+   500m 안에 없으면 `가장 가까운 저장 장소: 가게명 (2.4km)` 를 보여 줍니다. 위치를 아직 안 켰을 때는 기존 시뮬레이션 배너가 그대로 나옵니다.
+5. **브라우저 알림** — [주변 500m] 패널의 [🔔 근처 알림 켜기] 를 누르면 `Notification` 권한을 요청하고,
+   반경 500m 에 새로 들어온 핀이 생기는 순간 1회씩 알립니다(같은 핀은 두 번 알리지 않음). 권한이 없으면 앱 안 배너로만 알려줍니다.
+6. **검증** — `npm test` **485건 통과** · `npx expo export --platform web` 에러 0건 · 웹 번들에 Leaflet CDN 로더 포함(`RealMapView.web.js` 선택 확인).
 
 ## v1.4에서 달라진 점 (2026-11-15) — Vercel 웹 배포 + 서버리스 프록시
 
@@ -210,13 +233,17 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 | 탭 | 파일 | 내용 |
 | --- | --- | --- |
-| 📍 지도 | `src/screens/MapScreen.js` | 딥 네이비 핀 지도(성수·연남·망원·검단 샘플 4핀), 카테고리 필터(전체/맛집/카페/가볼곳), 지오펜스 알림 배너, 핀 상세 시트(출처 배지 + 원본 릴스 + **매장 정보 보기** + 네이버지도·카카오맵 딥링크) |
+| 📍 지도 | `src/screens/MapScreen.js` | **실제 지도(웹 Leaflet)** + **내 위치·반경 500m 원**, [📍 내 위치] · [주변 500m] 버튼, 500m 진입 배너(실제 거리), 주변 목록(거리순) + 근처 알림 토글, 핀 상세 시트(출처 배지 + **내 위치에서 320m** + 원본 릴스 + 매장 정보 + 네이버지도·카카오맵) |
 | 🔗 저장 | `src/screens/PasteScreen.js` | **릴스 링크 ↔ 가게명으로 찾기** 모드 전환, 클립보드 자동 감지, 장소 추출·직접 검색, **출처 배지가 붙은 후보 라디오 선택**, [지도에 핀 꽂기] → AsyncStorage 저장 후 지도 탭 이동 |
 | 👤 내 정보 | `src/screens/ProfileScreen.js` | 저장 핀 카운터(N/10 무료), 지오펜스 반경 300m·500m·1km, 프로 플랜 카드(월 2,900원), 내 릴스 지도 링크 복사 |
 
 ### 핵심 파일
 
+- `src/components/RealMapView.web.js` — **웹 실제 지도**(Leaflet CDN 동적 로드, CartoDB Voyager 타일, 핀·내 위치 점·500m 원·flyTo·확대축소)
+- `src/components/RealMapView.js` — 네이티브 폴백(기존 `MapCanvas` 그대로)
 - `src/components/MapCanvas.js` — 좌표 → 화면 투영 지도 캔버스(드래그 팬, 핀, 이름표)
+- `src/services/location.js` — `distanceMeters`(Haversine) · `formatDistance` · `findNearbyPins` · `nearestPin` · `requestCurrentPosition` · `watchPosition` + 한국어 권한 안내
+- `src/services/notifications.js` — 브라우저 알림 권한·500m 진입 알림(`firstNewNearby` 로 중복 방지, 미지원이면 조용히 false)
 - `src/components/ProviderBadge.js` — 카카오·네이버·구글 출처 배지 (`providerIds()`로 후보의 providers를 정리)
 - `src/components/ExtractedTitleNote.js` — 결과 상단 `읽어온 제목: "..."` + 인스타 안내·[가게명으로 찾기] 원탭 버튼
 - `src/services/extractor.js` — URL 파싱 + **어댑터 구조**(**유튜브 무인증 oEmbed + 설명글(description) 파싱** + Data API 설명 보강 / 인스타 공유 캡션·OG / **카카오 로컬·네이버 지역검색·구글 Places 3사 지도 체인**) + `splitSharedText()` · `fetchPageMeta()` · `parseYouTubePageMeta()` · `extractSearchQueries()` + `searchPlacesDirect()`(가게명 직접 검색) + **웹 프록시 경로(`isWebPlatform()` · `proxyPathOf()`)** + API 키가 없어도 동작하는 **오프라인 스마트 추출기**
@@ -300,7 +327,7 @@ eas submit --platform ios
 1. `react-native-safe-area-context` / `SafeAreaProvider` **미사용** — iOS 17/18 Expo Go 네이티브 모듈 충돌 회피. RN 기본 `SafeAreaView` + Android `StatusBar.currentHeight` 사용.
 2. `app.json`에 `extra.eas.projectId` **미포함** — `null` 매니페스트 크래시 원인 제거.
 3. `bundleIdentifier: com.odol.reelpin`.
-4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 22건 통과.
+4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 37건 통과(웹 지도 `RealMapView.web.js` SSR 안전 검사 포함).
 5. `.env`는 `.gitignore`에 있어 커밋·ZIP에 포함되지 않습니다. 저장소·배포본에는 빈 값만 있는 `.env.example`만 들어갑니다.
 
 > v1.2는 v1.1에 **유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기**를 더한 버전입니다.

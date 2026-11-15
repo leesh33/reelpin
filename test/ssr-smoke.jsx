@@ -10,6 +10,7 @@ import GeofenceBanner from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
 import TabBar from '../src/components/TabBar';
 import MapCanvas from '../src/components/MapCanvas';
+import RealMapViewWeb from '../src/components/RealMapView.web';
 import { SEED_PINS } from '../src/data/seedPins';
 
 const noop = () => {};
@@ -52,6 +53,12 @@ const cases = [
   ['FilterChips', <FilterChips value="전체" onChange={noop} counts={{ 전체: 4 }} />],
   ['TabBar', <TabBar active="map" onChange={noop} />],
   ['MapCanvas', <MapCanvas pins={SEED_PINS} selectedId={SEED_PINS[0].id} onSelect={noop} radius={300} />],
+  // v1.5 — Leaflet 지도(웹)가 node 렌더에서 window/document 를 건드리지 않는지
+  ['RealMapView.web(SSR 안전)', <RealMapViewWeb pins={SEED_PINS} selectedId={SEED_PINS[0].id} onSelect={noop} myCoords={{ lat: 37.5824, lng: 126.7144 }} radiusMeters={500} />],
+  ['RealMapView.web(핀 없음)', <RealMapViewWeb pins={[]} selectedId={null} onSelect={noop} />],
+  ['PinDetailSheet(내 위치 거리)', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} distanceMeters={320} onClose={noop} onDelete={noop} onToast={noop} />],
+  ['GeofenceBanner(반경 500m 실시간)', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name + ' · 320m'} badge="지금" />],
+  ['GeofenceBanner(가장 가까운 곳)', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />],
 ];
 
 let failed = 0;
@@ -76,6 +83,10 @@ const contentCases = [
   ['PasteScreen: 혼합 붙여넣기 안내', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['문구를 통째로 붙여넣어도 돼요', '유튜브는 제목을']],
   ['ExtractedTitleNote: 읽어온 제목 표기', <ExtractedTitleNote title="성수동 소금빵 맛집 베통" />, ['읽어온 제목:', '성수동 소금빵 맛집 베통']],
   ['ExtractedTitleNote: 인스타 안내 + 원탭 버튼', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요" onSearchByName={noop} />, ['인스타는 보안상 제목을 못 읽어와요', '가게명으로 찾기']],
+  ['MapScreen: 내 위치·주변 500m 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['주변 500m', '내 위치를 켜면 실제 거리']],
+  ['PinDetailSheet: 내 위치에서의 실제 거리', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} distanceMeters={321.4} onClose={noop} onDelete={noop} onToast={noop} />, ['내 위치에서 321m']],
+  ['GeofenceBanner: 500m 실시간 배너 문구', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name + ' · 320m'} />, ['반경 500m 앞, 저장한 맛집이 있어요', '320m']],
+  ['GeofenceBanner: 반경 밖 가장 가까운 곳', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />, ['가장 가까운 저장 장소', '2.4km']],
 ];
 
 for (const [label, element, needles] of contentCases) {

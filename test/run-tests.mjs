@@ -4,8 +4,9 @@
  * 소스(src)는 ESM + react-native import 를 쓰기 때문에 node 로 바로 돌릴 수 없습니다.
  * esbuild 로 react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 실행합니다.
  *
- *   npm test            … 추출기·딥링크 테스트 + 화면 렌더 스모크 테스트
+ *   npm test            … 추출기·딥링크 + 프록시·API + 위치/거리 + 화면 렌더 스모크 테스트
  *   npm run test:extract  … 추출기 테스트만
+ *   npm run test:location … 위치·거리·반경 500m 테스트만
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -75,6 +76,16 @@ if (!only || only === 'api') {
     name: '서버리스 API 핸들러 테스트',
     entry: 'api-test.mjs',
     out: 'api-test.bundle.mjs',
+    format: 'esm',
+  });
+}
+
+if (!only || only === 'location') {
+  // v1.5 — 거리 계산(Haversine) · 반경 500m · 내 위치(GPS) · 브라우저 알림
+  failed += await runSuite({
+    name: '위치·거리·반경 알림 테스트',
+    entry: 'location-test.mjs',
+    out: 'location-test.bundle.mjs',
     format: 'esm',
   });
 }

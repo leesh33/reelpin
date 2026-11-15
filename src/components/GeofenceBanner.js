@@ -4,10 +4,21 @@ import { Ionicons } from '@expo/vector-icons';
 import { cardShadow, colors, radius, typography } from '../theme';
 
 /**
- * 지오펜스 알림 시뮬레이션 배너
- * 반경 안에 들어왔을 때 뜨는 푸시의 앱 내 미리보기입니다. 탭하면 해당 핀으로 포커스.
+ * 지오펜스 알림 배너
+ * · 기본(시뮬레이션): "반경 300m 앞, 저장한 맛집이 있어요" + 가게명·대표메뉴
+ * · v1.5 실제 위치: title/sub 를 넘겨 "반경 500m 앞 …" + "가게명 · 320m" 로 표시
+ * 탭하면 해당 핀으로 포커스(상세 시트) — 상위 화면이 onPress 로 처리합니다.
  */
-export default function GeofenceBanner({ pin, radiusMeters, onPress, empty }) {
+export default function GeofenceBanner({
+  pin,
+  radiusMeters,
+  onPress,
+  empty,
+  title,
+  sub,
+  badge,
+  tone,
+}) {
   const radiusLabel = radiusMeters >= 1000 ? '1km' : radiusMeters + 'm';
 
   if (empty) {
@@ -27,21 +38,34 @@ export default function GeofenceBanner({ pin, radiusMeters, onPress, empty }) {
     );
   }
 
+  const mainTitle = title || '반경 ' + radiusLabel + ' 앞, 저장한 맛집이 있어요';
+  const mainSub = sub !== undefined
+    ? sub
+    : pin
+    ? pin.name + (pin.menuTags && pin.menuTags[0] ? ' · ' + pin.menuTags[0] : '')
+    : '';
+  const badgeText = badge || '지금';
+
   return (
-    <Pressable style={styles.wrap} onPress={onPress} accessibilityRole="button" accessibilityLabel="근처 저장 장소 알림">
-      <View style={styles.iconWrap}>
-        <Ionicons name="location" size={22} color={colors.white} />
+    <Pressable
+      style={styles.wrap}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={mainTitle + (mainSub ? ', ' + mainSub : '')}
+    >
+      <View style={[styles.iconWrap, tone === 'muted' && styles.iconMuted]}>
+        <Ionicons name={tone === 'muted' ? 'navigate-outline' : 'location'} size={22} color={colors.white} />
       </View>
       <View style={styles.textWrap}>
         <Text style={styles.title} numberOfLines={1}>
-          반경 {radiusLabel} 앞, 저장한 맛집이 있어요
+          {mainTitle}
         </Text>
         <Text style={styles.sub} numberOfLines={1}>
-          {pin ? pin.name + (pin.menuTags && pin.menuTags[0] ? ' · ' + pin.menuTags[0] : '') : ''}
+          {mainSub}
         </Text>
       </View>
-      <View style={styles.nowChip}>
-        <Text style={styles.nowText}>지금</Text>
+      <View style={[styles.nowChip, tone === 'muted' && styles.nowChipMuted]}>
+        <Text style={[styles.nowText, tone === 'muted' && styles.nowTextMuted]}>{badgeText}</Text>
       </View>
     </Pressable>
   );
@@ -69,6 +93,9 @@ const styles = StyleSheet.create({
   iconEmpty: {
     backgroundColor: colors.text,
   },
+  iconMuted: {
+    backgroundColor: '#3E4A63',
+  },
   textWrap: {
     flex: 1,
   },
@@ -87,9 +114,15 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     backgroundColor: colors.lineSoft,
   },
+  nowChipMuted: {
+    backgroundColor: '#E7E9EF',
+  },
   nowText: {
     ...typography.tiny,
     color: colors.textSub,
     fontSize: 10,
+  },
+  nowTextMuted: {
+    color: colors.textMuted,
   },
 });

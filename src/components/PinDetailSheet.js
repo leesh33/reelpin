@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
 import { openMap, openPlace, openSource } from '../utils/links';
+import { formatDistance } from '../services/location';
 import ProviderBadges from './ProviderBadge';
 
 const PLATFORM_LABEL = {
@@ -14,9 +15,11 @@ const PLATFORM_LABEL = {
   unknown: '원본 링크',
 };
 
-export default function PinDetailSheet({ pin, radiusMeters, onClose, onDelete, onToast }) {
+export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onClose, onDelete, onToast }) {
   if (!pin) return null;
   const radiusLabel = radiusMeters >= 1000 ? '1km' : radiusMeters + 'm';
+  const hasDistance = distanceMeters !== null && distanceMeters !== undefined && Number.isFinite(distanceMeters) && distanceMeters >= 0;
+  const distanceLabel = hasDistance ? formatDistance(distanceMeters) : '';
   const platform = PLATFORM_LABEL[pin.platform] || PLATFORM_LABEL.unknown;
 
   const handleMap = async (provider) => {
@@ -63,6 +66,12 @@ export default function PinDetailSheet({ pin, radiusMeters, onClose, onDelete, o
               <Ionicons name="navigate" size={11} color={colors.textSub} />
               <Text style={styles.chipGrayText}>{radiusLabel}</Text>
             </View>
+            {hasDistance && !!distanceLabel && (
+              <View style={styles.chipLive}>
+                <Ionicons name="locate" size={11} color={colors.coralDark} />
+                <Text style={styles.chipLiveText}>{'내 위치에서 ' + distanceLabel}</Text>
+              </View>
+            )}
           </View>
         </View>
         <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityLabel="상세 닫기">
@@ -220,6 +229,20 @@ const styles = StyleSheet.create({
     color: colors.textSub,
     fontSize: 11,
     fontWeight: '700',
+  },
+  chipLive: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.coralSoft,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  chipLiveText: {
+    color: colors.coralDark,
+    fontSize: 11,
+    fontWeight: '800',
   },
   closeBtn: {
     width: 30,
