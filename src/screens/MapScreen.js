@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import RealMapView from '../components/RealMapView';
@@ -11,9 +11,13 @@ import {
   distanceMap,
   findNearbyPins,
   formatDistance,
+  geolocationPermissionState,
   nearestPin,
+  readLocationGrantedFlag,
   requestCurrentPosition,
+  shouldAutoLocate,
   watchPosition,
+  writeLocationGrantedFlag,
 } from '../services/location';
 import {
   firstNewNearby,
@@ -52,6 +56,7 @@ export default function MapScreen({
   const notifiedRef = useRef(new Set());
   const pinsRef = useRef(pins);
   const toastRef = useRef(onToast);
+  const autoLocateRef = useRef(false);
 
   useEffect(() => {
     pinsRef.current = pins;
@@ -115,11 +120,15 @@ export default function MapScreen({
   const locate = useCallback(
     async (options = {}) => {
       const announce = options.announce !== false;
+      // silent — 첫 진입 자동 복구용. 실패해도 오류 칩·토스트 없이 안내 배너만 남깁니다.
+      const silent = options.silent === true;
       setLocating(true);
-      setLocationError('');
+      if (!silent) setLocationError('');
       try {
         const position = await requestCurrentPosition();
         applyPosition(position);
+        // 한 번 허용된 브라우저는 다음 방문·새로고침에서 바로 위치를 잡을 수 있게 기록
+        writeLocationGrantedFlag(true);
         if (announce) {
           const near = findNearbyPins(pinsRef.current, position, NEARBY_RADIUS_M);
           if (near.length) {
@@ -137,6 +146,9 @@ export default function MapScreen({
         return position;
       } catch (err) {
         const message = (err && err.message) || '위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.';
+        // 권한이 꺼졌거나 위치를 못 잡았으면 다음 방문에 또 시도하지 않도록 허용 기록을 지웁니다.
+        writeLocationGrantedFlag(false);
+        if (silent) return null;
         setLocationError(message);
         showToast(message);
         return null;
@@ -146,6 +158,30 @@ export default function MapScreen({
     },
     [applyPosition, showToast]
   );
+
+  /**
+   * v2.1.3 — 웹에서 다시 열었을 때 내 위치를 알아서 잡습니다.
+   * · permissions.query 가 'granted'  → 버튼 없이 바로 현재 위치로 이동
+   * · 'prompt'/'unknown'(iOS 사파리 등) → 한 번 허용한 적이 있으면(localStorage 기록) 시도
+   * · 'denied' → 시도하지 않고 [내 위치] 버튼을 기다립니다.
+   * 실패하면 조용히 기록을 지우고 안내 배너만 남깁니다.
+   */
+  useEffect(() => {
+    if (Platform.OS !== 'web') return undefined;
+    if (autoLocateRef.current) return undefined;
+    autoLocateRef.current = true;
+    let cancelled = false;
+    (async () => {
+      const permission = await geolocationPermissionState();
+      if (cancelled) return;
+      const grantedFlag = readLocationGrantedFlag();
+      if (!shouldAutoLocate({ permission, grantedFlag })) return;
+      await locate({ announce: false, silent: true });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [locate]);
 
   const focusOnPin = useCallback(
     (pin) => {
@@ -212,20 +248,14 @@ export default function MapScreen({
     };
   }, [alertsOn, applyPosition, showToast]);
 
-  // ── 배너 문구 ─────────────────────────────────────────────
+  // ── 배너 문구 (v2.1.3: 사실만 — 위치를 모를 때 가짜 거리·가게명을 지어내지 않음) ──
   const banner = useMemo(() => {
-    const fallbackPin = selectedPin || (filtered.length ? filtered[0] : null);
+    if (pins.length === 0) {
+      return { pin: null, empty: true, needsLocation: false, target: null };
+    }
 
-    if (!myCoords || pins.length === 0) {
-      return {
-        pin: fallbackPin,
-        empty: pins.length === 0,
-        title: undefined,
-        sub: undefined,
-        badge: undefined,
-        tone: undefined,
-        target: fallbackPin,
-      };
+    if (!myCoords) {
+      return { pin: null, empty: false, needsLocation: true, target: null };
     }
 
     if (nearby.length) {
@@ -233,6 +263,7 @@ export default function MapScreen({
       return {
         pin: top.pin,
         empty: false,
+        needsLocation: false,
         title: '반경 ' + NEARBY_RADIUS_M + 'm 앞, 저장한 맛집이 있어요',
         sub: top.pin.name + ' · ' + formatDistance(top.distanceMeters),
         badge: '지금',
@@ -245,6 +276,7 @@ export default function MapScreen({
       return {
         pin: closest.pin,
         empty: false,
+        needsLocation: false,
         title: '가장 가까운 저장 장소: ' + closest.pin.name,
         sub: formatDistance(closest.distanceMeters) + ' · 반경 ' + NEARBY_RADIUS_M + 'm 밖',
         badge: '내 위치',
@@ -253,18 +285,15 @@ export default function MapScreen({
       };
     }
 
-    return {
-      pin: fallbackPin,
-      empty: false,
-      title: undefined,
-      sub: undefined,
-      badge: undefined,
-      tone: undefined,
-      target: fallbackPin,
-    };
-  }, [myCoords, nearby, closest, pins.length, selectedPin, filtered]);
+    // 위치는 있지만 좌표 있는 핀이 하나도 없을 때 — 지어내지 않고 아무 배너도 그리지 않습니다.
+    return { pin: null, empty: false, needsLocation: false, target: null };
+  }, [myCoords, nearby, closest, pins.length]);
 
   const focusBannerPin = () => {
+    if (banner.needsLocation) {
+      locate();
+      return;
+    }
     if (!banner.target) {
       if (typeof onGoPaste === 'function') onGoPaste();
       return;
@@ -348,7 +377,11 @@ export default function MapScreen({
           pin={banner.pin}
           radiusMeters={radiusMeters}
           onPress={focusBannerPin}
+          onLocate={() => locate()}
+          locating={locating && !myCoords}
           empty={banner.empty}
+          needsLocation={banner.needsLocation}
+          hintTitle={'내 위치를 켜면 가까운 맛집과 ' + NEARBY_RADIUS_M + 'm 알림이 보여요'}
           title={banner.title}
           sub={banner.sub}
           badge={banner.badge}
@@ -357,11 +390,6 @@ export default function MapScreen({
         <View style={styles.chipWrap}>
           <FilterChips value={filter} onChange={setFilter} counts={counts} />
         </View>
-        {!myCoords && !locationError && (
-          <Text style={styles.locationHint} numberOfLines={1}>
-            {'내 위치를 켜면 실제 거리와 반경 ' + NEARBY_RADIUS_M + 'm 알림이 켜져요'}
-          </Text>
-        )}
         {!!locationError && (
           <Pressable style={styles.errorChip} onPress={() => locate()} accessibilityRole="button">
             <Ionicons name="alert-circle" size={12} color={colors.white} />
@@ -593,18 +621,6 @@ const styles = StyleSheet.create({
   },
   chipWrap: {
     marginTop: 10,
-  },
-  locationHint: {
-    alignSelf: 'flex-start',
-    marginTop: 6,
-    marginHorizontal: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: 'rgba(15,23,42,0.78)',
-    color: '#D7E0EF',
-    fontSize: 10.5,
-    fontWeight: '700',
   },
   errorChip: {
     marginTop: 6,

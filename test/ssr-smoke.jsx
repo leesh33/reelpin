@@ -78,8 +78,8 @@ const cases = [
   ['ExtractedTitleNote(인스타 안내)', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요 — 가게명으로 바로 찾아보세요." onSearchByName={noop} />],
   ['ExtractedTitleNote(없음)', <ExtractedTitleNote />, true],
   ['ProviderBadges(없음)', <ProviderBadges item={{ name: 'x' }} />, true],
-  ['GeofenceBanner', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={1000} onPress={noop} />],
-  ['GeofenceBanner(empty)', <GeofenceBanner pin={null} radiusMeters={300} onPress={noop} empty />],
+  ['GeofenceBanner', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={1000} onPress={noop} title="반경 1km 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name} badge="지금" />],
+  ['GeofenceBanner(내 위치 전 안내)', <GeofenceBanner needsLocation onPress={noop} onLocate={noop} radiusMeters={500} />],
   ['FilterChips', <FilterChips value="전체" onChange={noop} counts={{ 전체: 4 }} />],
   ['TabBar', <TabBar active="map" onChange={noop} />],
   ['MapCanvas', <MapCanvas pins={SEED_PINS} selectedId={SEED_PINS[0].id} onSelect={noop} radius={300} />],
@@ -120,7 +120,7 @@ const contentCases = [
   ['PasteScreen: 혼합 붙여넣기 안내', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['문구를 통째로 붙여넣어도 돼요', '유튜브는 제목을']],
   ['ExtractedTitleNote: 읽어온 제목 표기', <ExtractedTitleNote title="성수동 소금빵 맛집 베통" />, ['읽어온 제목:', '성수동 소금빵 맛집 베통']],
   ['ExtractedTitleNote: 인스타 안내 + 원탭 버튼', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요" onSearchByName={noop} />, ['인스타는 보안상 제목을 못 읽어와요', '가게명으로 찾기']],
-  ['MapScreen: 내 위치·주변 500m 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['주변 500m', '내 위치를 켜면 실제 거리']],
+  ['MapScreen: 내 위치·주변 500m 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['주변 500m', '내 위치를 켜면 가까운 맛집과 500m 알림이 보여요']],
   ['PinDetailSheet: 내 위치에서의 실제 거리', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} distanceMeters={321.4} onClose={noop} onDelete={noop} onToast={noop} />, ['내 위치에서 321m']],
   ['GeofenceBanner: 500m 실시간 배너 문구', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name + ' · 320m'} />, ['반경 500m 앞, 저장한 맛집이 있어요', '320m']],
   ['GeofenceBanner: 반경 밖 가장 가까운 곳', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />, ['가장 가까운 저장 장소', '2.4km']],
@@ -133,6 +133,8 @@ const contentCases = [
   // v2.0
   ['MapScreen: 공유받은 지도 배너 + 모두 추가', <MapScreen pins={[]} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} sharedPins={SHARED_PINS} onAddSharedPins={noop} onDismissShared={noop} />, ['공유받은 맛집 지도 (2곳)', '내 지도에 모두 추가', '지도에 미리보기로 띄웠어요']],
   ['MapScreen: 지도 공유 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['지도 공유']],
+  // v2.1.3 — 위치를 아직 모를 때의 정직한 안내 배너 (가짜 '뚝섬' 문구 금지)
+  ['MapScreen: 위치 전 안내 배너 + [내 위치] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['내 위치를 켜면 가까운 맛집과 500m 알림이 보여요', '지금 있는 곳을 기준으로 실제 거리를 알려드려요', '내 위치']],
   ['PinDetailSheet: 전화 걸기(tel 링크)', <PinDetailSheet pin={{ ...SEARCH_PIN, phone: '0507-1375-1660' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['0507-1375-1660', '전화 걸기 0507-1375-1660', '전화']],
   ['PinDetailSheet: 주소 원탭 복사', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['서울특별시 성동구 연무장7가길 8', '주소 복사', '복사']],
   ['PinDetailSheet: naverPlaceId 있으면 상세 페이지 표기', <PinDetailSheet pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['네이버 플레이스 상세']],
@@ -159,6 +161,45 @@ for (const [label, element, needles] of contentCases) {
   } catch (err) {
     failed += 1;
     console.log('FAIL ' + label + '  -> ' + (err && err.message));
+  }
+}
+
+// ── v2.1.3: 위치를 모를 때의 배너는 사실만 ─────────────────────
+// (사용자 제보: 소래포구에 있는데 "반경 300m 앞 · 뚝섬 카페" 가 떴습니다)
+const noLocationHtml = renderToString(
+  <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />
+);
+const fakeBannerChecks = [
+  ['MapScreen(위치 전): "반경 300m 앞" 가짜 배너 없음', noLocationHtml.indexOf('반경 300m 앞') < 0],
+  ['MapScreen(위치 전): "저장한 맛집이 있어요" 가짜 배너 없음', noLocationHtml.indexOf('저장한 맛집이 있어요') < 0],
+  ['MapScreen(위치 전): "뚝섬" 가짜 가게명 없음', noLocationHtml.indexOf('뚝섬') < 0],
+  ['MapScreen(위치 전): 가짜 "지금" 배지 없음', noLocationHtml.indexOf('>지금<') < 0],
+  ['MapScreen(위치 전): 칩 아래 중복 안내 제거', noLocationHtml.indexOf('내 위치를 켜면 실제 거리와 반경') < 0],
+  ['MapScreen(위치 전): 정직한 안내 배너 표시', noLocationHtml.indexOf('내 위치를 켜면 가까운 맛집과 500m 알림이 보여요') >= 0],
+];
+for (const [label, ok] of fakeBannerChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label);
+  }
+}
+
+// 컴포넌트도 스스로 가짜 문구를 만들지 않습니다 (title 없이 pin 만 넘기면 아무것도 안 그림)
+for (const [label, element] of [
+  ['GeofenceBanner: title 없으면 가짜 데모 배너 미노출', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={300} onPress={noop} />],
+  ['GeofenceBanner: 위치 전에는 핀이 있어도 실시간 배너 미노출', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} needsLocation />],
+]) {
+  const html = renderToString(element);
+  const ok =
+    html.indexOf('반경 300m 앞, 저장한 맛집이 있어요') < 0 &&
+    html.indexOf(SEED_PINS[0].name) < 0 &&
+    html.indexOf(SEED_PINS[3].name) < 0 &&
+    html.indexOf('반경 500m 앞') < 0;
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label);
   }
 }
 
@@ -428,6 +469,35 @@ for (const [label, ok, extra] of assetChecks) {
   }
 }
 
+// ── v2.1.3: 웹 재방문 시 자동 위치 잡기 ─────────────────────────
+const locationSource = fs.readFileSync(path.join(process.cwd(), 'src/services/location.js'), 'utf8');
+const mapCode = mapSource2.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const v213Checks = [
+  ['자동 위치: MapScreen 이 permissions.query 결과를 확인',
+    mapCode.indexOf('geolocationPermissionState()') > 0 && mapCode.indexOf('shouldAutoLocate(') > 0],
+  ['자동 위치: 허용 이력(localStorage) 보조 플래그 사용',
+    mapCode.indexOf('readLocationGrantedFlag()') > 0 && mapCode.indexOf('writeLocationGrantedFlag(true)') > 0 && locationSource.indexOf("reelpin:location_granted") > 0],
+  ['자동 위치: 웹에서만 (Platform.OS)',
+    mapCode.indexOf("Platform.OS !== 'web'") > 0 && /import \{[^}]*Platform[^}]*\} from 'react-native'/.test(mapCode)],
+  ['자동 위치: 실패해도 조용히 (silent — 오류 칩 없이 안내 배너 유지)',
+    mapCode.indexOf('silent: true') > 0 && mapCode.indexOf('if (silent) return null') > 0],
+  ['자동 위치: denied 면 시도하지 않음',
+    locationSource.indexOf("if (permission === 'denied') return false") > 0],
+  ['가짜 배너: GeofenceBanner 가 기본 "반경 … 앞" 문구를 만들지 않음',
+    bannerCode.indexOf('반경 ') < 0 && bannerCode.indexOf('pin.name + ' ) < 0],
+  ['가짜 배너: MapScreen 이 myCoords 없을 때 핀 이름을 배너로 넘기지 않음',
+    /if \(!myCoords\) \{\s*return \{ pin: null, empty: false, needsLocation: true, target: null \};/.test(mapCode)],
+  ['중복 안내: 칩 아래 locationHint 제거',
+    mapSource2.indexOf('locationHint') < 0],
+];
+for (const [label, ok, extra] of v213Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -438,6 +508,9 @@ const total =
   v21Checks.length +
   v211Checks.length +
   v212Checks.length +
+  fakeBannerChecks.length +
+  2 +
+  v213Checks.length +
   pwaChecks.length +
   assetChecks.length +
   2;

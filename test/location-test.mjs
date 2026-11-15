@@ -6,18 +6,23 @@
  */
 import {
   NEARBY_RADIUS_M,
+  LOCATION_GRANTED_KEY,
   LOCATION_MESSAGES,
   distanceMeters,
   distanceMap,
   errorCodeFor,
   findNearbyPins,
   formatDistance,
+  geolocationPermissionState,
   isGeolocationSupported,
   locationErrorMessage,
   nearestPin,
   normalizeCoords,
+  readLocationGrantedFlag,
   requestCurrentPosition,
+  shouldAutoLocate,
   watchPosition,
+  writeLocationGrantedFlag,
 } from '../src/services/location.js';
 import {
   firstNewNearby,
@@ -250,6 +255,90 @@ await new Promise((resolve) => setTimeout(resolve, 10));
 check('watchPosition 콜백 호출', watchCount === 1, String(watchCount));
 stop();
 check('해지 시 clearWatch 호출', cleared === 1, String(cleared));
+
+// ── 7.5. v2.1.3 자동 위치 복구 (재방문·새로고침) ──────────────
+check('권한 상태: permissions.query 없으면 unknown', (await geolocationPermissionState()) === 'unknown');
+
+const permissionWith = (state) => {
+  setNavigator({
+    geolocation: { getCurrentPosition: () => {}, watchPosition: () => 1, clearWatch: () => {} },
+    permissions: { query: () => Promise.resolve({ state }) },
+  });
+};
+
+permissionWith('granted');
+check('권한 상태: granted', (await geolocationPermissionState()) === 'granted');
+permissionWith('prompt');
+check('권한 상태: prompt', (await geolocationPermissionState()) === 'prompt');
+permissionWith('denied');
+check('권한 상태: denied', (await geolocationPermissionState()) === 'denied');
+
+setNavigator({
+  geolocation: { getCurrentPosition: () => {}, watchPosition: () => 1, clearWatch: () => {} },
+  permissions: {
+    query: () => {
+      throw new Error('NotSupportedError');
+    },
+  },
+});
+check('권한 상태: query 가 throw 해도 unknown', (await geolocationPermissionState()) === 'unknown');
+
+setNavigator({
+  geolocation: { getCurrentPosition: () => {}, watchPosition: () => 1, clearWatch: () => {} },
+  permissions: { query: () => Promise.reject(new Error('not supported')) },
+});
+check('권한 상태: query 가 reject 해도 unknown', (await geolocationPermissionState()) === 'unknown');
+
+// shouldAutoLocate — 마운트 시 바로 잡아도 되는가
+check('자동 위치: granted → 바로 시도', shouldAutoLocate({ permission: 'granted', grantedFlag: false }) === true);
+check('자동 위치: denied → 시도 안 함', shouldAutoLocate({ permission: 'denied', grantedFlag: true }) === false);
+check('자동 위치: prompt + 허용 이력 없음 → 버튼 대기', shouldAutoLocate({ permission: 'prompt', grantedFlag: false }) === false);
+check('자동 위치: prompt + 허용 이력 있음 → 조용히 시도', shouldAutoLocate({ permission: 'prompt', grantedFlag: true }) === true);
+check('자동 위치: 미지원(unknown) + 허용 이력 있음 → 시도', shouldAutoLocate({ permission: 'unknown', grantedFlag: true }) === true);
+check('자동 위치: 미지원(unknown) + 이력 없음 → 대기', shouldAutoLocate({ permission: 'unknown', grantedFlag: false }) === false);
+check('자동 위치: 인자 없으면 대기', shouldAutoLocate() === false);
+
+// 허용 이력 localStorage 플래그
+const memoryStore = {
+  data: new Map(),
+  getItem(key) {
+    return this.data.has(key) ? this.data.get(key) : null;
+  },
+  setItem(key, value) {
+    this.data.set(key, String(value));
+  },
+  removeItem(key) {
+    this.data.delete(key);
+  },
+};
+const setStorage = (value) => {
+  Object.defineProperty(globalThis, 'localStorage', { value, configurable: true, writable: true });
+};
+
+check('허용 이력: 저장 전에는 false', readLocationGrantedFlag() === false);
+setStorage(memoryStore);
+check('허용 이력: 키 이름이 reelpin:location_granted', LOCATION_GRANTED_KEY === 'reelpin:location_granted');
+check('허용 이력: 저장 성공', writeLocationGrantedFlag(true) === true && readLocationGrantedFlag() === true);
+check('허용 이력: 저장 값은 좌표가 아닌 1', memoryStore.getItem(LOCATION_GRANTED_KEY) === '1');
+check('허용 이력: 해제', writeLocationGrantedFlag(false) === true && readLocationGrantedFlag() === false);
+
+// 사파리 프라이빗 모드처럼 localStorage 접근이 throw 해도 앱은 멀쩡해야 합니다.
+setStorage({
+  getItem() {
+    throw new Error('SecurityError');
+  },
+  setItem() {
+    throw new Error('SecurityError');
+  },
+  removeItem() {
+    throw new Error('SecurityError');
+  },
+});
+check('허용 이력: localStorage 가 막혀도 false (throw 안 함)', readLocationGrantedFlag() === false);
+check('허용 이력: localStorage 가 막혀도 저장 실패만 반환', writeLocationGrantedFlag(true) === false);
+
+if (realNavigator) Object.defineProperty(globalThis, 'navigator', realNavigator);
+else delete globalThis.navigator;
 
 // ── 8. 알림(Notification API) ───────────────────────────────
 if (realNavigator) Object.defineProperty(globalThis, 'navigator', realNavigator);

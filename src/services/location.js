@@ -190,8 +190,7 @@ export function locationErrorMessage(geoError) {
   return LOCATION_MESSAGES[errorCodeFor(geoError)] || LOCATION_MESSAGES.unknown;
 }
 
-function toPosition(geoPosition) {
-  const coords = (geoPosition && geoPosition.coords) || {};
+function toPosition(geoPosition) {  const coords = (geoPosition && geoPosition.coords) || {};
   const lat = toNumber(coords.latitude);
   const lng = toNumber(coords.longitude);
   if (!isLat(lat) || !isLng(lng)) return null;
@@ -204,6 +203,79 @@ function toPosition(geoPosition) {
 }
 
 const DEFAULT_OPTIONS = { enableHighAccuracy: true, timeout: 12000, maximumAge: 30000 };
+
+// ── v2.1.3 자동 위치 복구 (웹 재방문 · 새로고침) ─────────────
+//
+// 아이폰 사파리는 navigator.permissions.query({name:'geolocation'}) 를 지원하지 않는
+// 버전이 있어, 허용 이력을 localStorage 에 남겨 두고 다음 방문에서 보조로 씁니다.
+// (좌표·주소는 저장하지 않고 '허용한 적 있음' 한 글자만 남깁니다.)
+
+/** 허용 이력 저장 키 */
+export const LOCATION_GRANTED_KEY = 'reelpin:location_granted';
+
+function localStorageRef() {
+  try {
+    if (typeof localStorage === 'undefined' || !localStorage) return null;
+    return localStorage;
+  } catch (e) {
+    // 사파리 프라이빗 모드 등에서 접근 자체가 throw 할 수 있습니다.
+    return null;
+  }
+}
+
+/** '이 브라우저에서 위치를 허용한 적 있음' 기록 */
+export function readLocationGrantedFlag() {
+  const store = localStorageRef();
+  if (!store) return false;
+  try {
+    return store.getItem(LOCATION_GRANTED_KEY) === '1';
+  } catch (e) {
+    return false;
+  }
+}
+
+/** 허용 이력 저장(true) / 삭제(false) */
+export function writeLocationGrantedFlag(granted = true) {
+  const store = localStorageRef();
+  if (!store) return false;
+  try {
+    if (granted) store.setItem(LOCATION_GRANTED_KEY, '1');
+    else store.removeItem(LOCATION_GRANTED_KEY);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 브라우저의 위치 권한 상태.
+ * @returns {Promise<'granted'|'prompt'|'denied'|'unknown'>} — 미지원(iOS 사파리 구버전·SSR)은 'unknown'
+ */
+export async function geolocationPermissionState() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator) return 'unknown';
+    const permissions = navigator.permissions;
+    if (!permissions || typeof permissions.query !== 'function') return 'unknown';
+    const status = await permissions.query({ name: 'geolocation' });
+    const state = status && status.state;
+    if (state === 'granted' || state === 'prompt' || state === 'denied') return state;
+    return 'unknown';
+  } catch (e) {
+    return 'unknown';
+  }
+}
+
+/**
+ * 화면을 열자마자 위치를 잡아도 되는지.
+ * · 'granted' → 바로 (버튼 없이)
+ * · 'denied'  → 절대 시도하지 않음
+ * · 'prompt' / 'unknown' → 이전에 허용한 적이 있을 때만 (실패는 조용히 처리)
+ */
+export function shouldAutoLocate({ permission, grantedFlag } = {}) {
+  if (permission === 'granted') return true;
+  if (permission === 'denied') return false;
+  return grantedFlag === true;
+}
 
 /**
  * 현재 위치를 한 번 받아옵니다.
@@ -252,8 +324,7 @@ export function requestCurrentPosition(options = {}) {
  * 위치가 바뀔 때마다 onUpdate({ lat, lng, accuracy, timestamp }) 를 부릅니다.
  * @returns {() => void} 구독 해지 함수 (지원하지 않는 환경에서도 항상 함수를 돌려줍니다)
  */
-export function watchPosition(onUpdate, onError, options = {}) {
-  const geo = geoApi();
+export function watchPosition(onUpdate, onError, options = {}) {  const geo = geoApi();
   if (!geo) {
     if (typeof onError === 'function') {
       Promise.resolve().then(() => onError(locationError('unsupported')));
