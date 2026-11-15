@@ -1,6 +1,15 @@
 /**
  * src/components/RealMapView.web.js
  * ─────────────────────────────────────────────────────────────
+ * v2.5 — 📍 **줌 겹침 방지(클러스터링)**
+ *   · 지도가 `idle` / `zoom_changed` 될 때마다 화면 픽셀 좌표로 핀 사이 거리를 재서,
+ *     46px 안에 2곳 이상 겹치면 **숫자 배지 클러스터**(예: `3`)로 묶습니다.
+ *     (네이버: `getProjection().fromCoordToOffset`, Leaflet: `latLngToContainerPoint`)
+ *   · 배지를 탭하면 그 무리의 핀들이 화면에서 벌어지도록 **fitBounds / 확대** — 개별 핀과
+ *     가게 이름 라벨이 펼쳐집니다. 줌을 더 키우면 자동으로 개별 핀으로 풀립니다.
+ *   · 선택된 핀(상세 시트가 열린 핀)은 무리에 숨기지 않고 항상 혼자 보여 줍니다.
+ *   · 묶음 계산 자체는 `src/utils/cluster.js` 의 순수 함수 — 네이버·Leaflet 이 같은 규칙을 씁니다.
+ *
  * v2.4 — 분류별 **핀 색을 getCategoryColor 하나로 통일** (상단 필터 칩·상세 배지·내 정보 점과 같은 색)
  *   · 맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 고유 색
  *   · 선택된 핀도 분류 색을 유지 — 강조는 크기(18→26) + 두꺼운 흰 테두리 + 라벨이 그 분류 색으로 채워짐
@@ -31,6 +40,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, typography } from '../theme';
 import { getCategoryColor, hexToRgba } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
+import {
+  CLUSTER_THRESHOLD_PX,
+  clusterColor,
+  clusterLabel,
+  clusterPoints,
+  clusterSpanPx,
+  clusteredIds,
+  onlyClusters,
+} from '../utils/cluster';
 
 // ── 네이버 지도 설정 ──────────────────────────────────────────
 /**
@@ -178,6 +196,90 @@ export function pinIconHtml(pin, selected, categories) {
  */
 export function pinColor(pin, selected, categories) {
   return getCategoryColor((pin && pin.category) || '', categories);
+}
+
+// ── 클러스터 배지 (v2.5) ─────────────────────────────────────
+/** 두 자리 숫자가 되어도 잘리지 않게 조금 커집니다 */
+export function clusterBadgeSize(count) {
+  return Number(count) >= 10 ? 46 : 40;
+}
+
+/**
+ * 클러스터 배지 HTML — 다크 네이비 원 + 흰 숫자 + 흰 테두리 + 분류 색 헤일로(코랄 기본).
+ * 무리 안 핀이 모두 같은 분류면 그 분류 색, 섞여 있으면 코랄. (핀·칩과 색이 어긋나지 않음)
+ */
+export function clusterIconHtml(count, color) {
+  const size = clusterBadgeSize(count);
+  const halo = typeof color === 'string' && /^#/.test(color) ? color : colors.coral;
+  return (
+    '<div data-cluster="' +
+    escapeHtml(clusterLabel(count)) +
+    '" style="display:flex;align-items:center;justify-content:center;width:' +
+    size +
+    'px;height:' +
+    size +
+    'px;box-sizing:border-box;border-radius:50%;background:#0F172A;border:2.5px solid #FFFFFF;' +
+    'box-shadow:0 0 0 4px ' +
+    hexToRgba(halo, 0.3) +
+    ',0 4px 12px rgba(15,23,42,0.45);color:#FFFFFF;font-family:' +
+    PIN_LABEL_FONT_STACK +
+    ';font-size:' +
+    (Number(count) >= 10 ? 15 : 14) +
+    'px;font-weight:900;line-height:1;letter-spacing:-0.4px;cursor:pointer;' +
+    '-webkit-tap-highlight-color:transparent;">' +
+    escapeHtml(clusterLabel(count)) +
+    '</div>'
+  );
+}
+
+/**
+ * 핀 목록 → 화면 픽셀 좌표. 지도 엔진이 넘긴 투영 함수(project)를 씁니다.
+ *   · project(lat, lng) → {x, y} | null
+ *   · 좌표가 없거나 투영이 안 되는 핀은 조용히 건너뜁니다
+ *   · 선택된 핀은 **무리에 숨기지 않도록** 뺍니다 (상세 시트가 열린 핀은 항상 혼자)
+ */
+export function projectPinPoints(pins, project, selectedId) {
+  const out = [];
+  if (typeof project !== 'function') return out;
+  (Array.isArray(pins) ? pins : []).forEach((pin) => {
+    if (!pin || !pin.id) return;
+    if (selectedId != null && String(pin.id) === String(selectedId)) return;
+    const coords = normalizeCoords(pin);
+    if (!coords) return;
+    let point = null;
+    try {
+      point = project(coords.lat, coords.lng);
+    } catch (e) {
+      point = null;
+    }
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+    out.push({
+      id: String(pin.id),
+      x: point.x,
+      y: point.y,
+      lat: coords.lat,
+      lng: coords.lng,
+      name: pin.name || '',
+      category: pin.category || '',
+    });
+  });
+  return out;
+}
+
+/**
+ * 화면에 그릴 클러스터만 (2곳 이상) — 순수 함수 clusterPoints 를 그대로 씁니다.
+ */
+export function buildClusters(pins, project, selectedId, categories, threshold) {
+  const points = projectPinPoints(pins, project, selectedId);
+  const groups = onlyClusters(clusterPoints(points, { threshold: threshold || CLUSTER_THRESHOLD_PX }));
+  return groups.map((group) => ({ ...group, color: clusterColor(group.members, categories) }));
+}
+
+/** 무리 상태가 실제로 바뀌었는지 비교하는 지문 — 팬(이동)만으로는 다시 그리지 않게 */
+export function clusterSignature(groups) {
+  return (Array.isArray(groups) ? groups : [])
+    .map((group) => group.key + '@' + Math.round(group.lat * 10000) + ',' + Math.round(group.lng * 10000))
+    .join(';');
 }
 
 // ── 네이버 지도 로더 (브라우저에서만) ─────────────────────────
@@ -374,6 +476,10 @@ function NaverMap({
   const onReadyRef = useRef(onReady);
   const onFailRef = useRef(onFail);
   const [ready, setReady] = useState(false);
+  // v2.5 — 클러스터 배지 마커 (key = 무리 id 목록) 과 지금의 무리 상태
+  const clusterMarkersRef = useRef(new Map());
+  const clusterSigRef = useRef('');
+  const [clusters, setClusters] = useState([]);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -387,6 +493,65 @@ function NaverMap({
   useEffect(() => {
     onFailRef.current = onFail;
   }, [onFail]);
+
+  /**
+   * v2.5 — 이 순간의 화면 픽셀 좌표로 핀을 투영합니다.
+   * 네이버 지도는 `getProjection().fromCoordToOffset(coord)` 로 **DOM 픽셀 좌표**를 줍니다.
+   * (지도 타일 투영이 UTMK 여도 offset 은 CSS 픽셀이라, 화면에서 겹치는지 그대로 잽니다)
+   */
+  const projectPoint = useCallback((lat, lng) => {
+    const map = mapRef.current;
+    const nv = nvRef.current;
+    if (!map || !nv) return null;
+    let projection = null;
+    try {
+      projection = map.getProjection();
+    } catch (e) {
+      projection = null;
+    }
+    if (!projection || typeof projection.fromCoordToOffset !== 'function') return null;
+    const offset = projection.fromCoordToOffset(new nv.LatLng(lat, lng));
+    if (!offset || !Number.isFinite(offset.x) || !Number.isFinite(offset.y)) return null;
+    return { x: offset.x, y: offset.y };
+  }, []);
+
+  /** 줌·이동이 멀추면 다시 묶습니다 (같은 묶음이면 다시 그리지 않습니다) */
+  const recomputeClusters = useCallback(() => {
+    if (!ready || !mapRef.current) return;
+    const groups = buildClusters(pins, projectPoint, selectedId, categories);
+    const signature = clusterSignature(groups);
+    if (signature === clusterSigRef.current) return;
+    clusterSigRef.current = signature;
+    setClusters(groups);
+  }, [ready, pins, selectedId, categories, projectPoint]);
+
+  /** 클러스터 배지를 누르면 — 그 무리의 핀들이 화면에서 벌어지게 확대(fitBounds) */
+  const expandCluster = useCallback((group) => {
+    const map = mapRef.current;
+    const nv = nvRef.current;
+    if (!map || !nv || !group) return;
+    const members = (group.members || []).filter(
+      (member) => Number.isFinite(Number(member.lat)) && Number.isFinite(Number(member.lng))
+    );
+    if (!members.length) return;
+    const span = clusterSpanPx(group);
+    const spread = Math.max(span.w, span.h);
+    try {
+      if (members.length > 1 && spread >= 2) {
+        // 무리 전체가 보이도록 범위를 맞춥니다 (= 46px 안에 있던 핀이 화면에서 크게 벌어짐)
+        const bounds = new nv.LatLngBounds();
+        members.forEach((member) => bounds.extend(new nv.LatLng(Number(member.lat), Number(member.lng))));
+        map.fitBounds(bounds, { top: 110, right: 64, bottom: 180, left: 64, maxZoom: 19 });
+      } else {
+        // 실제로 거의 같은 자리에 찍힌 핀 — 한 단계씩 더 깊이 들어갑니다
+        const zoom = Math.min((map.getZoom() || 14) + 2, map.getMaxZoom());
+        map.morph(new nv.LatLng(Number(group.lat), Number(group.lng)), zoom, {
+          duration: 500,
+          easing: 'easeOutCubic',
+        });
+      }
+    } catch (e) {}
+  }, []);
 
   // 1) 지도 초기화 — 여기서만 네이버 지도/DOM 을 건드립니다.
   useEffect(() => {
@@ -472,6 +637,7 @@ function NaverMap({
         } catch (e) {}
       }
       markersRef.current.clear();
+      clusterMarkersRef.current.clear();
       meRef.current = { dot: null, circle: null };
       const map = mapRef.current;
       mapRef.current = null;
@@ -485,16 +651,18 @@ function NaverMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2) 핀 마커 (카테고리 색 + 선택 강조 + 클릭 → onSelect)
+  // 2) 핀 마커 (카테고리 색 + 선택 강조 + 클릭 → onSelect) — **클러스터에 들어간 핀은 숨김**
   useEffect(() => {
     const map = mapRef.current;
     const nv = nvRef.current;
     if (!map || !nv || !ready) return;
 
+    const hidden = clusteredIds(clusters);
     const alive = new Set();
     (pins || []).forEach((pin) => {
       const coords = normalizeCoords(pin);
       if (!coords || !pin.id) return;
+      if (hidden.has(String(pin.id))) return;
       alive.add(pin.id);
       const isOn = pin.id === selectedId;
       const position = new nv.LatLng(coords.lat, coords.lng);
@@ -543,7 +711,80 @@ function NaverMap({
       } catch (e) {}
       markersRef.current.delete(id);
     });
-  }, [pins, selectedId, ready, categories]);
+  }, [pins, selectedId, ready, categories, clusters]);
+
+  // 2-b) 클러스터 배지 마커 + 지도 이벤트(idle·zoom_changed)로 다시 묶기 (v2.5)
+  useEffect(() => {
+    const map = mapRef.current;
+    const nv = nvRef.current;
+    if (!map || !nv || !ready) return undefined;
+    let timer = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        recomputeClusters();
+      }, 60);
+    };
+    const idleListener = nv.Event.addListener(map, 'idle', schedule);
+    const zoomListener = nv.Event.addListener(map, 'zoom_changed', schedule);
+    schedule();
+    return () => {
+      if (timer) clearTimeout(timer);
+      try {
+        nv.Event.removeListener(idleListener);
+      } catch (e) {}
+      try {
+        nv.Event.removeListener(zoomListener);
+      } catch (e) {}
+    };
+  }, [ready, recomputeClusters]);
+
+  // 2-c) 클러스터 배지 그리기 — 무리가 바뀌면 만들고/옮기고/지움
+  useEffect(() => {
+    const map = mapRef.current;
+    const nv = nvRef.current;
+    if (!map || !nv || !ready) return;
+
+    const alive = new Set();
+    clusters.forEach((group) => {
+      if (!Number.isFinite(Number(group.lat)) || !Number.isFinite(Number(group.lng))) return;
+      alive.add(group.key);
+      const position = new nv.LatLng(Number(group.lat), Number(group.lng));
+      const icon = clusterIcon(nv, group.count, group.color);
+      let marker = clusterMarkersRef.current.get(group.key);
+      if (!marker) {
+        marker = new nv.Marker({
+          position,
+          map,
+          icon,
+          title: group.count + '곳',
+          zIndex: 300,
+          clickable: true,
+        });
+        const captured = group;
+        nv.Event.addListener(marker, 'click', (event) => {
+          // 배지 클릭이 지도 클릭으로 번지지 않게
+          if (event && typeof event.stop === 'function') event.stop();
+          expandCluster(captured);
+        });
+        clusterMarkersRef.current.set(group.key, marker);
+      } else {
+        marker.setPosition(position);
+        marker.setIcon(icon);
+        marker.setTitle(group.count + '곳');
+      }
+    });
+
+    Array.from(clusterMarkersRef.current.keys()).forEach((key) => {
+      if (alive.has(key)) return;
+      const marker = clusterMarkersRef.current.get(key);
+      try {
+        marker.setMap(null);
+      } catch (e) {}
+      clusterMarkersRef.current.delete(key);
+    });
+  }, [clusters, ready, expandCluster]);
 
   // 3) 내 위치 파란 점 + 반경 500m 원
   useEffect(() => {
@@ -631,6 +872,12 @@ function pinIcon(nv, pin, selected, categories) {
   return { content: pinIconHtml(pin, selected, categories), anchor: new nv.Point(anchor.x, anchor.y) };
 }
 
+/** 클러스터 배지 마커 (v2.5) — 원 크기 그대로, 기준점은 원 가운데 */
+function clusterIcon(nv, count, color) {
+  const size = clusterBadgeSize(count);
+  return { content: clusterIconHtml(count, color), anchor: new nv.Point(size / 2, size / 2) };
+}
+
 /** 내 위치 파란 점 */
 function myDotIcon(nv) {
   const html =
@@ -668,6 +915,10 @@ function LeafletMap({
   const onReadyRef = useRef(onReady);
   const onFailRef = useRef(onFail);
   const [ready, setReady] = useState(false);
+  // v2.5 — 네이버 지도와 **같은 클러스터 규칙** (utils/cluster.js)
+  const clusterMarkersRef = useRef(new Map());
+  const clusterSigRef = useRef('');
+  const [clusters, setClusters] = useState([]);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -681,6 +932,46 @@ function LeafletMap({
   useEffect(() => {
     onFailRef.current = onFail;
   }, [onFail]);
+
+  /** 이 순간의 **컨테이너 픽셀 좌표** — Leaflet 의 latLngToContainerPoint */
+  const projectPoint = useCallback((lat, lng) => {
+    const map = mapRef.current;
+    if (!map || typeof map.latLngToContainerPoint !== 'function') return null;
+    const point = map.latLngToContainerPoint([lat, lng]);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+    return { x: point.x, y: point.y };
+  }, []);
+
+  const recomputeClusters = useCallback(() => {
+    if (!ready || !mapRef.current) return;
+    const groups = buildClusters(pins, projectPoint, selectedId, categories);
+    const signature = clusterSignature(groups);
+    if (signature === clusterSigRef.current) return;
+    clusterSigRef.current = signature;
+    setClusters(groups);
+  }, [ready, pins, selectedId, categories, projectPoint]);
+
+  /** 클러스터 배지를 누르면 그 무리의 핀들이 화면에서 벌어지게 확대 */
+  const expandCluster = useCallback((group) => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!map || !L || !group) return;
+    const members = (group.members || []).filter(
+      (member) => Number.isFinite(Number(member.lat)) && Number.isFinite(Number(member.lng))
+    );
+    if (!members.length) return;
+    const span = clusterSpanPx(group);
+    const spread = Math.max(span.w, span.h);
+    try {
+      if (members.length > 1 && spread >= 2) {
+        const bounds = L.latLngBounds(members.map((member) => [Number(member.lat), Number(member.lng)]));
+        map.flyToBounds(bounds, { padding: [64, 64], maxZoom: 19, duration: 0.6 });
+      } else {
+        const zoom = Math.min((map.getZoom() || 14) + 2, 19);
+        map.flyTo([Number(group.lat), Number(group.lng)], zoom, { duration: 0.6 });
+      }
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -779,6 +1070,7 @@ function LeafletMap({
         window.removeEventListener('resize', onWindowResize);
       }
       markersRef.current.clear();
+      clusterMarkersRef.current.clear();
       meRef.current = { dot: null, circle: null };
       const map = mapRef.current;
       mapRef.current = null;
@@ -792,15 +1084,18 @@ function LeafletMap({
   }, []);
 
   // 핀 마커 (v2.3 — 동그라미 아래 가게 이름 라벨: 네이버 지도와 같은 HTML·같은 anchor 규칙)
+  //          v2.5 — 클러스터에 들어간 핀은 숨김
   useEffect(() => {
     const map = mapRef.current;
     const L = leafletRef.current;
     if (!map || !L || !ready) return;
 
+    const hidden = clusteredIds(clusters);
     const alive = new Set();
     (pins || []).forEach((pin) => {
       const coords = normalizeCoords(pin);
       if (!coords || !pin.id) return;
+      if (hidden.has(String(pin.id))) return;
       alive.add(pin.id);
       const isOn = pin.id === selectedId;
       const anchor = pinAnchor(isOn);
@@ -846,7 +1141,77 @@ function LeafletMap({
       } catch (e) {}
       markersRef.current.delete(id);
     });
-  }, [pins, selectedId, ready, categories]);
+  }, [pins, selectedId, ready, categories, clusters]);
+
+  // v2.5 — 클러스터 다시 묶기 (zoomend · moveend)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || typeof map.on !== 'function') return undefined;
+    let timer = null;
+    const schedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        recomputeClusters();
+      }, 60);
+    };
+    map.on('zoomend', schedule);
+    map.on('moveend', schedule);
+    schedule();
+    return () => {
+      if (timer) clearTimeout(timer);
+      try {
+        map.off('zoomend', schedule);
+        map.off('moveend', schedule);
+      } catch (e) {}
+    };
+  }, [ready, recomputeClusters]);
+
+  // v2.5 — 클러스터 배지 마커 그리기 ("네이버 지도와 같은 HTML·같은 규칙")
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!map || !L || !ready) return;
+
+    const alive = new Set();
+    clusters.forEach((group) => {
+      if (!Number.isFinite(Number(group.lat)) || !Number.isFinite(Number(group.lng))) return;
+      alive.add(group.key);
+      const size = clusterBadgeSize(group.count);
+      const icon = L.divIcon({
+        html: clusterIconHtml(group.count, group.color),
+        className: 'reelpin-cluster',
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+      });
+      let marker = clusterMarkersRef.current.get(group.key);
+      if (!marker) {
+        marker = L.marker([Number(group.lat), Number(group.lng)], {
+          icon,
+          keyboard: false,
+          zIndexOffset: 1200,
+        }).addTo(map);
+        const captured = group;
+        marker.on('click', (event) => {
+          if (event && typeof event.stopPropagation === 'function') event.stopPropagation();
+          expandCluster(captured);
+        });
+        clusterMarkersRef.current.set(group.key, marker);
+      } else {
+        marker.setLatLng([Number(group.lat), Number(group.lng)]);
+        marker.setIcon(icon);
+      }
+    });
+
+    Array.from(clusterMarkersRef.current.keys()).forEach((key) => {
+      if (alive.has(key)) return;
+      const marker = clusterMarkersRef.current.get(key);
+      try {
+        map.removeLayer(marker);
+      } catch (e) {}
+      clusterMarkersRef.current.delete(key);
+    });
+  }, [clusters, ready, expandCluster]);
 
   // 내 위치 파란 점 + 반경 원
   useEffect(() => {

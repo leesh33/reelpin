@@ -1,6 +1,6 @@
 {
   "name": "reelpin",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "릴스핀(Reelspin) — 릴스·쇼츠에서 본 맛집을 내 지도에 핀으로 저장하고, 그 동네에 도착하면 알려 주는 앱",
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
@@ -20,7 +20,8 @@
     "web:html": "node scripts/patch-web-html.mjs",
     "test:ssr": "node test/run-tests.mjs ssr",
     "test:cloud": "node test/run-tests.mjs cloud",
-    "test:category": "node test/run-tests.mjs category"
+    "test:category": "node test/run-tests.mjs category",
+    "test:search": "node test/run-tests.mjs search"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

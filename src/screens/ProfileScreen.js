@@ -670,7 +670,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.4.0</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.5.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>

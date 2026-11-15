@@ -4,11 +4,13 @@ import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import RealMapView from '../components/RealMapView';
 import FilterChips from '../components/FilterChips';
+// v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
+import PinSearchBar from '../components/PinSearchBar';
+import PinListView from '../components/PinListView';
 import {
   DEFAULT_CATEGORIES,
   countByCategory,
   filterOptions,
-  matchesFilter,
   nextFilterAfterRemoval,
   nextFilterAfterRename,
 } from '../utils/categories';
@@ -36,6 +38,7 @@ import {
 } from '../services/notifications';
 import { colors, cardShadow, mapControls, radius, typography } from '../theme';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
+import { filterAndSearchPins } from '../utils/searchPins';
 
 export default function MapScreen({
   pins,
@@ -54,6 +57,12 @@ export default function MapScreen({
   onDismissShared,
 }) {
   const [filter, setFilter] = useState('전체');
+
+  // ── v2.5 검색어 · 지도/목록 전환 ──────────────────────────────
+  //   query … 내 핀 검색어 (가게명·지역·주소·분류·메뉴태그)
+  //   view  … 'map'(지도) | 'list'(목록)
+  const [query, setQuery] = useState('');
+  const [view, setView] = useState('map');
 
   /**
    * v2.2 — 분류를 이름 바꾸거나 지우면 지도 필터도 함께 정리합니다.
@@ -102,7 +111,8 @@ export default function MapScreen({
     if (typeof toastRef.current === 'function') toastRef.current(message);
   }, []);
 
-  const filtered = useMemo(() => pins.filter((p) => matchesFilter(p, filter)), [pins, filter]);
+  // 분류 필터 **AND** 검색어 — 지도에 꽂히는 핀과 목록이 같은 목록을 씁니다.
+  const filtered = useMemo(() => filterAndSearchPins(pins, { filter, query }), [pins, filter, query]);
   // v2.0 — 공유받은 지도는 '미리보기'로 지도에 함께 띄우고, 상세 시트는 읽기 전용으로 엽니다.
   const previewPins = useMemo(() => (Array.isArray(sharedPins) ? sharedPins.filter(Boolean) : []), [sharedPins]);
   const mapPins = useMemo(
@@ -208,6 +218,13 @@ export default function MapScreen({
       cancelled = true;
     };
   }, [locate]);
+
+  /** v2.5 — 지도 ↔ 목록 전환. 목록으로 갈 때는 '주변 500m' 패널을 닫아 겹치지 않게 합니다. */
+  const toggleView = useCallback(() => {
+    const next = view === 'map' ? 'list' : 'map';
+    if (next === 'list') setNearbyOpen(false);
+    setView(next);
+  }, [view]);
 
   const focusOnPin = useCallback(
     (pin) => {
@@ -366,7 +383,26 @@ export default function MapScreen({
         categories={categories}
       />
 
-      {/* 상단 오버레이: 공유받은 지도 배너 + 실시간 배너 + 카테고리 필터 */}
+      {/* v2.5 — 📋 목록 보기: 지도 위를 덮는 카드 목록 (검색·필터·가까운 순) */}
+      {view === 'list' && (
+        <PinListView
+          pins={filtered}
+          query={query}
+          onQueryChange={setQuery}
+          onClearQuery={() => setQuery('')}
+          filter={filter}
+          onChangeFilter={setFilter}
+          counts={counts}
+          categories={categories}
+          myCoords={myCoords}
+          onSelectPin={onSelectPin}
+          onToggleView={toggleView}
+          onGoPaste={onGoPaste}
+        />
+      )}
+
+      {/* 상단 오버레이(지도 보기): 공유받은 지도 배너 + 실시간 배너 + 검색 + 카테고리 필터 */}
+      {view === 'map' && (
       <View style={styles.topOverlay} pointerEvents="box-none">
         {previewPins.length > 0 && (
           <View style={styles.sharedBanner}>
@@ -414,6 +450,9 @@ export default function MapScreen({
           badge={banner.badge}
           tone={banner.tone}
         />
+        <View style={styles.searchWrap}>
+          <PinSearchBar value={query} onChange={setQuery} onClear={() => setQuery('')} />
+        </View>
         <View style={styles.chipWrap}>
           <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
         </View>
@@ -426,9 +465,10 @@ export default function MapScreen({
           </Pressable>
         )}
       </View>
+      )}
 
       {/* 저장 개수 표시 — 상세 시트가 열리면 숨깁니다 */}
-      {!selectedPin && (
+      {view === 'map' && !selectedPin && (
         <View style={styles.countPill} pointerEvents="none">
           <View style={styles.countDot} />
           <Text style={styles.countText}>
@@ -438,7 +478,7 @@ export default function MapScreen({
       )}
 
       {/* 반경 500m 주변 목록 */}
-      {!selectedPin && nearbyOpen && (
+      {view === 'map' && !selectedPin && nearbyOpen && (
         <View style={styles.nearbyPanel}>
           <View style={styles.panelHead}>
             <Text style={styles.panelTitle}>
@@ -518,9 +558,19 @@ export default function MapScreen({
         </View>
       )}
 
-      {/* 내 위치 · 주변 500m · 공유 버튼 */}
-      {!selectedPin && (
+      {/* 내 위치 · 주변 500m · 공유 · 목록 보기 버튼 */}
+      {view === 'map' && !selectedPin && (
         <View style={styles.actionCol}>
+          <Pressable
+            style={[styles.nearbyBtn, styles.viewToggleBtn]}
+            onPress={toggleView}
+            accessibilityRole="button"
+            accessibilityLabel="목록 보기로 전환"
+            testID="view-toggle-map"
+          >
+            <Ionicons name="list-outline" size={14} color={colors.white} />
+            <Text style={styles.nearbyBtnText}>목록 보기</Text>
+          </Pressable>
           <Pressable
             style={styles.nearbyBtn}
             onPress={toggleNearby}
@@ -556,7 +606,7 @@ export default function MapScreen({
       )}
 
       {/* 핀 없음 안내 (공유받은 지도만 있으면 띄우지 않습니다) */}
-      {pins.length === 0 && previewPins.length === 0 && (
+      {view === 'map' && pins.length === 0 && previewPins.length === 0 && (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyTitle}>지도가 비어 있어요</Text>
           <Text style={styles.emptySub}>릴스 링크 하나면 3초 만에 핀이 꽂힙니다.</Text>
@@ -651,6 +701,13 @@ const styles = StyleSheet.create({
   },
   chipWrap: {
     marginTop: 10,
+  },
+  searchWrap: {
+    marginTop: 8,
+  },
+  viewToggleBtn: {
+    backgroundColor: colors.coral,
+    borderColor: 'rgba(255,255,255,0.30)',
   },
   errorChip: {
     marginTop: 6,

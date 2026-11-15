@@ -10,6 +10,9 @@ import ExtractedTitleNote from '../src/components/ExtractedTitleNote';
 import GeofenceBanner from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
 import CategoryPicker from '../src/components/CategoryPicker';
+// v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
+import PinSearchBar from '../src/components/PinSearchBar';
+import PinListView from '../src/components/PinListView';
 import TabBar from '../src/components/TabBar';
 import MapCanvas from '../src/components/MapCanvas';
 import RealMapViewWeb, {
@@ -120,6 +123,12 @@ const cases = [
   ['PinDetailSheet(전화·주소·placeId)', <PinDetailSheet pin={{ ...SEARCH_PIN, phone: '0507-1375-1660', naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />],
   ['PinDetailSheet(공유받은 핀 읽기 전용)', <PinDetailSheet pin={{ ...SHARED_PINS[0], phone: '02-123-4567' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly />],
   ['InAppPlaceModal.web(핀 없음)', <InAppPlaceModalWeb pin={null} onClose={noop} onToast={noop} />, true],
+  // v2.5 — 검색창 · 목록 보기 (node 렌더에서 window/document 를 건드리지 않는지)
+  ['PinSearchBar', <PinSearchBar value="" onChange={noop} />],
+  ['PinSearchBar(검색어 있음 · ✕)', <PinSearchBar value="베통" onChange={noop} onClear={noop} />],
+  ['PinListView', <PinListView pins={SEED_PINS} categories={['맛집', '카페', '가볼곳', '아이랑']} filter="전체" counts={{ '전체': 4 }} myCoords={{ lat: 37.5828, lng: 126.7141 }} onSelectPin={noop} onToggleView={noop} onChangeFilter={noop} onQueryChange={noop} />],
+  ['PinListView(검색 결과 없음)', <PinListView pins={[]} query="없는가게" filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onClearQuery={noop} />],
+  ['PinListView(핀 없음 · 위치 없음)', <PinListView pins={[]} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onGoPaste={noop} />],
 ];
 
 let failed = 0;
@@ -181,6 +190,13 @@ const contentCases = [
   ['PinDetailSheet: 분류 칩으로 바로 변경', <PinDetailSheet pin={{ ...SEARCH_PIN, category: '아이랑' }} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} onChangeCategory={noop} onAddCategory={noop} />, ['누르면 바로 바뀌어요', '분류 추가', '분류 아이랑']],
   ['PinDetailSheet: 공유받은 핀은 분류 변경 없음', <PinDetailSheet pin={SHARED_PINS[0]} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly onChangeCategory={noop} />, ['공유받은 맛집이에요']],
   ['ProfileScreen: 분류 관리 카드(수정·삭제·추가)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />, ['분류 관리', '아이랑', '기본', '수정', '삭제', '새 분류 이름', '핀 1개']],
+  // v2.5 — 🔍 검색 · 📋 목록 보기
+  ['MapScreen: 내 핀 검색창', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['내 핀 검색', '내 핀 검색 · 가게명 · 지역 · 메뉴']],
+  ['MapScreen: [목록 보기] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['목록 보기']],
+  ['PinListView: 가까운 순 + 거리 + 분류 색 점', <PinListView pins={SEED_PINS} categories={['맛집', '카페', '가볼곳', '아이랑']} filter="전체" myCoords={{ lat: 37.5828, lng: 126.7141 }} onSelectPin={noop} onToggleView={noop} />, ['가까운 순', '지도 보기', '성수동 소금빵집', '맛집']],
+  ['PinListView: 내 위치 없으면 최신순', <PinListView pins={SEED_PINS} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} />, ['최신순']],
+  ['PinListView: 검색 결과 없음 안내', <PinListView pins={[]} query="없는가게" filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onClearQuery={noop} />, ['검색 결과가 없어요', '검색어 지우기']],
+  ['PinListView: 핀 없음 안내', <PinListView pins={[]} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} onGoPaste={noop} />, ['아직 저장한 핀이 없어요', '링크 붙여넣으러 가기']],
 ];
 
 for (const [label, element, needles] of contentCases) {
@@ -546,8 +562,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.4.0', pkg.version === '2.4.0', pkg.version],
-  ['버전: app.json 2.4.0', expoConfig.version === '2.4.0', expoConfig.version],
+  ['버전: package.json 2.5.0', pkg.version === '2.5.0', pkg.version],
+  ['버전: app.json 2.5.0', expoConfig.version === '2.5.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
