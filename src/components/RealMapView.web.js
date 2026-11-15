@@ -218,10 +218,9 @@ export function clusterIconHtml(count, color) {
     size +
     'px;height:' +
     size +
-    'px;box-sizing:border-box;border-radius:50%;background:#0F172A;border:2.5px solid #FFFFFF;' +
-    'box-shadow:0 0 0 4px ' +
-    hexToRgba(halo, 0.3) +
-    ',0 4px 12px rgba(15,23,42,0.45);color:#FFFFFF;font-family:' +
+    'px;box-sizing:border-box;border-radius:50%;background:#0F172A;box-shadow:0 0 0 2.5px #FFFFFF,0 0 0 5.5px ' +
+    hexToRgba(halo, 0.5) +
+    ',0 4px 10px rgba(15,23,42,0.38);color:#FFFFFF;font-family:' +
     PIN_LABEL_FONT_STACK +
     ';font-size:' +
     (Number(count) >= 10 ? 15 : 14) +

@@ -272,8 +272,8 @@ check('지도: 투영 함수가 없으면 빈 목록 (예외 없음)', projectPi
 // 배지 HTML — 숫자·다크 배경·흰 테두리
 const badge = clusterIconHtml(3, '#FF5A36');
 check('배지 HTML: 숫자 표시', badge.indexOf('>3<') > 0, badge.slice(0, 80));
-check('배지 HTML: 다크 네이비 배경 + 흰 테두리', badge.indexOf('background:#0F172A') > 0 && badge.indexOf('2.5px solid #FFFFFF') > 0);
-check('배지 HTML: 분류 색 헤일로(코랄)', badge.indexOf('rgba(255,90,54,0.3)') > 0);
+check('배지 HTML: 다크 네이비 원 + 두꺼운 흰 링', badge.indexOf('background:#0F172A') > 0 && badge.indexOf('0 0 0 2.5px #FFFFFF') > 0);
+check('배지 HTML: 분류 색 헤일로(코랄)', badge.indexOf('rgba(255,90,54,0.5)') > 0);
 check('배지 HTML: 100곳이면 99+', clusterIconHtml(120, null).indexOf('99+') > 0);
 
 // ── 9. 화면 배선 ────────────────────────────────────────────
