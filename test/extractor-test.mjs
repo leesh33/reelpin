@@ -1288,6 +1288,8 @@ check('naver 링크: usedAdapter=naver-place-link', naverLinkResult.usedAdapter 
 check('naver 링크: 후보 이름', (naverLinkResult.candidates[0] || {}).name === '칸다소바', JSON.stringify(naverLinkResult.candidates[0] && naverLinkResult.candidates[0].name));
 check('naver 링크: 후보에 naverPlaceId', (naverLinkResult.candidates[0] || {}).naverPlaceId === '1736095566');
 check('naver 링크: 핀에 phone 저장', buildPin(naverLinkResult.candidates[0], {}).phone === '0507-1375-1660');
+check('naver 링크: 이름을 읽었으니 "제목을 못 읽어와요" 안내 없음', naverLinkResult.titleNotice === '' && naverLinkResult.sourceTitle === '칸다소바', JSON.stringify([naverLinkResult.titleNotice, naverLinkResult.sourceTitle]));
+check('naver 링크: titleStatus=page', naverLinkResult.titleStatus === 'page', naverLinkResult.titleStatus);
 
 // 14-4. 전화번호 → tel: 링크
 check('tel: 일반 번호', telUrlOf('0507-1375-1660') === 'tel:050713751660', telUrlOf('0507-1375-1660'));
