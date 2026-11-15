@@ -21,6 +21,7 @@ import resolveUrlHandler, {
   normalizeTarget,
   parseNaverPlaceHtml as apiParseNaverPlaceHtml,
 } from '../api/resolve-url.js';
+import geminiHandler from '../api/gemini.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -67,7 +68,7 @@ async function call(handler, query = {}, method = 'GET') {
 const jsonRes = (data, status = 200) => ({ ok: status < 400, status, json: async () => data });
 const errRes = (status) => ({ ok: false, status, json: async () => ({}) });
 
-const SECRETS = ['YOUTUBE_SECRET_KEY', 'KAKAO_SECRET_KEY', 'HUB_SECRET_KEY', 'LEGACY_SECRET_KEY'];
+const SECRETS = ['YOUTUBE_SECRET_KEY', 'KAKAO_SECRET_KEY', 'HUB_SECRET_KEY', 'LEGACY_SECRET_KEY', 'GEMINI_SECRET_KEY'];
 const leaksSecret = (raw) => SECRETS.some((s) => String(raw || '').indexOf(s) >= 0);
 
 let calls = [];
@@ -277,6 +278,131 @@ check('naver(legacy): 구 엔드포인트 호출', calls[0].url.indexOf('https:/
 check('naver(legacy): X-Naver 헤더', calls[0].init.headers['X-Naver-Client-Id'] === 'LEGACY_ID' && calls[0].init.headers['X-Naver-Client-Secret'] === 'LEGACY_SECRET_KEY', JSON.stringify(Object.keys(calls[0].init.headers)));
 check('naver(legacy): 200', r.status === 200, String(r.status));
 
+// ── 6-1. v2.9 Gemini 영상 분석 (/api/gemini) ────────────────
+//   · 키 없음 → 503 (앱은 조용히 기존 폴백)
+//   · 유튜브가 아니면 → 200 빈 결과 + 업스트림 호출 0 (키를 다른 데 쓰지 않음)
+//   · 유튜브면 fileUri=watch 주소 + 제목·설명글 + JSON 모드로 generateContent
+//   · 실패·미확인은 모두 200 빈 결과 (앱을 멈지지 않음) · 키는 응답에 절대 없음
+async function callGemini(body, method = 'POST') {
+  const res = makeRes();
+  await geminiHandler({ method, body }, res);
+  return { status: res.statusCode, body: res.jsonBody(), raw: res.body, headers: res.headers };
+}
+const GEMINI_SECRET = 'GEMINI_SECRET_KEY';
+const GEMINI_OK = {
+  storeName: '엄마손횟집',
+  area: '제주 연동',
+  menu: '돌돔, 전복',
+  category: '맛집',
+  places: [{ name: '엄마손횟집', area: '제주 연동', menu: '돌돔' }],
+};
+const geminiText = (obj) => ({ candidates: [{ content: { parts: [{ text: typeof obj === 'string' ? obj : JSON.stringify(obj) }] }, finishReason: 'STOP' }] });
+
+delete process.env.GEMINI_API_KEY;
+calls = [];
+handler = () => jsonRes({});
+r = await callGemini({ url: 'https://youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: 키 없음 → 503 gemini-not-configured', r.status === 503 && r.body.error === 'gemini-not-configured', JSON.stringify(r.body));
+check('gemini(키 없음): 업스트림 호출 0', calls.length === 0, String(calls.length));
+
+process.env.GEMINI_API_KEY = GEMINI_SECRET;
+calls = [];
+r = await callGemini({ url: 'https://youtube.com/shorts/LPLE_SH2b9U' }, 'GET');
+check('gemini: GET → 405 (POST 만)', r.status === 405, String(r.status));
+r = await callGemini({});
+check('gemini: url 없음 → 400', r.status === 400 && r.body.error === 'missing-url', JSON.stringify(r.body));
+r = await callGemini({ url: 'https://www.instagram.com/reel/C8xSg2pQ1K/' });
+check(
+  'gemini: 유튜브 아님 → 200 빈 결과',
+  r.status === 200 && r.body.storeName === '' && Array.isArray(r.body.places) && r.body.places.length === 0,
+  JSON.stringify(r.body)
+);
+check('gemini: 유튜브 아니면 업스트림 호출 없음', calls.length === 0, String(calls.length));
+check('gemini(유튜브 아님): 키 노출 없음', !leaksSecret(r.raw), r.raw.slice(0, 80));
+
+// 요청 모양 — 유튜브 URL 정규화 + 제목·설명글 + JSON 응답 모드
+calls = [];
+handler = () => jsonRes(geminiText('```json\n' + JSON.stringify(GEMINI_OK) + '\n```'));
+r = await callGemini({ url: 'https://youtu.be/LPLE_SH2b9U?t=12', title: '제주 연동 엄마손횟집', description: '자연산 돌돔' });
+const gReq = calls[0] || { url: '', init: {} };
+const gBody = JSON.parse(gReq.init.body || '{}');
+check(
+  'gemini: 업스트림 엔드포인트(v1beta · gemini-2.5-flash)',
+  gReq.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  gReq.url
+);
+check(
+  'gemini: 키는 x-goog-api-key 헤더(URL 에 없음)',
+  gReq.init.headers['x-goog-api-key'] === GEMINI_SECRET && gReq.url.indexOf('key=') < 0,
+  gReq.url
+);
+check(
+  'gemini: youtu.be → watch 주소로 fileData',
+  gBody.contents[0].parts[0].fileData.fileUri === 'https://www.youtube.com/watch?v=LPLE_SH2b9U',
+  JSON.stringify(gBody.contents[0].parts[0])
+);
+check(
+  'gemini: 제목·설명글도 함께 전송',
+  gBody.contents[0].parts[1].text.indexOf('엄마손횟집') > 0 && gBody.contents[0].parts[1].text.indexOf('자연산 돌돔') > 0,
+  gBody.contents[0].parts[1].text.slice(0, 120)
+);
+check(
+  'gemini: responseMimeType=application/json + 스키마',
+  gBody.generationConfig.responseMimeType === 'application/json' && !!gBody.generationConfig.responseSchema,
+  JSON.stringify(Object.keys(gBody.generationConfig || {}))
+);
+check('gemini: 첫 시도는 thinkingBudget 0(속도)', gBody.generationConfig.thinkingConfig.thinkingBudget === 0, JSON.stringify(gBody.generationConfig.thinkingConfig));
+check(
+  'gemini: 응답 파싱(```json 울타리 제거)',
+  r.status === 200 && r.body.storeName === '엄마손횟집' && r.body.area === '제주 연동' && r.body.category === '맛집',
+  JSON.stringify(r.body)
+);
+check('gemini: places 배열 유지', r.body.places.length === 1 && r.body.places[0].name === '엄마손횟집', JSON.stringify(r.body.places));
+check('gemini: 모델·출처 표시', r.body.model === 'gemini-2.5-flash' && r.body.source === 'gemini', JSON.stringify([r.body.model, r.body.source]));
+check('gemini: 응답에 키 없음', !leaksSecret(r.raw), r.raw.slice(0, 100));
+
+// places 만 온 경우 → 첫 가게를 storeName 으로
+handler = () => jsonRes(geminiText({ storeName: '', area: '', menu: '', category: '', places: [{ name: '디오디아2.0', area: '강남' }] }));
+r = await callGemini({ url: 'https://www.youtube.com/watch?v=WtB53sC3weY' });
+check('gemini: places 만 있어도 상호·동네를 채움', r.body.storeName === '디오디아2.0' && r.body.area === '강남', JSON.stringify(r.body));
+
+// 가게를 못 찾음 / JSON 아님 / 업스트림 실패 → 모두 200 빈 결과
+handler = () => jsonRes(geminiText({ storeName: '', area: '', menu: '', category: '', places: [] }));
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: 가게 못 찾음 → 200 빈 결과', r.status === 200 && r.body.storeName === '' && r.body.places.length === 0, JSON.stringify(r.body));
+
+handler = () => jsonRes(geminiText('죄송해요. 이 영상에서는 가게를 찾을 수 없습니다.'));
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: JSON 아님 → 200 빈 결과', r.status === 200 && r.body.storeName === '' && r.body.reason === 'gemini-unparsed', JSON.stringify(r.body));
+
+handler = () => errRes(500);
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: 업스트림 500 → 200 빈 결과', r.status === 200 && r.body.storeName === '' && r.body.reason === 'gemini-upstream-500', JSON.stringify(r.body));
+check('gemini(업스트림 실패): 키 노출 없음', !leaksSecret(r.raw), r.raw);
+
+// thinkingConfig 를 모르는 모델(400) → 옵션 빼고 1회 재시도
+calls = [];
+let geminiTries = 0;
+handler = () => {
+  geminiTries += 1;
+  return geminiTries === 1 ? errRes(400) : jsonRes(geminiText(GEMINI_OK));
+};
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+const retryBody = JSON.parse((calls[1] || { init: {} }).init.body || '{}');
+check('gemini: 400 이면 한 번 더 시도해 살림', calls.length === 2 && r.body.storeName === '엄마손횟집', calls.length + ' | ' + r.body.storeName);
+check('gemini: 재시도 본문엔 thinkingConfig 없음', !(retryBody.generationConfig || {}).thinkingConfig, JSON.stringify(retryBody.generationConfig && Object.keys(retryBody.generationConfig)));
+check('gemini: 응답 타임아웃 12초 이상', geminiHandler.GEMINI_TIMEOUT_MS >= 12000, String(geminiHandler.GEMINI_TIMEOUT_MS));
+check(
+  'gemini normalize: shorts·embed·watch·youtu.be',
+  geminiHandler.normalizeYouTubeUrl('https://www.youtube.com/shorts/LPLE_SH2b9U') === 'https://www.youtube.com/watch?v=LPLE_SH2b9U' &&
+    geminiHandler.normalizeYouTubeUrl('https://m.youtube.com/watch?v=LPLE_SH2b9U&t=3') === 'https://www.youtube.com/watch?v=LPLE_SH2b9U' &&
+    geminiHandler.normalizeYouTubeUrl('https://www.youtube.com/embed/LPLE_SH2b9U') === 'https://www.youtube.com/watch?v=LPLE_SH2b9U',
+  geminiHandler.normalizeYouTubeUrl('https://m.youtube.com/watch?v=LPLE_SH2b9U&t=3')
+);
+check('gemini normalize: 유튜브 사칭 주소 거부', geminiHandler.normalizeYouTubeUrl('https://youtube.com.evil.com/shorts/LPLE_SH2b9U') === '');
+check('gemini parse: 잡담 섞인 JSON 도 파싱', geminiHandler.parseJsonLoose('결과: {"storeName":"A","places":[]} 입니다').storeName === 'A');
+delete process.env.GEMINI_API_KEY;
+
 // ── 7. 4초 타임아웃 (응답이 영영 안 오는 업스트림) ──────────
 globalThis.fetch = (url, init = {}) =>
   new Promise((resolve, reject) => {
@@ -293,7 +419,7 @@ check('kakao(타임아웃): 키 노출 없음', !leaksSecret(r.raw), r.raw);
 
 // ── 8. api/*.js 는 Vercel Node 함수 규격(module.exports = handler) ──
 const root = process.cwd(); // run-tests.mjs 가 프로젝트 루트에서 실행합니다
-['youtube.js', 'kakao-local.js', 'naver-local.js', 'resolve-url.js'].forEach((file) => {
+['youtube.js', 'kakao-local.js', 'naver-local.js', 'resolve-url.js', 'gemini.js'].forEach((file) => {
   const src = fs.readFileSync(path.join(root, 'api', file), 'utf8');
   check('api/' + file + ': module.exports = async function', /module\.exports\s*=\s*async\s+function/.test(src));
   check('api/' + file + ': 키를 응답에 직접 넣지 않음', !/sendJson\([^)]*process\.env/.test(src));
@@ -429,6 +555,11 @@ check(
 check('vercel.json: PWA 메타 주입 스크립트 존재', fs.existsSync(path.join(root, 'scripts', 'patch-web-html.mjs')));
 check('vercel.json: 출력 폴더 dist', vercel.outputDirectory === 'dist', vercel.outputDirectory);
 check('vercel.json: api/*.js 함수 설정', Object.keys(vercel.functions || {}).indexOf('api/*.js') >= 0, JSON.stringify(Object.keys(vercel.functions || {})));
+check(
+  'vercel.json: /api/gemini 는 maxDuration 60초(영상 분석)',
+  (vercel.functions['api/gemini.js'] || {}).maxDuration === 60,
+  JSON.stringify(vercel.functions['api/gemini.js'])
+);
 const rewrite = (vercel.rewrites || [])[0] || {};
 check('vercel.json: SPA rewrite → index.html', rewrite.destination === '/index.html', JSON.stringify(rewrite));
 check('vercel.json: /api 는 rewrite 제외', String(rewrite.source).indexOf('(?!api/)') > 0, String(rewrite.source));

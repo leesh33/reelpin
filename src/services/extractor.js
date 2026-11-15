@@ -512,6 +512,8 @@ export const API_PROXY = {
   youtube: '/api/youtube',
   kakao: '/api/kakao-local',
   naver: '/api/naver-local',
+  // v2.9 — Gemini 영상 분석(음성·화면 자막). 키는 서버에만 있어 웹 프록시로만 부릅니다.
+  gemini: '/api/gemini',
 };
 /** 프록시 응답을 기다리는 시간 — 서버 함수 자체 타임아웃(4초)보다 살짝 길게 */
 export const API_PROXY_TIMEOUT_MS = 4500;
@@ -572,6 +574,110 @@ export async function fetchYouTubeProxy(parsed, options = {}) {
     channelId: String(json.channelId || ''),
     source: 'youtube-proxy',
   };
+}
+
+/**
+ * v2.9 · Gemini 영상 분석 — `/api/gemini` 프록시 (웹 전용)
+ * ─────────────────────────────────────────────────────────────
+ * 유튜브 쇼츠의 **음성·화면 자막**을 Gemini 가 직접 보고 가게를 찾습니다.
+ *   · 제목·설명글에 상호가 없어 지도 검색이 실패했을 때만 호출합니다. (extractPlaces 3단계)
+ *   · Gemini 키는 Vercel 환경변수(`GEMINI_API_KEY`)에만 있으므로 **웹에서만** 부를 수 있습니다.
+ *     (네이티브 앱 번들에는 키를 넣지 않습니다 — 노출 0건 원칙)
+ *   · 영상 길이·모델에 따라 10초 넘게 걸리므로 프록시 타임아웃을 길게 잡습니다.
+ */
+export const GEMINI_PROXY_TIMEOUT_MS = 28000;
+
+/**
+ * `/api/gemini` 로 영상을 보내 가게명·지역·메뉴를 받아 옵니다.
+ * @returns {Promise<{storeName:string, area:string, menu:string, category:string,
+ *                    places:Array<{name:string, area:string, menu:string}>, source:string}|null>}
+ *          가게를 못 찾았거나(빈 결과) 프록시가 없으면 `null` — 호출부는 기존 폴백으로 이어집니다.
+ */
+export async function fetchGeminiAnalysis(parsed, meta, options = {}) {
+  if (!parsed || parsed.platform !== 'youtube') return null;
+  const videoUrl = youtubeWatchUrlOf(parsed);
+  if (!videoUrl) return null;
+  // 키가 브라우저 번들에 없으므로 서버 프록시가 있는 웹에서만 시도합니다.
+  if (!isWebPlatform()) return null;
+  const timeoutMs =
+    options.timeoutMs == null
+      ? GEMINI_PROXY_TIMEOUT_MS
+      : Number(options.timeoutMs) || GEMINI_PROXY_TIMEOUT_MS;
+  const payload = {
+    url: videoUrl,
+    title: String((meta && meta.title) || '').slice(0, 200),
+    description: String((meta && meta.description) || '').slice(0, 1800),
+  };
+  const res = await fetchWithTimeout(
+    API_PROXY.gemini,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    },
+    timeoutMs
+  );
+  if (!res || !res.ok || typeof res.json !== 'function') return null;
+  let json = null;
+  try {
+    json = await res.json();
+  } catch (e) {
+    return null;
+  }
+  if (!json || typeof json !== 'object') return null;
+  const storeName = String(json.storeName || '').trim().slice(0, 60);
+  if (!storeName) return null; // 가게를 특정하지 못함 → 조용히 폴백
+  const places = (Array.isArray(json.places) ? json.places : [])
+    .map((p) => ({
+      name: String((p && p.name) || '').trim().slice(0, 60),
+      area: String((p && p.area) || '').trim().slice(0, 30),
+      menu: String((p && p.menu) || '').trim().slice(0, 80),
+    }))
+    .filter((p) => p.name)
+    .slice(0, 3);
+  return {
+    storeName,
+    area: String(json.area || '').trim().slice(0, 30),
+    menu: String(json.menu || '').trim().slice(0, 80),
+    category: String(json.category || '').trim(),
+    places,
+    source: 'gemini',
+  };
+}
+
+/** Gemini 가 찾은 가게로 지도에 **다시** 물어볼 검색어 — 지역+상호 → 상호 → 나머지 가게 순서 */
+export function geminiQueryList(analysis, limit = 3) {
+  if (!analysis || !analysis.storeName) return [];
+  const out = [];
+  const push = (value) => {
+    const text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text && out.indexOf(text) < 0) out.push(text);
+  };
+  const area = String(analysis.area || '').trim();
+  push([area, analysis.storeName].filter(Boolean).join(' '));
+  push(analysis.storeName);
+  for (const place of analysis.places || []) {
+    push([area || (place && place.area) || '', place && place.name].filter(Boolean).join(' '));
+  }
+  return out.slice(0, Math.max(1, limit));
+}
+
+/** 화면에 한 줄로 띄울 근거 문구 — "AI 영상 분석으로 찾았어요 · “가게명” (동네)" */
+export function geminiNoteOf(analysis) {
+  const name = String((analysis && analysis.storeName) || '').trim();
+  if (!name) return '';
+  const area = String((analysis && analysis.area) || '').trim();
+  return 'AI 영상 분석으로 찾았어요 · “' + name + '”' + (area ? ' (' + area + ')' : '');
+}
+
+/** 메뉴 문자열("돌돔, 전복") → 핀의 menuTags(최대 3개) */
+function menuTagsOfGemini(analysis) {
+  const raw = String((analysis && analysis.menu) || '');
+  return raw
+    .split(/[,，·\/]/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
 }
 
 /**
@@ -2565,7 +2671,10 @@ export const EXTRACT_STAGES = ['링크 확인', '캡션 분석', '지도 좌표 
 
 /**
  * @param {string} rawInput URL 하나, 또는 공유 시트에서 복사한 **문구 + URL** 덩어리
- * @param {{caption?: string, maxQueries?: number}} options
+ * @param {{caption?: string, maxQueries?: number, gemini?: boolean, geminiTimeoutMs?: number,
+ *          onStage?: (stage:number)=>void}} options
+ *        `gemini:false` 면 영상 분석 폴백을 쓰지 않습니다. `onStage(3)` 는 Gemini 분석을 시작할 때
+ *        화면 진행 문구를 'AI 영상 분석'으로 바꾸려고 부릅니다(없어도 동작).
  * @returns {Promise<{ok:boolean, reason?:string, platform?:string, platformLabel?:string,
  *                    title?: string, sourceTitle?: string, titleStatus?: string, titleNotice?: string,
  *                    suggestedQuery?: string, query?: string, queryList?: string[],
@@ -2796,6 +2905,121 @@ export async function extractPlaces(rawInput, options = {}) {
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
+    };
+  }
+
+  // ── v2.9 (3) 1차(제목·설명글·댓글 + 지도)로 **실매장을 못 찾았을 때만** Gemini 가 영상을 봅니다 ──
+  //   · 유튜브 쇼츠만 대상입니다. (인스타·틱톡은 영상 접근이 막혀 있어 프록시도 빈 결과)
+  //   · 정상적으로 찾은 릴스(디오디아2.0·엄마손횟집 등)는 위에서 이미 반환되므로
+  //     여기까지 오지 않습니다 → 0.5초 만에 끝나고 Gemini 호출·크레딧을 쓰지 않습니다.
+  //   · 웹(프록시)에서만 호출합니다. 네이티브는 키가 번들에 없어 건너뜁니다.
+  let gemini = null;
+  if (options.gemini !== false && parsed.platform === 'youtube' && isWebPlatform()) {
+    if (typeof options.onStage === 'function') {
+      try {
+        options.onStage(3); // 화면 진행 문구를 'AI 영상 분석' 단계로
+      } catch (e) {
+        /* 화면 콜백 오류는 추출을 막지 않습니다 */
+      }
+    }
+    gemini = await fetchGeminiAnalysis(
+      parsed,
+      { title: sourceTitle, description },
+      { timeoutMs: options.geminiTimeoutMs }
+    );
+  }
+  if (gemini && gemini.storeName) {
+    // Gemini 가 읽은 상호·지역으로 카카오/네이버 지도를 **한 번 더** 조회합니다.
+    const geminiQueries = geminiQueryList(gemini, 3);
+    const geminiAttempts = [];
+    let geminiChain = {
+      candidates: [],
+      providersTried: [],
+      providersUsed: [],
+      failures: [],
+      reason: 'empty-gemini-query',
+    };
+    let geminiUsedQuery = '';
+    for (const q of geminiQueries) {
+      const res = await searchPlaceProviders({ query: q, limit: 3 });
+      geminiAttempts.push({
+        query: q,
+        resultCount: (res.candidates || []).length,
+        providersUsed: res.providersUsed || [],
+        failures: res.failures || [],
+        reason: res.reason,
+      });
+      geminiChain = {
+        candidates: res.candidates || [],
+        providersTried: Array.from(
+          new Set([...(geminiChain.providersTried || []), ...(res.providersTried || [])])
+        ),
+        providersUsed: Array.from(
+          new Set([...(geminiChain.providersUsed || []), ...(res.providersUsed || [])])
+        ),
+        failures: [...(geminiChain.failures || []), ...(res.failures || [])],
+        reason: res.reason,
+      };
+      if (geminiChain.candidates.length) {
+        geminiUsedQuery = q;
+        break;
+      }
+    }
+    const aiNote = geminiNoteOf(gemini);
+    const geminiAdapter = ['gemini', ...geminiChain.providersUsed].filter(Boolean).join('+');
+    const geminiMenuTags = menuTagsOfGemini(gemini);
+
+    if (geminiChain.candidates.length) {
+      return {
+        ...base,
+        title: geminiChain.candidates[0].name,
+        query: geminiUsedQuery,
+        queryList: geminiQueries,
+        attempts: geminiAttempts,
+        candidates: geminiChain.candidates.map((c) => ({
+          ...c,
+          // 지도사가 준 분류가 우선, 없을 때만 Gemini 분류
+          category: c.rawCategory ? c.category : gemini.category || c.category || '맛집',
+          menuTags: geminiMenuTags.length ? geminiMenuTags : c.menuTags || [],
+        })),
+        usedAdapter: geminiAdapter,
+        providersTried: Array.from(new Set([...(chain.providersTried || []), ...geminiChain.providersTried])),
+        providersUsed: geminiChain.providersUsed,
+        failures: [...(chain.failures || []), ...geminiChain.failures],
+        aiNote,
+        aiAnalysis: gemini,
+      };
+    }
+
+    // 지도에서 좌표를 못 채웠어도 Gemini 가 영상에서 읽은 **실제 상호**는 버리지 않습니다.
+    //  → 이름·동네가 채워진 수동 확인 후보(좌표 없음)로 넘기고, 화면에 근거를 밝힙니다.
+    return {
+      ...base,
+      title: gemini.storeName,
+      query: geminiQueries[0] || gemini.storeName,
+      queryList: geminiQueries,
+      attempts: geminiAttempts,
+      candidates: [
+        {
+          id: 'gemini-1',
+          name: gemini.storeName,
+          area: gemini.area || findAreaFromText(text) || '',
+          category: gemini.category || '맛집',
+          menuTags: geminiMenuTags,
+          address: gemini.area ? gemini.area + ' 일대 (주소 확인 필요)' : '주소 확인 필요',
+          lat: null,
+          lng: null,
+          confidence: 0.62,
+          provider: 'gemini',
+          manual: true,
+        },
+      ],
+      usedAdapter: geminiAdapter,
+      providersTried: Array.from(new Set([...(chain.providersTried || []), ...geminiChain.providersTried])),
+      providersUsed: geminiChain.providersUsed,
+      failures: [...(chain.failures || []), ...geminiChain.failures],
+      aiNote,
+      aiAnalysis: gemini,
     };
   }
 

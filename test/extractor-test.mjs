@@ -464,6 +464,22 @@ await extractPlaces(PRESETS[0].url, {
 const sentQuery = decodeURIComponent(calls[0].url.split('query=')[1].split('&')[0]);
 check('query: hashtag/emoji/link stripped', sentQuery === '성수 소금빵', sentQuery);
 
+// 3-12. v2.9 — **네이티브(iOS/Android)는 Gemini 영상 분석을 부르지 않음**
+//   Gemini 키는 Vercel 서버에만 있어 앱 번들에 없습니다 → 프록시가 있는 웹에서만 호출합니다.
+setKeys({ kakao: 'KAKAOKEY' });
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('youtube.com/oembed') > 0) return errRes(404);
+  if (u.indexOf('dapi.kakao.com') > 0) return jsonRes({ documents: [] });
+  if (u.indexOf('naverapihub') > 0 || u.indexOf('openapi.naver.com') > 0) return jsonRes({ items: [] });
+  return jsonRes({ items: [], places: [], documents: [] });
+};
+const nativeGemini = await extractPlaces('https://youtube.com/shorts/LPLE_SH2b9U', {});
+check('v2.9 native: /api/gemini 호출 없음(웹 전용)', !calls.some((c) => c.url.indexOf('/api/gemini') >= 0), calls.map((c) => c.url).join(' | '));
+check('v2.9 native: 실매장 못 찾으면 기존 오프라인 폴백', String(nativeGemini.usedAdapter).indexOf('offline') === 0, nativeGemini.usedAdapter);
+check('v2.9 native: aiNote 없음', !nativeGemini.aiNote, String(nativeGemini.aiNote));
+
 // ── 4. 오프라인 추출기 단위 ───────────────────────────────────
 const off = offlineSmartExtract({ url: 'https://www.instagram.com/reel/x/', contentId: 'x' }, '검단 아라뱃길 카페');
 check('offline: finds 검단 카페', off[0].name === '아라뱃길 뷰 카페', off[0].name);

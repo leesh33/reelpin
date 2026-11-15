@@ -38,7 +38,8 @@ const EMOJI_BY_CATEGORY = {
 
 const TILE_BG = ['#FFF0EA', '#EDF6F2', '#F2F1FA', '#FFF7E6'];
 
-const LINK_STAGES = ['링크 확인', '캡션 분석', '좌표 매칭'];
+// v2.9 — 마지막 단계는 Gemini 영상 분석(음성·화면 자막). 실제로 그 단계로 갈 때만 문구가 바뀝니다.
+const LINK_STAGES = ['링크 확인', '캡션 분석', '좌표 매칭', 'AI 영상 분석'];
 const SEARCH_STAGES = ['지도 조회', '중복 정리', '후보 정렬'];
 
 export default function PasteScreen({
@@ -154,7 +155,11 @@ export default function PasteScreen({
 
     const preset = PRESETS.find((p) => p.url === shared.url);
     try {
-      const result = await extractPlaces(value, { caption: preset ? preset.caption : '' });
+      const result = await extractPlaces(value, {
+        caption: preset ? preset.caption : '',
+        // 1차(제목·설명글·지도)로 실매장을 못 찾았을 때 Gemini 분석으로 넘어가면 진행 문구를 바꿉니다.
+        onStage: (s) => setStage(s),
+      });
       // 최소 로딩 시간을 줘서 '분석 중' 단계가 눈에 보이게 합니다.
       await new Promise((resolve) => setTimeout(resolve, 520));
       clearInterval(stageTimer);
@@ -183,6 +188,8 @@ export default function PasteScreen({
         titleStatus: result.titleStatus || 'none',
         titleNotice: result.titleNotice || '',
         suggestedQuery: result.suggestedQuery || '',
+        // v2.9 — Gemini 가 영상 속 말·자막을 읽어 찾은 경우의 한 줄 근거
+        aiNote: result.aiNote || '',
       });
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
@@ -566,6 +573,16 @@ export default function PasteScreen({
                 </Text>
               </View>
             )}
+
+            {/* v2.9 — Gemini 가 영상 속 말·자막을 읽어 찾은 경우의 한 줄 근거 */}
+            {meta && meta.aiNote ? (
+              <View style={styles.aiLine}>
+                <Ionicons name="sparkles" size={12} color={colors.coralDark} />
+                <Text style={styles.aiLineText} numberOfLines={2}>
+                  {meta.aiNote}
+                </Text>
+              </View>
+            ) : null}
 
             {/* 읽어온 제목 · 인스타처럼 못 읽은 경우의 원탭 안내 (v1.2) */}
             <ExtractedTitleNote
@@ -1010,6 +1027,22 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '700',
     color: colors.textSub,
+  },
+  aiLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.coralSoft,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  aiLineText: {
+    flex: 1,
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: colors.coralDark,
   },
   heroCard: {
     height: 132,

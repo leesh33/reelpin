@@ -22,6 +22,11 @@ import {
   // v2.0 — 네이버 단축·지도 링크는 웹에서도 프록시로
   resolveShortLink,
   resolvePlaceLinkFromInput,
+  // v2.9 — Gemini 영상 분석(음성·화면 자막) 프록시
+  GEMINI_PROXY_TIMEOUT_MS,
+  fetchGeminiAnalysis,
+  geminiQueryList,
+  geminiNoteOf,
 } from '../src/services/extractor.js';
 
 let fails = 0;
@@ -161,6 +166,8 @@ check('web/youtube: Data API 직접 호출 없음(키 없음)', !urlList.some((u
 check('web/youtube: 제목은 프록시/ oEmbed 로', String(ytFlow.sourceTitle).includes('엄마손횟집'), ytFlow.sourceTitle);
 check('web/youtube: titleStatus=video', ytFlow.titleStatus === 'video', ytFlow.titleStatus);
 check('web/youtube: 검색어에 상호 반영', ytFlow.queryList[0] === '연동 엄마손횟집', ytFlow.queryList.join(' / '));
+// v2.9 — 정상적으로 찾은 릴스는 Gemini 를 부르지 않습니다(0.5초 · 크레딧 0)
+check('web/youtube: 1차에서 찾으면 /api/gemini 호출 없음', !urlList.some((u) => u.indexOf('/api/gemini') === 0), urlList.join(' | '));
 
 // ── 7. 프록시 실패 → oEmbed 폴백 (앱이 멈지지 않음) ──────────
 calls = [];
@@ -175,6 +182,114 @@ const fallbackFlow = await extractPlaces('https://youtube.com/shorts/9Xk2mQpLz7A
 check('web/폴백: oEmbed 로 제목 확보', fallbackFlow.sourceTitle === '연남동 딸기 케이크 맛집', fallbackFlow.sourceTitle);
 check('web/폴백: oEmbed 는 CORS 열려 있어 웹에서 동작', calls.some((c) => c.url.indexOf('youtube.com/oembed') > 0), calls.map((c) => c.url).join(' | '));
 check('web/폴백: ok 결과 유지', fallbackFlow.ok === true && fallbackFlow.candidates.length > 0, String(fallbackFlow.candidates.length));
+
+// ── 7-1. v2.9 Gemini 영상 분석 폴백 (유튜브 · 1차 실패 시에만) ──
+check('web/gemini: 프록시 주소 상수', API_PROXY.gemini === '/api/gemini', String(API_PROXY.gemini));
+check('web/gemini: 타임아웃 12초 이상', GEMINI_PROXY_TIMEOUT_MS >= 12000, String(GEMINI_PROXY_TIMEOUT_MS));
+
+calls = [];
+handler = (url) => {
+  if (url === '/api/gemini') return jsonRes({ storeName: '엄마손횟집', area: '제주 연동', menu: '돌돔', category: '맛집', places: [] });
+  return errRes(404);
+};
+const gAnalysis = await fetchGeminiAnalysis(parseUrl('https://youtube.com/shorts/LPLE_SH2b9U'), {
+  title: '제주 연동 맛집',
+  description: '자연산 돌돔',
+});
+const gCall = calls[0] || { url: '', init: {} };
+const gPayload = JSON.parse(gCall.init.body || '{}');
+check('web/gemini: POST /api/gemini', gCall.url === '/api/gemini' && gCall.init.method === 'POST', gCall.url);
+check(
+  'web/gemini: watch 주소 + 제목·설명글 전송',
+  gPayload.url === 'https://www.youtube.com/watch?v=LPLE_SH2b9U' && gPayload.title === '제주 연동 맛집' && gPayload.description === '자연산 돌돔',
+  JSON.stringify(gPayload)
+);
+check('web/gemini: 분석 결과 매핑', gAnalysis && gAnalysis.storeName === '엄마손횟집' && gAnalysis.area === '제주 연동', JSON.stringify(gAnalysis));
+check(
+  'web/gemini: 인스타 링크는 호출하지 않음',
+  (await fetchGeminiAnalysis(parseUrl('https://www.instagram.com/reel/C8xSg2pQ1K/'), {})) === null && calls.length === 1,
+  String(calls.length)
+);
+check(
+  'web/gemini: 검색어는 지역+상호 먼저',
+  JSON.stringify(geminiQueryList(gAnalysis).slice(0, 2)) === JSON.stringify(['제주 연동 엄마손횟집', '엄마손횟집']),
+  JSON.stringify(geminiQueryList(gAnalysis))
+);
+check('web/gemini: 근거 문구', geminiNoteOf(gAnalysis) === 'AI 영상 분석으로 찾았어요 · “엄마손횟집” (제주 연동)', geminiNoteOf(gAnalysis));
+
+// 1차(제목·설명글)가 비어 지도에서 실매장을 못 찾은 유튜브 → Gemini 가 영상 읽기 → 지도 재조회
+const GEMINI_KAKAO_DOC = {
+  ...KAKAO_DOC,
+  id: '90001',
+  place_name: '엄마손횟집',
+  category_name: '음식점 > 한식 > 해물,생선',
+  address_name: '제주 제주시 연동 123-4',
+  y: '33.4890',
+  x: '126.4983',
+};
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('/api/youtube') === 0) return jsonRes({ title: '', description: '', comments: '', thumbnail: '', channelId: '' });
+  if (u.indexOf('https://www.youtube.com/oembed') === 0) return errRes(404);
+  if (u === '/api/gemini') return jsonRes({ storeName: '엄마손횟집', area: '제주 연동', menu: '돌돔', category: '맛집', places: [] });
+  if (u.indexOf('/api/kakao-local') === 0) {
+    return decodeURIComponent(u).indexOf('엄마손횟집') >= 0 ? jsonRes({ documents: [GEMINI_KAKAO_DOC] }) : jsonRes({ documents: [] });
+  }
+  if (u.indexOf('/api/naver-local') === 0) return jsonRes({ items: [] });
+  return jsonRes({ items: [], documents: [] });
+};
+const gFlow = await extractPlaces('https://youtube.com/shorts/LPLE_SH2b9U');
+const gFlowUrls = calls.map((c) => c.url);
+check('web/gemini 흐름: 1차 실패 → /api/gemini 호출', gFlowUrls.indexOf('/api/gemini') >= 0, gFlowUrls.join(' | '));
+check(
+  'web/gemini 흐름: 찾은 상호로 지도를 다시 조회',
+  gFlowUrls.some((u) => u.indexOf('/api/kakao-local') === 0 && decodeURIComponent(u).indexOf('엄마손횟집') > 0),
+  gFlowUrls.join(' | ')
+);
+check('web/gemini 흐름: 실매장 후보', gFlow.candidates.length === 1 && gFlow.candidates[0].name === '엄마손횟집', JSON.stringify(gFlow.candidates.map((c) => c.name)));
+check('web/gemini 흐름: usedAdapter 가 gemini 로 시작', String(gFlow.usedAdapter).indexOf('gemini') === 0, gFlow.usedAdapter);
+check(
+  'web/gemini 흐름: 한 줄 근거(aiNote)',
+  String(gFlow.aiNote).indexOf('AI 영상 분석으로 찾았어요') === 0 && String(gFlow.aiNote).indexOf('엄마손횟집') > 0,
+  gFlow.aiNote
+);
+check('web/gemini 흐름: 메뉴 → menuTags', JSON.stringify(gFlow.candidates[0].menuTags) === '["돌돔"]', JSON.stringify(gFlow.candidates[0].menuTags));
+check('web/gemini 흐름: 지도 분류가 우선', gFlow.candidates[0].category === '맛집', gFlow.candidates[0].category);
+
+// Gemini 가 지도에서 좌표를 못 채워도 **영상에서 읽은 상호**는 살립니다(좌표 없는 수동 후보)
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('/api/youtube') === 0) return jsonRes({ title: '', description: '', comments: '', thumbnail: '', channelId: '' });
+  if (u === '/api/gemini') return jsonRes({ storeName: '모리식당', area: '성수동', menu: '규동', category: '맛집', places: [] });
+  return jsonRes({ items: [], documents: [] });
+};
+const gManual = await extractPlaces('https://youtube.com/shorts/LPLE_SH2b9U');
+check('web/gemini 수동: 상호와 동네는 남김', gManual.candidates[0].name === '모리식당' && gManual.candidates[0].area === '성수동', JSON.stringify(gManual.candidates[0]));
+check('web/gemini 수동: 좌표를 지어내지 않음', gManual.candidates[0].lat === null && gManual.candidates[0].lng === null, JSON.stringify([gManual.candidates[0].lat, gManual.candidates[0].lng]));
+check('web/gemini 수동: 근거 문구 유지', String(gManual.aiNote).indexOf('AI 영상 분석으로 찾았어요') === 0, gManual.aiNote);
+
+// Gemini 가 빈 결과/프록시 503 → 조용히 기존 오프라인 폴백
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('/api/youtube') === 0) return jsonRes({ title: '', description: '', comments: '', thumbnail: '', channelId: '' });
+  if (u === '/api/gemini') return jsonRes({ storeName: '', area: '', menu: '', category: '', places: [] });
+  return jsonRes({ items: [], documents: [] });
+};
+const gEmpty = await extractPlaces('https://youtube.com/shorts/LPLE_SH2b9U');
+check('web/gemini 빈 결과: 오프라인 폴백 유지', String(gEmpty.usedAdapter).indexOf('offline') === 0 && gEmpty.candidates.length > 0, gEmpty.usedAdapter);
+check('web/gemini 빈 결과: aiNote 없음', !gEmpty.aiNote, String(gEmpty.aiNote));
+
+handler = (url) => {
+  const u = String(url);
+  if (u.indexOf('/api/youtube') === 0) return jsonRes({ title: '', description: '', comments: '', thumbnail: '', channelId: '' });
+  if (u === '/api/gemini') return { ok: false, status: 503, json: async () => ({ error: 'gemini-not-configured' }) };
+  return jsonRes({ items: [], documents: [] });
+};
+const g503 = await extractPlaces('https://youtube.com/shorts/LPLE_SH2b9U');
+check('web/gemini 미설정(503): 앱은 그대로 오프라인 폴백', String(g503.usedAdapter).indexOf('offline') === 0 && g503.ok === true, g503.usedAdapter);
 
 // ── 8. 직접 검색('가게명으로 찾기')도 웹에서 동작 ────────────
 handler = (url) => {

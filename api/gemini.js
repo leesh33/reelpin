@@ -1,0 +1,338 @@
+/**
+ * api/gemini.js — Vercel Serverless Function
+ * ─────────────────────────────────────────────────────────────
+ * POST /api/gemini
+ *   body: { url: "https://youtube.com/shorts/…", title?: "…", description?: "…" }
+ *   응답: { storeName, area, menu, category, places: [{ name, area, menu }] }
+ *
+ * 왜 서버를 거치나
+ *   · Gemini 키는 **서버 환경변수(`GEMINI_API_KEY`)에만** 둡니다.
+ *     브라우저 번들(`EXPO_PUBLIC_*`)에는 절대 넣지 않습니다 — 키 노출 0건.
+ *   · 유튜브 URL은 Gemini 가 `fileData.fileUri` 로 **직접 시청**합니다.
+ *     (영상 속 말·화면 자막을 함께 읽으므로, 제목·설명글에 상호가 없어도 찾을 수 있음)
+ *
+ * 규칙
+ *   1. 키가 없으면 503 `{ error: 'gemini-not-configured' }` — 앱은 조용히 기존 폴백으로 이어집니다.
+ *   2. 유튜브 URL이 아니거나(인스타 등) 가게를 특정하지 못하면 **200 + 빈 결과**
+ *      `{ storeName: '', area: '', menu: '', category: '', places: [] }` 로 조용히 돌려줍니다.
+ *   3. 실패 응답에 **키·업스트림 본문을 담지 않습니다.** (로그에도 키를 찍지 않음)
+ *   4. 키는 쿼리스트링이 아니라 `x-goog-api-key` 헤더로 보냅니다. (프록시 로그·Referer 에 남지 않게)
+ *   5. CORS 헤더를 열지 않아 우리 사이트에서만 호출됩니다.
+ *   6. Gemini 영상 분석은 10초를 넘기는 경우가 흔합니다 — 타임아웃 22초 + `maxDuration` 60초.
+ */
+const { fetchWithTimeout, sendJson, warn } = require('../server/http.js');
+
+const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
+const DEFAULT_MODEL = 'gemini-2.5-flash';
+/** 영상 분석 응답 타임아웃 — Gemini YouTube 분석은 10~20초가 걸립니다. */
+const GEMINI_TIMEOUT_MS = 22000;
+/** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
+const MAX_BODY_BYTES = 16 * 1024;
+const MAX_TITLE_CHARS = 200;
+const MAX_DESCRIPTION_CHARS = 1800;
+const MAX_PLACES = 3;
+
+/** 실패·미확인 시 돌려주는 빈 결과 — 앱은 이 모양만 보고 폴백합니다. */
+function emptyResult(reason) {
+  return { storeName: '', area: '', menu: '', category: '', places: [], reason: String(reason || '') };
+}
+
+function cleanText(value, maxLength) {
+  return String(value == null ? '' : value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+/**
+ * 유튜브 URL만 통과시킵니다. (인스타·임의 주소로 Gemini 키를 쓰지 못하게)
+ * shorts·youtu.be·watch·embed·live 모두 **watch 주소**로 정규화합니다.
+ * @returns {string} `https://www.youtube.com/watch?v=<id>` 또는 '' (유튜브 아님)
+ */
+function normalizeYouTubeUrl(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!/^https?:\/\//i.test(text)) return '';
+  let parsed = null;
+  try {
+    parsed = new URL(text);
+  } catch (e) {
+    return '';
+  }
+  const host = String(parsed.hostname || '').toLowerCase().replace(/^(www|m|music)\./, '');
+  if (host !== 'youtube.com' && host !== 'youtu.be' && host !== 'youtube-nocookie.com') return '';
+  let id = '';
+  if (host === 'youtu.be') {
+    id = parsed.pathname.slice(1).split('/')[0];
+  } else if (/^\/watch\/?$/.test(parsed.pathname)) {
+    id = parsed.searchParams.get('v') || '';
+  } else {
+    const m = /^\/(?:shorts|embed|live|v)\/([A-Za-z0-9_-]{6,20})/.exec(parsed.pathname);
+    if (m) id = m[1];
+  }
+  if (!/^[A-Za-z0-9_-]{6,20}$/.test(String(id || ''))) return '';
+  return 'https://www.youtube.com/watch?v=' + id;
+}
+
+/** Vercel 은 JSON 본문을 req.body 로 주지만, 로컬·테스트를 위해 스트림도 읽습니다. */
+function readBody(req) {
+  if (req && req.body != null) {
+    if (typeof req.body === 'object') return Promise.resolve(req.body);
+    if (typeof req.body === 'string') {
+      try {
+        return Promise.resolve(JSON.parse(req.body));
+      } catch (e) {
+        return Promise.resolve(null);
+      }
+    }
+  }
+  if (!req || typeof req.on !== 'function') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    let size = 0;
+    let raw = '';
+    req.on('data', (chunk) => {
+      size += chunk && chunk.length ? chunk.length : 0;
+      if (size > MAX_BODY_BYTES) {
+        resolve(null);
+        if (typeof req.destroy === 'function') req.destroy();
+        return;
+      }
+      raw += chunk;
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(raw || '{}'));
+      } catch (e) {
+        resolve(null);
+      }
+    });
+    req.on('error', () => resolve(null));
+  });
+}
+
+const SYSTEM_INSTRUCTION = [
+  '너는 한국 맛집·카페 릴스/쇼츠 영상에서 "실제로 나온 가게"를 찾아내는 도우미다.',
+  '영상의 음성(말소리)과 화면에 보이는 자막·간판·메뉴판 글자를 함께 보고 판단한다.',
+  '규칙:',
+  '1) 영상에 실제로 나온 이름만 적는다. 추측·창작·일반화 금지. 확실하지 않으면 빈 문자열.',
+  '2) storeName: 영상에서 확인되는 가게 상호. "맛집", "릴스", "카페" 같은 일반 명사는 쓰지 않는다.',
+  '3) area: 동네·지역 단위 (예: 성수동, 연남동, 제주 연동). 모르면 "".',
+  '4) menu: 영상에 나온 대표 메뉴 1~3개를 쉼표로 구분한 한 줄.',
+  '5) category: 맛집|카페|디저트|베이커리|가볼곳|기타 중 하나.',
+  '6) places: 영상에 서로 다른 가게가 여러 곳 나오면 최대 3곳까지 [{name, area, menu}].',
+  '7) 가게를 하나도 특정할 수 없으면 storeName 을 "" 로, places 를 [] 로 둔다.',
+].join('\n');
+
+const RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    storeName: { type: 'STRING' },
+    area: { type: 'STRING' },
+    menu: { type: 'STRING' },
+    category: { type: 'STRING', enum: ['맛집', '카페', '디저트', '베이커리', '가볼곳', '기타'] },
+    places: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          name: { type: 'STRING' },
+          area: { type: 'STRING' },
+          menu: { type: 'STRING' },
+        },
+        required: ['name'],
+      },
+    },
+  },
+  required: ['storeName', 'area', 'menu', 'category', 'places'],
+};
+
+/** 요청 본문 — 영상 + 참고용 메타데이터(제목·설명글) */
+function buildRequestBody({ videoUrl, title, description, withThinkingOff }) {
+  const hints = [];
+  if (title) hints.push('영상 제목: ' + title);
+  if (description) hints.push('영상 설명글: ' + description);
+  const ask =
+    '이 영상을 보고, 영상에 나온 가게 정보를 JSON 으로만 답해줘. ' +
+    '영상 속 말과 화면 자막에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.' +
+    (hints.length ? '\n\n[참고 — 영상 메타데이터]\n' + hints.join('\n') : '');
+  const generationConfig = {
+    temperature: 0.2,
+    maxOutputTokens: 2048,
+    responseMimeType: 'application/json',
+    responseSchema: RESPONSE_SCHEMA,
+  };
+  // 2.5 flash 는 기본적으로 '생각' 토큰을 씁니다 — 영상 분석 속도를 위해 끕니다.
+  // (모델이 이 옵션을 모르면 400 이 오므로, 호출부가 옵션 없이 한 번 더 시도합니다)
+  if (withThinkingOff) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  return {
+    systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { fileData: { fileUri: videoUrl, mimeType: 'video/*' } },
+          { text: ask },
+        ],
+      },
+    ],
+    generationConfig,
+  };
+}
+
+/** 응답 → 후보 텍스트(여러 파트 합치기) */
+function responseTextOf(json) {
+  const candidates = (json && json.candidates) || [];
+  const parts = (candidates[0] && candidates[0].content && candidates[0].content.parts) || [];
+  return parts
+    .map((p) => (p && typeof p.text === 'string' ? p.text : ''))
+    .join('')
+    .trim();
+}
+
+/** ```json 울타리·앞뒤 잡담을 걷어내고 JSON 만 파싱합니다. */
+function parseJsonLoose(text) {
+  let raw = String(text || '').trim();
+  if (!raw) return null;
+  raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  try {
+    return JSON.parse(raw);
+  } catch (e) {
+    /* 아래에서 첫 { … } 덩어리만 다시 시도 */
+  }
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch (e) {
+    return null;
+  }
+}
+
+const CATEGORY_WHITELIST = ['맛집', '카페', '디저트', '베이커리', '가볼곳'];
+
+/** 모델 응답(모양이 흔들릴 수 있음) → 고정된 응답 모양으로 다듬습니다. */
+function coerceAnalysis(obj) {
+  if (!obj || typeof obj !== 'object') return emptyResult('gemini-unparsed');
+  const pick = (...keys) => {
+    for (const key of keys) {
+      const value = obj[key];
+      if (typeof value === 'string' && value.trim()) return value;
+    }
+    return '';
+  };
+  const places = [];
+  const rawPlaces = Array.isArray(obj.places) ? obj.places : [];
+  for (const item of rawPlaces) {
+    if (places.length >= MAX_PLACES) break;
+    const name = cleanText(item && (item.name || item.storeName || item.store_name), 60);
+    if (!name) continue;
+    places.push({
+      name,
+      area: cleanText(item.area, 30),
+      menu: cleanText(item.menu || item.menuTags, 80),
+    });
+  }
+  let storeName = cleanText(pick('storeName', 'store_name', 'name'), 60);
+  if (!storeName && places[0]) storeName = places[0].name;
+  const area = cleanText(pick('area', 'region', 'district'), 30) || (places[0] && places[0].area) || '';
+  const menu = cleanText(pick('menu', 'menuTags', 'menus'), 80);
+  const rawCategory = cleanText(pick('category'), 12);
+  const category = CATEGORY_WHITELIST.indexOf(rawCategory) >= 0 ? rawCategory : '';
+  if (!storeName) return { ...emptyResult('gemini-no-store'), area, menu, category, places };
+  return { storeName, area, menu, category, places };
+}
+
+/** Gemini 호출 1회. 실패하면 { ok:false, status } */
+async function callGemini({ apiKey, model, body }) {
+  const endpoint = GEMINI_ENDPOINT + encodeURIComponent(model) + ':generateContent';
+  const res = await fetchWithTimeout(
+    endpoint,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        // 키는 헤더로 — URL(로그·Referer)에 남기지 않습니다.
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify(body),
+    },
+    GEMINI_TIMEOUT_MS
+  );
+  if (!res) return { ok: false, status: 0 };
+  let json = null;
+  try {
+    json = typeof res.json === 'function' ? await res.json() : null;
+  } catch (e) {
+    json = null;
+  }
+  return { ok: Boolean(res.ok), status: Number(res.status) || 0, json };
+}
+
+module.exports = async function handler(req, res) {
+  if (String((req && req.method) || '').toUpperCase() !== 'POST') {
+    return sendJson(res, 405, { error: 'method-not-allowed' });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY || '';
+  if (!apiKey) return sendJson(res, 503, { error: 'gemini-not-configured' });
+
+  const body = await readBody(req);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return sendJson(res, 400, { error: 'invalid-body' });
+  }
+
+  const rawUrl = String(body.url == null ? '' : body.url).slice(0, 500).trim();
+  if (!rawUrl) return sendJson(res, 400, { error: 'missing-url' });
+
+  // 유튜브가 아니면(인스타·틱톡 등) 조용히 빈 결과 — Gemini 키를 쓰지 않습니다.
+  const videoUrl = normalizeYouTubeUrl(rawUrl);
+  if (!videoUrl) return sendJson(res, 200, emptyResult('not-youtube'));
+
+  const title = cleanText(body.title, MAX_TITLE_CHARS);
+  const description = cleanText(body.description, MAX_DESCRIPTION_CHARS);
+  const model = String(process.env.GEMINI_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL;
+
+  let attempt = await callGemini({
+    apiKey,
+    model,
+    body: buildRequestBody({ videoUrl, title, description, withThinkingOff: true }),
+  });
+  // thinkingConfig 를 모르는 모델이면(400) 옵션을 빼고 한 번 더 — 기능이 통째로 죽지 않게.
+  if (!attempt.ok && attempt.status === 400) {
+    attempt = await callGemini({
+      apiKey,
+      model,
+      body: buildRequestBody({ videoUrl, title, description, withThinkingOff: false }),
+    });
+  }
+
+  if (!attempt.ok) {
+    // 업스트림 본문·키는 절대 돌려주지 않습니다. (상태 코드만 로그)
+    warn('gemini: upstream failed status=' + attempt.status + ' model=' + model);
+    return sendJson(res, 200, emptyResult(attempt.status ? 'gemini-upstream-' + attempt.status : 'gemini-timeout'));
+  }
+
+  const text = responseTextOf(attempt.json);
+  const parsed = parseJsonLoose(text);
+  if (!parsed) {
+    warn('gemini: unparsed response (finishReason=' + finishReasonOf(attempt.json) + ')');
+    return sendJson(res, 200, emptyResult('gemini-unparsed'));
+  }
+
+  const analysis = coerceAnalysis(parsed);
+  return sendJson(res, 200, { ...analysis, model, source: 'gemini' });
+};
+
+function finishReasonOf(json) {
+  try {
+    return String(json.candidates[0].finishReason || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+module.exports.normalizeYouTubeUrl = normalizeYouTubeUrl;
+module.exports.parseJsonLoose = parseJsonLoose;
+module.exports.coerceAnalysis = coerceAnalysis;
+module.exports.GEMINI_TIMEOUT_MS = GEMINI_TIMEOUT_MS;
+module.exports.DEFAULT_MODEL = DEFAULT_MODEL;

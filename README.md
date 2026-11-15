@@ -1,9 +1,10 @@
-# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.8
+# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.9
 
 > **브랜드 표기** **릴스핀 · Reelspin** 으로 통일 (앱 로고·문서·패키지 설명). `reelpin.vercel.app`·`reelpin://`·`com.odol.reelpin`·`reelpin.*` 저장 키 같은 **기술 식별자는 그대로** 둡니다 (로그인·데이터 유지).
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · **Supabase(로그인·클라우드 동기화)** · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v2.9 (2026-11-16)** **유튜브 쇼츠는 Gemini 가 영상을 직접 보고 가게를 찾습니다** — 제목·설명글·댓글 + 카카오/네이버 지도로 **실매장을 못 찾았을 때만** 서버 프록시 `/api/gemini` 가 영상의 **음성·화면 자막**을 읽어 상호·동네·메뉴를 뽑고, 그 이름으로 지도를 **한 번 더** 조회합니다. 찾으면 저장 화면에 **`AI 영상 분석으로 찾았어요 · “가게명” (동네)`** 한 줄 근거를 띄웁니다 (Gemini 키는 Vercel 서버에만 — 웹 번들 노출 0건)
 > **v2.8 (2026-11-16)** **긴 줄글 설명글은 '여러 가게'로 갈라지지 않습니다 · 저장 화면은 영상 썸네일을 배경으로** — `extractCandidatesFromText` 가 번호·불릿(`1.` `•` `✅` `📍`) 같은 **명시적 목록 표식**을 먼저 보고, 표식 없는 줄은 **세 낱말 이하 + 이름 자리가 상호일 때만** 목록 줄로 인정(조사·서술어·감탄·가격·영업시간 줄은 배제)해서 `youtube.com/shorts/2QZPPEle9IY` 설명글(줄글 40여 줄)이 `설명글에서 찾은 가게 7곳`으로 오인되던 문제를 없앴습니다 — 이제 `엄마손횟집` **1곳**. 저장 화면 히어로 카드에는 **영상 썸네일이 배경 사진**으로 깔리고(없으면 분류 이모지 타일), 라벨 칩은 사진 위에서도 읽히게 스크림·그림자를 답니다
 > **v2.7 (2026-11-16)** **해시태그 상호(`#디오디아`)를 살리고 댓글 감상어(`좋다`)를 걸러냅니다** — 제목 끝 해시태그로만 적힌 가게 이름을 **첫 검색어**로(`강남 디오디아`), `럭셔리`·`프리미엄`·`유명한` 같은 수식어와 `좋다`·`맛있다`·`귀엽다` 같은 형용사 기본형은 검색어·키워드에서 제외, 댓글 폴백이 **다른 동네(울산)** 후보를 1순위로 올리지 않게 제목에서 확정한 동네 기준으로 방어, 설명글의 광고 문의 메일 주소(`@naver.com`) 제거
 > **v2.6 (2026-11-16)** **검색하면 지도가 그 핀으로 이동 · 여러 곳이면 결과 목록** — 검색 결과가 **정확히 1곳**이면 그 핀으로 지도가 부드럽게 이동·확대(목록 보기였다면 지도 보기로 전환), **2곳 이상**이면 검색창 아래 **콤팩트 결과 목록**(최대 4행 + `[전체 N곳]`, 행을 누르면 지도로 그 핀 확대 + 상세 시트), **0곳**이면 지도는 그대로 두고 안내만. 한글 조합 중 지도가 튀지 않도록 300ms 디바운스, `✕` 로 지우면 원래 지도 상태(내 위치 또는 핀 전체)로 복귀, 목록 `[지도 보기]` 는 결과 핀이 **모두 보이게 fitBounds**
@@ -81,6 +82,7 @@ PC를 켜 둘 필요도, Expo Go를 설치할 필요도 없습니다.
 | `NAVER_HUB_CLIENT_ID` / `NAVER_HUB_CLIENT_SECRET` | `/api/naver-local` | 네이버 결과 없음 |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | 위 함수의 구 규격 폴백 | (선택) |
 | `YOUTUBE_API_KEY` | `/api/youtube` (설명글·댓글) | 제목·썸네일만(oEmbed) |
+| `GEMINI_API_KEY` | **`/api/gemini`** (유튜브 영상 분석) | 영상 분석 폴백 없이 기존 1차 추출만 |
 | `GOOGLE_MAPS_API_KEY` | (아직 없음 — 구글 Places는 네이티브에서 직접 호출) | 구글 결과 없음 |
 | `EXPO_PUBLIC_NAVER_MAP_CLIENT_ID` | **웹 지도(네이버 지도)** — 빌드 시점 주입 | 기본값 `a1mxcz4n34` 사용 |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | **`/api/auth-config`** → 웹 앱이 로그인 설정을 받아 감 | 계정 카드가 '꺼짐'으로 표시되고 **기기 로컬 전용**으로 동작 |
@@ -118,6 +120,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 | `api/youtube.js` | `?id=<videoId>` | `videos?part=snippet` + `commentThreads?order=relevance&maxResults=5` 병렬 호출 → `{ title, description, thumbnail, comments, channelId }`. 키가 없으면 oEmbed만 |
 | `api/kakao-local.js` | `?query=..&size=..` | 카카오 키워드 검색 → 카카오 응답 그대로 |
 | `api/naver-local.js` | `?query=..&display=..` | 네이버 지역검색(HUB/구 규격) → 네이버 응답 그대로 |
+| `api/gemini.js` | `POST { url, title, description }` | 유튜브 URL을 Gemini(`gemini-2.5-flash`)에 `fileData.fileUri` 로 넘겨 영상의 말·화면 자막에서 `{ storeName, area, menu, category, places[] }` 추출. 유튜브가 아니거나 못 찾으면 **200 + 빈 결과**, 키가 없으면 `503 gemini-not-configured` |
 
 - 빈 검색어 → `400`, 허용하지 않는 메서드 → `405`, 업스트림 실패 → `502`, 4초 타임아웃 → `504`
 - **실패 응답에 키·업스트림 본문을 담지 않습니다.** (로그에도 키를 찍지 않음)
@@ -152,7 +155,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 1354건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 화면 렌더 스모크 257/257) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 1410건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 화면 렌더 스모크 257/257) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -167,6 +170,63 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v2.9에서 달라진 점 (2026-11-16) — 🎬 유튜브는 Gemini 가 영상을 직접 보고 가게를 찾습니다
+
+상훈 님 요청: **“유튜브 쇼츠 영상 내용(음성·화면 자막)에서 가게 이름·동네를 뽑아내기”**.
+제목·설명글에 상호가 없고 댓글에도 단서가 없는 쇼츠는 지금까지 `이름 없는 릴스 장소`로 끝났습니다.
+이제 그런 영상만 Gemini 가 **직접 시청**해서 가게를 찾습니다.
+
+### 1. 🎬 왜 '마지막에만' 부르나 (속도·크레딧)
+
+| 입력 | 1차(제목·설명글·댓글 + 카카오·네이버 지도) | Gemini 영상 분석 | 결과 |
+|---|---|---|---|
+| `WtB53sC3weY` (디오디아2.0) | 제목 해시태그에서 상호 발견 → 지도 매칭 **성공** | **호출 안 함** | 0.5초 · `디오디아2.0` |
+| `2QZPPEle9IY` (엄마손횟집) | 설명글에서 상호 발견 → 지도 매칭 **성공** | **호출 안 함** | 0.5초 · `엄마손횟집` |
+| 상호가 영상 안에만 있는 쇼츠 | 지도 결과 0곳 | **호출** → 상호·동네 → 지도 **재조회** | `AI 영상 분석으로 찾았어요` |
+
+- 정상적으로 찾은 릴스는 **Gemini 호출도, 크레딧 소모도 없습니다** (1차 성공 시 즉시 반환).
+- Gemini 는 **유튜브만** 부릅니다. 인스타·틱톡은 영상 접근이 막혀 있어 프록시가 빈 결과를 돌려주고 기존 폴백으로 이어집니다.
+- 키는 **Vercel 서버 환경변수(`GEMINI_API_KEY`)** 에만 둡니다. 브라우저 번들(`EXPO_PUBLIC_*`)에 넣지 않아 **웹 소스 보기로도 키가 보이지 않습니다**. 네이티브 앱은 프록시가 없으므로 이 단계를 건너뜁니다(기존 동작 그대로).
+
+### 2. 🔌 `api/gemini.js` — 서버리스 프록시 (`api/gemini.js` 신규)
+
+- `POST /api/gemini` · body `{ url, title, description }` → `{ storeName, area, menu, category, places: [{ name, area, menu }] }`
+- Google Gemini REST `v1beta/models/gemini-2.5-flash:generateContent` 에 **`fileData: { fileUri: "https://www.youtube.com/watch?v=…", mimeType: "video/*" }`** 로 영상을 직접 넘기고, 제목·설명글은 참고 텍스트로 함께 보냅니다. (모델은 `GEMINI_MODEL` 로 교체 가능)
+- **`responseMimeType: "application/json"` + `responseSchema`** 로 JSON 을 강제하고, 혹시 ```json 울타리·앞뒤 잡담이 붙어도 벗겨서 파싱합니다.
+- **타임아웃 22초**(요구 12초 이상) · `vercel.json` 의 `api/gemini.js` 만 **`maxDuration: 60`** (다른 API 는 10초 유지) — 영상 분석은 10~20초가 걸립니다.
+- **키 없음 → `503 { error: 'gemini-not-configured' }`**, 유튜브 아님/가게 미확인/업스트림 실패/JSON 아님 → **모두 `200` + 빈 결과**로 조용히 폴백(앱이 멈추지 않음). 실패 응답·로그에 **키와 업스트림 본문을 담지 않습니다.**
+- 키는 쿼리스트링이 아니라 **`x-goog-api-key` 헤더**로 보냅니다(프록시 로그·Referer 에 남지 않게). 유튜브 URL은 `shorts`·`youtu.be`·`watch`·`embed` 를 **watch 주소로 정규화**하고, 유튜브 사칭 호스트(`youtube.com.evil.com`)는 거부합니다.
+- 2.5 flash 의 '생각' 토큰은 `thinkingConfig.thinkingBudget: 0` 으로 끄고(속도), 모델이 이 옵션을 모르면(400) **옵션 없이 한 번 더** 시도합니다.
+
+### 3. 🧠 추출기 흐름 (`src/services/extractor.js`)
+
+```
+extractPlaces(url)
+  ├─ 1) 네이버 지도 링크 → placeId 직행            (기존)
+  ├─ 2) 설명글 목록 → 여러 가게 동시 매칭           (기존)
+  ├─ 3) 제목·설명글·댓글 → 검색어 → 카카오·네이버    (기존 · 여기서 찾으면 끝)
+  ├─ 4) ★ NEW · Gemini 영상 분석 (유튜브 · 웹 · 1차 실패 시에만)
+  │     └ 찾은 상호·동네로 `지역+상호 → 상호 → 다른 가게` 순서로 지도 **재조회**
+  └─ 5) LLM(OpenAI) 수동 후보 → 오프라인 폴백        (기존)
+```
+
+- 지도 재조회에서 실매장을 찾으면 그 후보를 쓰고 `usedAdapter: "gemini+kakao"` 처럼 출처를 남깁니다.
+- 지도가 좌표를 못 채워도 **영상에서 읽은 실제 상호·동네는 버리지 않습니다** — 좌표 없는 수동 후보(지어낸 좌표 금지)로 넘기고 근거 문구는 그대로 유지합니다.
+- 화면 진행 문구도 4번째 단계 **`AI 영상 분석 중…`** 으로 바뀝니다(`PasteScreen` 의 `onStage`).
+
+### 4. 🏅 저장 화면 — 한 줄 근거 (`src/screens/PasteScreen.js`)
+
+- 결과 카드 위에 코랄 틴트 한 줄: **`AI 영상 분석으로 찾았어요 · “엄마손횟집” (제주 연동)`** (`sparkles` 아이콘).
+- Gemini 가 읽은 메뉴는 후보의 `menuTags` 로, 분류는 **지도사 분류가 없을 때만** 씁니다.
+
+### 5. ✅ 검증
+
+- `npm run test:api` — `/api/gemini` 단위 31건: 키 없음 503 · GET 405 · 유튜브 아님 200 빈 결과(업스트림 호출 0) · `fileUri` watch 정규화 · `x-goog-api-key` 헤더 · `responseMimeType`·스키마 · ```json 울타리 파싱 · places 만 있어도 상호 채움 · 400 재시도 · 업스트림 500 → 빈 결과 · **키 노출 0건** · `vercel.json maxDuration 60`.
+- `npm run test:proxy` — 웹 흐름 20건: 1차 성공 시 **`/api/gemini` 호출 없음** · 1차 실패 → Gemini → **지도 재조회** → 후보 + `aiNote` · 좌표 못 찾으면 수동 후보 · 빈 결과/503 이면 기존 오프라인 폴백.
+- `npm run test:extract` — 네이티브는 **`/api/gemini` 를 부르지 않음**(키가 번들에 없음) + 기존 오프라인 폴백 유지.
+- `npm test` — **ALL_TESTS_OK**(1410건 · 화면 렌더 스모크 257/257), `npm run export:web` — 에러 0건.
+- 실테스트는 `GEMINI_API_KEY` 를 Vercel 에 넣은 뒤 `LPLE_SH2b9U` 로 확인합니다(키가 없으면 지금과 똑같이 1차 추출만 동작).
 
 ## v2.8에서 달라진 점 (2026-11-16) — 🧹 긴 설명글은 여러 가게가 아님 · 🖼️ 히어로 카드 썸네일
 
@@ -661,6 +721,7 @@ EXPO_PUBLIC_NAVER_CLIENT_SECRET=
 EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=     # 구글 Places — 해외·영문/일문 장소
 EXPO_PUBLIC_YOUTUBE_API_KEY=         # (선택) 유튜브 설명까지 — 제목·설명글은 키 없이도 읽습니다(oEmbed + 페이지 HTML)
 EXPO_PUBLIC_OPENAI_API_KEY=          # 캡션 → 장소 JSON
+GEMINI_API_KEY=                      # (Vercel 서버 전용) 유튜브 영상 분석 — EXPO_PUBLIC_ 금지
 ```
 
 ### 네이버 지역검색 — 두 가지 규격 지원
