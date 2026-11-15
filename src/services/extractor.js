@@ -239,8 +239,12 @@ export function parseHtmlMeta(html) {
     ? decodeEntities(stripTags(titleTagMatch[1])).replace(/\s+/g, ' ').trim()
     : '';
   const title = ogTitle || twitterTitle || titleTag;
+  // 로그인 월이거나, 브랜드 이름만 남은 껍데기 제목('Instagram' 등)은 읽은 것으로 치지 않습니다.
   const loginWall = /(^|\s)(로그인|login|sign in)/i.test(title);
-  return { title, description, ogTitle, titleTag, loginWall };
+  const genericTitle = /^(instagram|insta|tiktok|login|log in|sign in|facebook|로그인|페이스북)$/i.test(
+    String(title).trim()
+  );
+  return { title, description, ogTitle, titleTag, loginWall: loginWall || genericTitle };
 }
 
 /** 웹(브라우저) 빌드인지 — OG 메타는 CORS가 막혀 있어 네이티브에서만 읽습니다. */
@@ -1472,7 +1476,11 @@ export async function extractPlaces(rawInput, options = {}) {
     : blocked
     ? 'blocked'
     : 'none';
-  const titleNotice = blocked ? titleNoticeOf(parsed.platform) + ' — 가게명으로 바로 찾아보세요.' : '';
+  // 제목도 캡션도 없으면 플랫폼과 상관없이 '가게명으로 찾기'로 이어 줍니다.
+  const titleNotice =
+    !sourceTitle && !sharedCaption
+      ? titleNoticeOf(parsed.platform) + ' — 가게명으로 바로 찾아보세요.'
+      : '';
   const suggested = extractSearchQueries(text || sharedCaption);
   const suggestedQuery = suggested.queries[0] || '';
 

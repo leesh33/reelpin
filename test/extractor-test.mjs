@@ -603,6 +603,34 @@ check('instagram: 안내 문구', String(igBlocked.titleNotice).includes('인스
 check('instagram: 안내에 가게명 찾기 유도', String(igBlocked.titleNotice).includes('가게명'), igBlocked.titleNotice);
 check('instagram: 안내 문구 단위', titleNoticeOf('instagram') === '인스타는 보안상 제목을 못 읽어와요', titleNoticeOf('instagram'));
 
+// 9-5b. 실제 인스타가 주는 껍데기 페이지(<title>Instagram</title>)도 검색어로 쓰지 않습니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('instagram.com')) {
+    return {
+      ok: true,
+      status: 200,
+      url: u,
+      json: async () => ({}),
+      text: async () => '<html><head><title>Instagram</title></head><body>로그인</body></html>',
+    };
+  }
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [KAKAO_DOC] });
+  return jsonRes({ items: [], places: [] });
+};
+const igShell = await extractPlaces('https://www.instagram.com/reel/C8xSg2BpQ1K/');
+check('instagram: 껍데기 제목은 제목으로 안 씀', igShell.sourceTitle === '', igShell.sourceTitle);
+check('instagram: 껍데기 제목이면 blocked', igShell.titleStatus === 'blocked', igShell.titleStatus);
+check('instagram: 껍데기 제목으로 검색하지 않음', !String(igShell.query).includes('Instagram'), igShell.query);
+
+// 9-5c. 일반 웹 페이지가 404여도 왜 못 읽었는지 안내하고 가게명 찾기로 이어 줍니다.
+calls = [];
+handler = () => errRes(404);
+const page404 = await extractPlaces('https://beton.kr/closed-page');
+check('og: 404여도 예외 없이 결과', page404.ok === true, JSON.stringify(page404).slice(0, 120));
+check('og: 404면 제목 없음 + 안내', page404.sourceTitle === '' && String(page404.titleNotice).includes('제목을 못 읽어와요'), page404.titleNotice);
+
 // 9-6. 네이버 블로그·일반 웹 → OG 메타
 calls = [];
 handler = (url) => {
@@ -631,6 +659,8 @@ const parsedMeta = parseHtmlMeta('<html><head><meta content="베통 성수" prop
 check('og 파서: content가 앞에 와도 읽음', parsedMeta.title === '베통 성수', parsedMeta.title);
 check('og 파서: og 없으면 <title>', parseHtmlMeta('<title>성수 카페 &amp; 베이커리</title>').title === '성수 카페 & 베이커리', parseHtmlMeta('<title>성수 카페 &amp; 베이커리</title>').title);
 check('og 파서: 로그인 월 감지', parseHtmlMeta('<title>Login • Instagram</title>').loginWall === true);
+check('og 파서: 껍데기 제목(Instagram)도 막힘 처리', parseHtmlMeta('<title>Instagram</title>').loginWall === true);
+check('og 파서: og:title 있는 인스타는 통과', parseHtmlMeta('<meta property="og:title" content="베통 성수 (@beton.kr) • Instagram"><title>Instagram</title>').title === '베통 성수 (@beton.kr) • Instagram');
 check('og 파서: 메타 없으면 빈 값', parseHtmlMeta('<html></html>').title === '' && parseHtmlMeta('').description === '');
 check('og: 일반 웹 페이지도 지원', isSupportedUrl('https://beton.kr/store') === true);
 calls = [];
