@@ -120,7 +120,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 725건 통과 (추출기·딥링크 370 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 728건 통과 (추출기·딥링크 373 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -166,7 +166,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
   - 공유 링크로 들어오면 지도 상단에 **"공유받은 맛집 지도 (N곳)"** 배너 + 핀 미리보기(읽기 전용 상세 시트) + **[내 지도에 모두 추가]**(중복 건너뛰고 병합, 주소창의 `share` 파라미터는 정리)
 
 ### 검증
-`npm test` **725건 통과** (추출기·딥링크 370 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) · `npx expo export --platform web` 에러 0건 · `dist/index.html` 에서 `apple-touch-icon`·`manifest`·`theme-color` 확인 · `dist/` 삭제 후 푸시.
+`npm test` **728건 통과** (추출기·딥링크 373 + 웹 프록시 46 + API 핸들러 111 + 위치·거리 76 + 화면 렌더 스모크 122) · `npx expo export --platform web` 에러 0건 · `dist/index.html` 에서 `apple-touch-icon`·`manifest`·`theme-color` 확인 · `dist/` 삭제 후 푸시.
 
 ## v1.8에서 달라진 점 (2026-11-15) — 모달 헤더를 다크 차콜로 (네이버 플레이스와 확실히 구분)
 
