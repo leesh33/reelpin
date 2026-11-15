@@ -176,44 +176,60 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius }) {
           const color = pinColor(pin, isOn);
           const head = isOn ? 34 : 27;
           return (
-            <Pressable
-              key={pin.id}
-              onPress={() => onSelect(pin.id)}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel={pin.name + ', ' + pin.category}
-              style={{
-                position: 'absolute',
-                left: x - 22,
-                top: y - (isOn ? 40 : 32),
-                width: 44,
-                height: 52,
-                alignItems: 'center',
-                justifyContent: 'flex-start',
-              }}
-            >
-              <View
-                style={[
-                  styles.pinHead,
-                  {
-                    width: head,
-                    height: head,
-                    borderRadius: head / 2,
-                    backgroundColor: color,
-                    borderWidth: isOn ? 3 : 2,
-                  },
-                  isOn && styles.pinHeadOn,
-                ]}
+            <React.Fragment key={pin.id}>
+              <Pressable
+                onPress={() => onSelect(pin.id)}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel={pin.name + ', ' + pin.category}
+                style={{
+                  position: 'absolute',
+                  left: x - 22,
+                  top: y - (isOn ? 40 : 32),
+                  width: 44,
+                  height: 52,
+                  alignItems: 'center',
+                  justifyContent: 'flex-start',
+                }}
               >
                 <View
                   style={[
-                    styles.pinDot,
-                    { width: isOn ? 11 : 9, height: isOn ? 11 : 9, borderRadius: isOn ? 6 : 5 },
+                    styles.pinHead,
+                    {
+                      width: head,
+                      height: head,
+                      borderRadius: head / 2,
+                      backgroundColor: color,
+                      borderWidth: isOn ? 3 : 2,
+                    },
+                    isOn && styles.pinHeadOn,
                   ]}
-                />
+                >
+                  <View
+                    style={[
+                      styles.pinDot,
+                      { width: isOn ? 11 : 9, height: isOn ? 11 : 9, borderRadius: isOn ? 6 : 5 },
+                    ]}
+                  />
+                </View>
+                <View style={[styles.pinTail, { borderTopColor: color, borderTopWidth: isOn ? 10 : 8 }]} />
+              </Pressable>
+
+              {/* v2.3 — 핀 아래 가게 이름 라벨 (웹 지도와 같은 결: 흰 알약 + 진한 글씨) */}
+              <View
+                pointerEvents="none"
+                style={[styles.pinLabelWrap, { left: clamp(x - 52, 4, Math.max(4, size.width - 108)), top: y + 6 }]}
+              >
+                <View style={[styles.pinLabel, isOn && styles.pinLabelOn]}>
+                  <Text
+                    style={[styles.pinLabelText, isOn && styles.pinLabelTextOn]}
+                    numberOfLines={1}
+                  >
+                    {pin.name}
+                  </Text>
+                </View>
               </View>
-              <View style={[styles.pinTail, { borderTopColor: color, borderTopWidth: isOn ? 10 : 8 }]} />
-            </Pressable>
+            </React.Fragment>
           );
         })}
 
@@ -353,6 +369,35 @@ const styles = StyleSheet.create({
     borderRightWidth: 5,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
+  },
+  // v2.3 — 핀 아래 가게 이름 라벨 (가운데 정렬 · 좌우는 화면 안으로 잠금)
+  pinLabelWrap: {
+    position: 'absolute',
+    width: 104,
+    alignItems: 'center',
+  },
+  pinLabel: {
+    maxWidth: 104,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 7,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.12)',
+  },
+  pinLabelOn: {
+    backgroundColor: colors.coral,
+    borderColor: 'rgba(232,70,31,0.62)',
+  },
+  pinLabelText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+    color: colors.charcoal,
+    includeFontPadding: false,
+  },
+  pinLabelTextOn: {
+    color: colors.white,
   },
   bubble: {
     position: 'absolute',

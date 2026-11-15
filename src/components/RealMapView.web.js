@@ -1,6 +1,13 @@
 /**
  * src/components/RealMapView.web.js
  * ─────────────────────────────────────────────────────────────
+ * v2.3 — 핀 **아래에 가게 이름 라벨**을 붙였습니다(흰 알약 + 진한 글씨, 선택 시 코랄).
+ *   · 라벨은 핀 content 안에서 **동그라미 아래 가운데**에 붙고, content 를 `translateX(-50%)`
+ *     로 가운데 정렬한 뒤 anchor 를 (0, size/2) 로 두어 **라벨 폭과 상관없이 동그라미 중심이
+ *     정확히 위경도에** 옵니다(네이버 지도 마커 element 는 overflow: visible).
+ *   · 긴 이름은 max-width 112px + 말줄임(…) — `한성치킨` 같은 4~8글자는 그대로 다 보입니다.
+ *   · 라벨도 마커 content 의 일부라 **탭하면 핀 상세 시트**가 그대로 열립니다.
+ *
  * v1.6 — 웹 지도를 **네이버 지도(NAVER Maps Dynamic Map v3)** 로 교체
  *
  * · 1순위: 네이버 지도 (NCP Maps Dynamic Map v3, `ncpKeyId` 파라미터)
@@ -64,6 +71,94 @@ const TILE_ATTRIBUTION =
 
 const SEOUL = { lat: 37.5665, lng: 126.978 };
 const NAVER_SCRIPT_TIMEOUT_MS = 9000;
+
+// ── 가게 이름 라벨 (v2.3) ─────────────────────────────────────
+/** 라벨 최대 폭 — 넘치면 말줄임. 4~8글자(예: `한성치킨`)는 이 안에 다 들어갑니다. */
+export const PIN_LABEL_MAX_WIDTH = 112;
+/** 라벨 글자 크기(px) */
+export const PIN_LABEL_FONT_SIZE = 11;
+/** 동그라미와 라벨 사이 간격(px) */
+export const PIN_LABEL_GAP = 3;
+const PIN_LABEL_FONT_STACK =
+  "-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif";
+
+/** 핀 이름을 마커 HTML 에 넣기 전에 이스케이프 — 가게 이름에 `&`·`<` 가 있어도 깨지지 않게 */
+export function escapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/** 핀 동그라미 지름 — 선택하면 조금 커집니다(기존 v2.2 그대로) */
+export function pinSize(selected) {
+  return selected ? 26 : 18;
+}
+
+/**
+ * 마커 anchor — content 왼쪽 위 기준 (0, size/2).
+ * content 는 `translateX(-50%)` 로 스스로 가로 중심을 맞추므로, 라벨이 길어 content 폭이
+ * 늘어나도 동그라미 중심은 언제나 위경도 위에 정확히 놓입니다.
+ */
+export function pinAnchor(selected) {
+  return { x: 0, y: pinSize(selected) / 2 };
+}
+
+/** 가게 이름 라벨 HTML — 흰 알약 + 진한 글씨, 선택된 핀은 코랄 알약 + 흰 글씨 */
+export function pinLabelHtml(pin, selected) {
+  const name = String((pin && pin.name) || '').trim();
+  if (!name) return '';
+  const background = selected ? colors.coral : 'rgba(255,255,255,0.96)';
+  const color = selected ? '#FFFFFF' : colors.charcoal;
+  const border = selected ? 'rgba(232,70,31,0.55)' : 'rgba(15,23,42,0.14)';
+  return (
+    '<div style="margin-top:' +
+    PIN_LABEL_GAP +
+    'px;max-width:' +
+    PIN_LABEL_MAX_WIDTH +
+    'px;box-sizing:border-box;padding:2px 6px;border-radius:999px;background:' +
+    background +
+    ';border:1px solid ' +
+    border +
+    ';color:' +
+    color +
+    ';font-family:' +
+    PIN_LABEL_FONT_STACK +
+    ';font-size:' +
+    PIN_LABEL_FONT_SIZE +
+    'px;font-weight:800;line-height:13px;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(15,23,42,0.22);">' +
+    escapeHtml(name) +
+    '</div>'
+  );
+}
+
+/**
+ * 마커 content HTML = [카테고리 색 동그라미] 아래 [가게 이름 라벨].
+ * 네이버 지도·Leaflet(divIcon) 이 같은 HTML 을 씁니다.
+ */
+export function pinIconHtml(pin, selected) {
+  const size = pinSize(selected);
+  const border = selected ? 3 : 2;
+  const circle =
+    '<div style="width:' +
+    size +
+    'px;height:' +
+    size +
+    'px;box-sizing:border-box;border-radius:50%;background:' +
+    pinColor(pin, selected) +
+    ';border:' +
+    border +
+    'px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+  return (
+    '<div style="display:flex;flex-direction:column;align-items:center;width:max-content;' +
+    'transform:translateX(-50%);cursor:pointer;-webkit-tap-highlight-color:transparent;">' +
+    circle +
+    pinLabelHtml(pin, selected) +
+    '</div>'
+  );
+}
 
 /** 카테고리별 핀 색 — 앱 지도(MapCanvas)와 같은 결. 커스텀 분류는 이름 해시로 고정 색 */
 export function pinColor(pin, selected) {
@@ -520,22 +615,10 @@ function NaverMap({
   return <View ref={hostRef} style={styles.mapHost} accessibilityLabel="네이버 지도" />;
 }
 
-/** 저장 핀 — 카테고리 색 원형 + 흰 테두리, 선택 시 확대 */
+/** 저장 핀 — 카테고리 색 원형 + 흰 테두리(선택 시 확대) 아래에 가게 이름 라벨 */
 function pinIcon(nv, pin, selected) {
-  const size = selected ? 26 : 18;
-  const border = selected ? 3 : 2;
-  const color = pinColor(pin, selected);
-  const html =
-    '<div style="width:' +
-    size +
-    'px;height:' +
-    size +
-    'px;box-sizing:border-box;border-radius:50%;background:' +
-    color +
-    ';border:' +
-    border +
-    'px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.35);cursor:pointer;"></div>';
-  return { content: html, anchor: new nv.Point(size / 2, size / 2) };
+  const anchor = pinAnchor(selected);
+  return { content: pinIconHtml(pin, selected), anchor: new nv.Point(anchor.x, anchor.y) };
 }
 
 /** 내 위치 파란 점 */
@@ -697,7 +780,7 @@ function LeafletMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 핀 마커
+  // 핀 마커 (v2.3 — 동그라미 아래 가게 이름 라벨: 네이버 지도와 같은 HTML·같은 anchor 규칙)
   useEffect(() => {
     const map = mapRef.current;
     const L = leafletRef.current;
@@ -709,28 +792,26 @@ function LeafletMap({
       if (!coords || !pin.id) return;
       alive.add(pin.id);
       const isOn = pin.id === selectedId;
-      const style = {
-        radius: isOn ? 12 : 8,
-        color: '#FFFFFF',
-        weight: isOn ? 3 : 2,
-        fillColor: pinColor(pin, isOn),
-        fillOpacity: 1,
-        opacity: 1,
-      };
+      const anchor = pinAnchor(isOn);
+      const icon = L.divIcon({
+        html: pinIconHtml(pin, isOn),
+        className: 'reelpin-pin',
+        iconSize: [0, 0],
+        iconAnchor: [anchor.x, anchor.y],
+      });
 
       let marker = markersRef.current.get(pin.id);
       if (!marker) {
-        marker = L.circleMarker([coords.lat, coords.lng], style).addTo(map);
+        marker = L.marker([coords.lat, coords.lng], { icon, keyboard: false }).addTo(map);
         marker.on('click', () => {
           if (typeof onSelectRef.current === 'function') onSelectRef.current(pin.id);
         });
         markersRef.current.set(pin.id, marker);
       } else {
         marker.setLatLng([coords.lat, coords.lng]);
-        marker.setStyle(style);
+        marker.setIcon(icon);
       }
-      marker.bindTooltip(pin.name || '', { direction: 'top', offset: [0, -8], opacity: 0.95 });
-      if (isOn && typeof marker.bringToFront === 'function') marker.bringToFront();
+      if (typeof marker.setZIndexOffset === 'function') marker.setZIndexOffset(isOn ? 1000 : 0);
     });
 
     if (!didFitRef.current) {

@@ -19,6 +19,14 @@ import RealMapViewWeb, {
   pinColor,
   FALLBACK_NOTICE,
   FALLBACK_NOTICE_NETWORK,
+  PIN_LABEL_MAX_WIDTH,
+  PIN_LABEL_FONT_SIZE,
+  PIN_LABEL_GAP,
+  escapeHtml,
+  pinSize,
+  pinAnchor,
+  pinIconHtml,
+  pinLabelHtml,
 } from '../src/components/RealMapView.web';
 import InAppPlaceModalWeb, {
   BLANK_SETTLE_MS,
@@ -429,6 +437,66 @@ for (const [label, ok, extra] of v212Checks) {
   }
 }
 
+// ── v2.3: 지도 핀 아래 가게 이름 라벨 ─────────────────────
+const SAMPLE_PIN = { id: 'pin-label-1', name: '한성치킨', category: '맛집' };
+const LONG_PIN = { id: 'pin-label-2', name: '황금코다리 인천논현점', category: '맛집' };
+const plainIcon = pinIconHtml(SAMPLE_PIN, false);
+const onIcon = pinIconHtml(SAMPLE_PIN, true);
+const longLabel = pinLabelHtml(LONG_PIN, false);
+const anchorOff = pinAnchor(false);
+const anchorOn = pinAnchor(true);
+const mapCanvasSource = fs.readFileSync(path.join(process.cwd(), 'src/components/MapCanvas.js'), 'utf8');
+const v23Checks = [
+  ['핀 라벨: 마커 content 에 가게 이름이 함께 들어감',
+    plainIcon.indexOf('한성치킨') > 0 && plainIcon.indexOf('border-radius:50%') > 0,
+    String(plainIcon.length) + ' bytes'],
+  ['핀 라벨: 이름은 HTML 이스케이프 (XSS·깨짐 방지)',
+    escapeHtml('<b>&"x"') === '&lt;b&gt;&amp;&quot;x&quot;' && pinLabelHtml({ name: 'A&B <C>' }, false).indexOf('A&amp;B &lt;C&gt;') > 0,
+    escapeHtml('A&B <C>')],
+  ['핀 라벨: 동그라미 아래(마진) 가운데 정렬',
+    plainIcon.indexOf('flex-direction:column') > 0 && plainIcon.indexOf('align-items:center') > 0 &&
+      plainIcon.indexOf('margin-top:' + PIN_LABEL_GAP + 'px') > 0 && plainIcon.indexOf('translateX(-50%)') > 0,
+    'gap ' + PIN_LABEL_GAP + 'px'],
+  ['핀 라벨: 11px 굵은 글씨 + 흰 알약(그림자·얇은 테두리)',
+    longLabel.indexOf('font-size:' + PIN_LABEL_FONT_SIZE + 'px') > 0 && longLabel.indexOf('font-weight:800') > 0 &&
+      longLabel.indexOf('background:rgba(255,255,255,0.96)') > 0 && longLabel.indexOf('border:1px solid') > 0 &&
+      longLabel.indexOf('box-shadow') > 0,
+    'font ' + PIN_LABEL_FONT_SIZE + 'px/800'],
+  ['핀 라벨: 긴 이름은 max-width + 말줄임(…)',
+    longLabel.indexOf('max-width:' + PIN_LABEL_MAX_WIDTH + 'px') > 0 && longLabel.indexOf('white-space:nowrap') > 0 &&
+      longLabel.indexOf('overflow:hidden') > 0 && longLabel.indexOf('text-overflow:ellipsis') > 0,
+    'max-width ' + PIN_LABEL_MAX_WIDTH + 'px'],
+  ['핀 라벨: `한성치킨`(4글자)은 말줄임 없이 다 보이는 폭',
+    PIN_LABEL_MAX_WIDTH >= 4 * PIN_LABEL_FONT_SIZE + 12,
+    PIN_LABEL_MAX_WIDTH + 'px ≥ ' + (4 * PIN_LABEL_FONT_SIZE + 12) + 'px'],
+  ['핀 라벨: 선택된 핀은 코랄 알약 + 흰 글씨로 강조',
+    onIcon.indexOf('background:' + colors.coral) > 0 && onIcon.indexOf('color:#FFFFFF') > 0 &&
+      plainIcon.indexOf('color:' + colors.charcoal) > 0,
+    colors.coral],
+  ['핀 앵커: 라벨이 붙어도 동그라미 중심 = 위경도 (0, size/2)',
+    anchorOff.x === 0 && anchorOff.y === pinSize(false) / 2 && anchorOn.x === 0 && anchorOn.y === pinSize(true) / 2 &&
+      pinSize(false) === 18 && pinSize(true) === 26,
+    JSON.stringify([anchorOff, anchorOn])],
+  ['핀 앵커: 네이버 마커가 위 anchor 를 그대로 사용',
+    mapSource.indexOf('new nv.Point(anchor.x, anchor.y)') > 0 && mapSource.indexOf('pinIconHtml(pin, selected)') > 0],
+  ['핀 라벨: 라벨도 마커 content 라 탭하면 핀 상세가 열림',
+    mapSource.indexOf("nv.Event.addListener(marker, 'click'") > 0 && plainIcon.indexOf('cursor:pointer') > 0 &&
+      mapSource.indexOf('clickable: true') > 0],
+  ['폴백 지도(Leaflet)도 같은 라벨 divIcon 사용',
+    mapSource.indexOf('L.divIcon(') > 0 && mapSource.indexOf('iconAnchor: [anchor.x, anchor.y]') > 0 &&
+      mapSource.indexOf('pinIconHtml(pin, isOn)') > 0],
+  ['네이티브 도식 지도(MapCanvas)도 핀 아래 이름 라벨',
+    mapCanvasSource.indexOf('pinLabelWrap') > 0 && mapCanvasSource.indexOf('pinLabelText') > 0 &&
+      /\{pin\.name\}/.test(mapCanvasSource)],
+];
+for (const [label, ok, extra] of v23Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 // PWA: index.html 메타 주입 (Expo 기본 템플릿에 실제로 들어가는지)
 const EXPO_TEMPLATE =
   '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
@@ -475,8 +543,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.2.0', pkg.version === '2.2.0', pkg.version],
-  ['버전: app.json 2.2.0', expoConfig.version === '2.2.0', expoConfig.version],
+  ['버전: package.json 2.3.0', pkg.version === '2.3.0', pkg.version],
+  ['버전: app.json 2.3.0', expoConfig.version === '2.3.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -565,6 +633,7 @@ const total =
   v21Checks.length +
   v211Checks.length +
   v212Checks.length +
+  v23Checks.length +
   fakeBannerChecks.length +
   2 +
   v213Checks.length +
