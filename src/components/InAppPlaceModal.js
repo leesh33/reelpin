@@ -1,10 +1,11 @@
 /**
- * InAppPlaceModal.js — v1.7 (iOS·Android)
+ * InAppPlaceModal.js — v1.8 (iOS·Android)
  * ─────────────────────────────────────────────────────────────
  * [매장 정보 보기] 를 누르면 앱 안 모달이 열립니다.
  * 아이폰·안드로이드에는 iframe 이 없어서 네이버 플레이스 화면 자체를 그릴 수는 없습니다.
- * 대신 같은 헤더(가게 이름 · [새 창으로 열기] · [닫기]) 를 두고, 본문에서
+ * 대신 같은 헤더(다크 차콜 바탕 · 가게 이름 · [새 창으로 열기] · [닫기]) 를 두고, 본문에서
  * 네이버 지도 앱 / 네이버 플레이스 웹으로 한 번에 넘어갈 수 있게 했습니다.
+ * 헤더 색은 웹 모달과 같은 `colors.charcoal`(#1C1C1E) — 흰 본문과 확실히 갈립니다.
  * (웹 버전 `InAppPlaceModal.web.js` 는 m.place.naver.com 을 iframe 으로 직접 띄웁니다.)
  */
 import React, { useCallback } from 'react';
