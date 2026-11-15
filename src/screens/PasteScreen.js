@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -39,7 +39,6 @@ const LINK_STAGES = ['링크 확인', '캡션 분석', '좌표 매칭'];
 const SEARCH_STAGES = ['지도 조회', '중복 정리', '후보 정렬'];
 
 export default function PasteScreen({
-  active,
   pinCount,
   isPro,
   onSaved,
@@ -52,8 +51,6 @@ export default function PasteScreen({
   const [mode, setMode] = useState(initialMode === 'search' ? 'search' : 'link'); // 'link' | 'search'
   const [url, setUrl] = useState('');
   const [query, setQuery] = useState('');
-  const [clipboardUrl, setClipboardUrl] = useState(null);
-  const [clipboardCaption, setClipboardCaption] = useState('');
   const [extracting, setExtracting] = useState(false);
   const [stage, setStage] = useState(0);
   const [candidates, setCandidates] = useState([]);
@@ -67,14 +64,22 @@ export default function PasteScreen({
   const isSearch = mode === 'search';
   const stageLabels = isSearch ? SEARCH_STAGES : LINK_STAGES;
 
+  /**
+   * v2.1.1 — 클립보드는 **사용자가 [클립보드에서 붙여넣기] 를 눌렀을 때만** 읽습니다.
+   *
+   *   · 예전에는 이 탭이 열릴 때마다(`active`) 자동으로 `navigator.clipboard.readText()` 를 불렀는데,
+   *     아이폰 사파리에서는 탭을 누를 때마다 iOS 의 `[붙여넣기 | 🚫]` 시스템 팝업이 떠서
+   *     '저장' 탭에 들어갈 때마다 한 번씩 붙여넣기 허용을 물어보는 상황이었습니다.
+   *   · 지금은 자동 읽기 코드가 없습니다. 입력창에 직접 붙여넣거나(길게 눌러 붙여넣기),
+   *     아래 [클립보드에서 붙여넣기] 버튼을 누를 때만 읽습니다 — 사용자가 누른 동작이라
+   *     iOS 도 허용 창을 띄우지 않거나, 띄우더라도 사용자가 방금 요청한 동작으로 이해합니다.
+   */
   const readClipboard = useCallback(async () => {
     try {
       const text = await Clipboard.getStringAsync();
       // v1.2: 공유 시트에서 복사한 건 "문구 + 링크" 덩어리입니다. 그 안에서 링크만 골라 씁니다.
       const shared = splitSharedText(text || '');
       if (shared.url && isSupportedUrl(shared.url)) {
-        setClipboardUrl(shared.url);
-        setClipboardCaption(shared.caption || '');
         return shared.url;
       }
     } catch (e) {
@@ -82,10 +87,6 @@ export default function PasteScreen({
     }
     return null;
   }, []);
-
-  useEffect(() => {
-    if (active && !isSearch) readClipboard();
-  }, [active, isSearch, readClipboard]);
 
   const applyPaste = async () => {
     const text = await readClipboard();
@@ -265,8 +266,6 @@ export default function PasteScreen({
     setCandidates([]);
     setSelectedIds([]);
     setMeta(null);
-    setClipboardUrl(null);
-    setClipboardCaption('');
   };
 
   /** 선택한 후보를 핀으로 만들어 저장합니다. (1곳이든 N곳이든 같은 버튼) */
@@ -344,24 +343,8 @@ export default function PasteScreen({
           })}
         </View>
 
-        {/* 클립보드 자동 감지 배너 (링크 모드 전용) */}
-        {!isSearch && clipboardUrl ? (
-          <View style={styles.clipBanner}>
-            <View style={styles.clipIcon}>
-              <Ionicons name="clipboard-outline" size={20} color={colors.coral} />
-            </View>
-            <View style={styles.clipTextWrap}>
-              <Text style={styles.clipTitle}>방금 복사한 링크가 있어요</Text>
-              <Text style={styles.clipSub} numberOfLines={1}>
-                {clipboardCaption ? '“' + clipboardCaption.slice(0, 60) + '” · ' : ''}
-                {clipboardUrl}
-              </Text>
-              <Pressable style={styles.clipBtn} onPress={applyPaste}>
-                <Text style={styles.clipBtnText}>바로 붙여넣기</Text>
-              </Pressable>
-            </View>
-          </View>
-        ) : null}
+        {/* v2.1.1 — 자동 클립보드 감지 배너는 없앴습니다.
+            아이폰 사파리에서 탭 진입만으로 붙여넣기 허용 팝업이 뜨지 않게 하기 위함입니다. */}
 
         {isSearch ? (
           <>
@@ -423,6 +406,16 @@ export default function PasteScreen({
                 <Ionicons name="clipboard-outline" size={18} color={colors.coral} />
               </Pressable>
             </View>
+            {/* v2.1.1 — 클립보드는 사용자가 이 버튼을 눌렀을 때만 읽습니다. */}
+            <Pressable
+              style={styles.pasteBtn}
+              onPress={applyPaste}
+              accessibilityRole="button"
+              accessibilityLabel="클립보드에서 붙여넣기"
+            >
+              <Ionicons name="clipboard-outline" size={15} color={colors.coralDark} />
+              <Text style={styles.pasteBtnText}>클립보드에서 붙여넣기</Text>
+            </Pressable>
             <Text style={styles.helper}>
               공유할 때 복사된 문구를 통째로 붙여넣어도 돼요. (예: “성수동 소금빵 맛집 베통
               https://...”) 유튜브는 제목을, 네이버 블로그는 페이지 제목을 읽어 가게를 찾아요.
@@ -740,45 +733,22 @@ const styles = StyleSheet.create({
     color: colors.coralDark,
     fontWeight: '800',
   },
-  clipBanner: {
-    flexDirection: 'row',
-    gap: 12,
-    backgroundColor: colors.coralSoft,
-    borderRadius: radius.lg,
-    padding: 14,
-    marginBottom: 18,
-  },
-  clipIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  clipTextWrap: { flex: 1 },
-  clipTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  clipSub: {
-    fontSize: 11,
-    color: colors.textSub,
-    marginTop: 3,
-  },
-  clipBtn: {
+  // v2.1.1 — 명시적으로 누를 때만 클립보드를 읽는 버튼
+  pasteBtn: {
     alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     marginTop: 9,
-    backgroundColor: colors.coral,
-    paddingHorizontal: 14,
+    backgroundColor: colors.coralSoft,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 9,
+    borderRadius: radius.sm,
   },
-  clipBtnText: {
-    color: colors.white,
+  pasteBtnText: {
     fontSize: 12,
     fontWeight: '800',
+    color: colors.coralDark,
   },
   label: {
     ...typography.sub,
