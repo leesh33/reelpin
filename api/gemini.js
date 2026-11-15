@@ -23,13 +23,13 @@
 const { fetchWithTimeout, sendJson, warn } = require('../server/http.js');
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 /** 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. */
-const FALLBACK_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-/** 한 번의 영상 분석 응답 타임아웃 — Gemini YouTube 분석은 10~20초가 걸립니다. */
-const GEMINI_TIMEOUT_MS = 20000;
-/** 모델 폴백까지 포함한 전체 예산 (서버 maxDuration 60초의 여유 안) */
-const TOTAL_BUDGET_MS = 34000;
+const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+/** 한 번의 영상 분석 응답 타임아웃 — Gemini 영상 분석은 10~25초가 걸립니다(실측). */
+const GEMINI_TIMEOUT_MS = 26000;
+/** 모델 폴백까지 포함한 전체 예산 — Vercel maxDuration 30초 안에서 넉넉히 */
+const TOTAL_BUDGET_MS = 28000;
 /** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TITLE_CHARS = 200;
@@ -160,7 +160,7 @@ function buildRequestBody({ videoUrl, title, description, withThinkingOff }) {
     (hints.length ? '\n\n[참고 — 영상 메타데이터]\n' + hints.join('\n') : '');
   const generationConfig = {
     temperature: 0.2,
-    maxOutputTokens: 2048,
+    maxOutputTokens: 4096, // Gemini 3 는 '생각' 토큰도 여기서 나가므로 넉넉히
     responseMimeType: 'application/json',
     responseSchema: RESPONSE_SCHEMA,
   };

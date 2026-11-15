@@ -327,8 +327,8 @@ r = await callGemini({ url: 'https://youtu.be/LPLE_SH2b9U?t=12', title: '제주 
 const gReq = calls[0] || { url: '', init: {} };
 const gBody = JSON.parse(gReq.init.body || '{}');
 check(
-  'gemini: 업스트림 엔드포인트(v1beta · gemini-2.5-flash)',
-  gReq.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+  'gemini: 업스트림 엔드포인트(v1beta · gemini-3.8-flash)',
+  gReq.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent',
   gReq.url
 );
 check(
@@ -358,7 +358,7 @@ check(
   JSON.stringify(r.body)
 );
 check('gemini: places 배열 유지', r.body.places.length === 1 && r.body.places[0].name === '엄마손횟집', JSON.stringify(r.body.places));
-check('gemini: 모델·출처 표시', r.body.model === 'gemini-2.5-flash' && r.body.source === 'gemini', JSON.stringify([r.body.model, r.body.source]));
+check('gemini: 모델·출처 표시', r.body.model === 'gemini-3.8-flash' && r.body.source === 'gemini', JSON.stringify([r.body.model, r.body.source]));
 check('gemini: 응답에 키 없음', !leaksSecret(r.raw), r.raw.slice(0, 100));
 
 // places 만 온 경우 → 첫 가게를 storeName 으로
@@ -401,18 +401,19 @@ handler = () => {
 };
 r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 check(
-  'gemini: 모델 404 면 gemini-2.0-flash 로 폴백',
-  calls.length === 2 && calls[1].url.indexOf('gemini-2.0-flash') > 0 && r.body.storeName === '엄마손횟집',
+  'gemini: 모델 404 면 다음 모델(gemini-2.5-flash)로 폴백',
+  calls.length === 2 && calls[1].url.indexOf('gemini-2.5-flash') > 0 && r.body.storeName === '엄마손횟집',
   calls.map((c) => c.url).join(' | ')
 );
-check('gemini: 실제 쓴 모델을 응답에 표시', r.body.model === 'gemini-2.0-flash', r.body.model);
+check('gemini: 실제 쓴 모델을 응답에 표시', r.body.model === 'gemini-2.5-flash', r.body.model);
 
 // 쿼타·서버 오류(429·500)는 모델을 바꿔도 같으므로 한 번에 끝냄
 calls = [];
 handler = () => errRes(429);
 r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 check('gemini: 429 는 모델 폴백 없이 빈 결과', calls.length === 1 && r.body.reason === 'gemini-upstream-429', calls.length + ' | ' + r.body.reason);
-check('gemini: 응답 타임아웃 12초 이상', geminiHandler.GEMINI_TIMEOUT_MS >= 12000, String(geminiHandler.GEMINI_TIMEOUT_MS));
+check('gemini: 응답 타임아웃 25초 이상', geminiHandler.GEMINI_TIMEOUT_MS >= 25000, String(geminiHandler.GEMINI_TIMEOUT_MS));
+check('gemini: 전체 예산이 maxDuration(30초) 안', geminiHandler.TOTAL_BUDGET_MS <= 29000, String(geminiHandler.TOTAL_BUDGET_MS));
 check(
   'gemini normalize: shorts·embed·watch·youtu.be',
   geminiHandler.normalizeYouTubeUrl('https://www.youtube.com/shorts/LPLE_SH2b9U') === 'https://www.youtube.com/watch?v=LPLE_SH2b9U' &&
@@ -577,8 +578,8 @@ check('vercel.json: PWA 메타 주입 스크립트 존재', fs.existsSync(path.j
 check('vercel.json: 출력 폴더 dist', vercel.outputDirectory === 'dist', vercel.outputDirectory);
 check('vercel.json: api/*.js 함수 설정', Object.keys(vercel.functions || {}).indexOf('api/*.js') >= 0, JSON.stringify(Object.keys(vercel.functions || {})));
 check(
-  'vercel.json: /api/gemini 는 maxDuration 60초(영상 분석)',
-  (vercel.functions['api/gemini.js'] || {}).maxDuration === 60,
+  'vercel.json: /api/gemini 는 maxDuration 30초(영상 분석)',
+  (vercel.functions['api/gemini.js'] || {}).maxDuration === 30,
   JSON.stringify(vercel.functions['api/gemini.js'])
 );
 const rewrite = (vercel.rewrites || [])[0] || {};
