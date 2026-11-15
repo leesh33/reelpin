@@ -237,7 +237,7 @@ check(
   clusterColor(sameCat[0].members, [])
 );
 const mixedCat = clusterPoints([{ ...pt('a', 0, 0), category: '카페' }, { ...pt('b', 10, 0), category: '맛집' }]);
-check('클러스터 색: 섞이면 다크 네이비', clusterColor(mixedCat[0].members, []) === '#0F172A', clusterColor(mixedCat[0].members, []));
+check('클러스터 색: 섞이면 코랄', clusterColor(mixedCat[0].members, []) === '#FF5A36', clusterColor(mixedCat[0].members, []));
 
 // ── 8. 지도 컴포넌트가 쓰는 조립 함수 ───────────────────────
 const project = (lat, lng) => ({ x: lng * 1000, y: lat * 1000 });

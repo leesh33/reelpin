@@ -156,8 +156,8 @@ export function clusterLabel(count) {
 }
 
 /**
- * 클러스터 배지 원의 색 — 무리 안 핀이 **한 분류**면 그 분류 색, 섞여 있으면 다크 네이비.
- * (지도 핀·칩과 같은 getCategoryColor 를 써서 색이 어긋나지 않습니다)
+ * 클러스터 배지의 **테두리(헤일로) 색** — 무리 안 핀이 **한 분류**면 그 분류 색, 섞여 있으면 코랄.
+ * (배지 본체는 어디서나 다크 네이비 + 흰 숫자 — 지도 핀·칩과 색이 어긋나지 않습니다)
  */
 export function clusterColor(members, categories) {
   const list = Array.isArray(members) ? members : [];
@@ -167,5 +167,5 @@ export function clusterColor(members, categories) {
     if (name && names.indexOf(name) < 0) names.push(name);
   });
   if (names.length === 1) return getCategoryColor(names[0], categories);
-  return '#0F172A';
+  return '#FF5A36';
 }
