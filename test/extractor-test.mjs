@@ -37,10 +37,12 @@ import {
 import {
   naverMapAppUrl,
   naverMapWebUrl,
+  naverPlaceSearchUrl,
   kakaoMapAppUrl,
   kakaoMapWebUrl,
   buildShareLink,
   normalizePlaceUrl,
+  openExternalUrl,
   openPlace,
 } from '../src/utils/links.js';
 import { buildPin, normalizePin, normalizePins, findExistingPin } from '../src/utils/pins.js';
@@ -432,6 +434,37 @@ check('naver web url', naverMapWebUrl(pin).includes('map.naver.com'), naverMapWe
 check('kakao app url', kakaoMapAppUrl(pin).includes('kakaomap://search?q='), kakaoMapAppUrl(pin));
 check('kakao web url', kakaoMapWebUrl(pin).includes('map.kakao.com'), kakaoMapWebUrl(pin));
 check('share link', buildShareLink('odol', [{ name: 'A', category: '카페' }], '성수동').includes('https://reelpin.app/m/odol'));
+
+// ── 5-1. v1.7: 인앱 네이버 플레이스 모달 주소 ──────────────────
+const naverPlaceUrl = naverPlaceSearchUrl(pin);
+check(
+  'naver place: m.place.naver.com/place/list 규격',
+  naverPlaceUrl.startsWith('https://m.place.naver.com/place/list?query='),
+  naverPlaceUrl
+);
+const naverPlaceQuery = decodeURIComponent(naverPlaceUrl.split('query=')[1]);
+check('naver place: 동네 + 가게명 순서로 검색어 구성', naverPlaceQuery === '성수동 성수동 소금빵집', naverPlaceQuery);
+const naverPlaceNoArea = naverPlaceSearchUrl({ name: '베통 성수' });
+check(
+  'naver place: 동네 없으면 가게명만',
+  decodeURIComponent(naverPlaceNoArea.split('query=')[1]) === '베통 성수',
+  naverPlaceNoArea
+);
+check(
+  'naver place: 특수문자·공백 인코딩',
+  naverPlaceSearchUrl({ name: 'A&B 카페' }) ===
+    'https://m.place.naver.com/place/list?query=A%26B%20%EC%B9%B4%ED%8E%98',
+  naverPlaceSearchUrl({ name: 'A&B 카페' })
+);
+check(
+  'naver place: 핀이 비어도 예외 없이 빈 검색어',
+  naverPlaceSearchUrl(null) === 'https://m.place.naver.com/place/list?query=',
+  naverPlaceSearchUrl(null)
+);
+const externalOpened = await openExternalUrl(naverPlaceUrl);
+check('openExternalUrl: 네이버 플레이스 주소 열기', externalOpened.opened === true && externalOpened.url === naverPlaceUrl, JSON.stringify(externalOpened));
+const externalEmpty = await openExternalUrl('');
+check('openExternalUrl: 빈 주소는 열지 않음', externalEmpty.opened === false, JSON.stringify(externalEmpty));
 
 // ── 6. v1.1: 매장 정보 링크(placeUrl) · 출처 배지 데이터 ──────────
 // 6-1. 카카오는 place_url 을 https 로 올리고 '카카오맵' 라벨을 붙입니다.

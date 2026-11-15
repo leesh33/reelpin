@@ -1,7 +1,8 @@
-# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.6
+# 📍 릴스핀 (ReelPin) — iOS 앱 풀소스 v1.7
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v1.7 (2026-11-15)** `[매장 정보 보기]` 가 카카오맵 **바깥으로 나가지 않고** 앱 안 **네이버 플레이스 모달**(iframe)로 열림 — 헤더 `[새 창으로 열기]`·`[닫기]`, 차단 감지 시 `[네이버 지도로 열기]` 원탭 폴백
 > **v1.6 (2026-11-15)** 웹 지도를 **네이버 지도**로 교체 — `ncpKeyId` 규격, 카테고리 색 핀·내 위치 파란 점·반경 500m 원·확대축소·`fitBounds`/`morph`, **인증 실패 시 안내 배너 + Leaflet 자동 폴백**
 > **v1.5 (2026-11-15)** **실제 지도(Leaflet·OpenStreetMap)** + **내 위치(GPS)** + **반경 500m 주변 맛집 알림** — 핀마다 `320m`·`2.4km` 실제 거리, 500m 안에 들어오면 배너·브라우저 알림
 > **v1.4 (2026-11-15)** **Vercel 무료 웹 배포** — PC 없이 아이폰·아이패드 사파리('홈 화면에 추가')에서 그대로 사용 · `api/*` **서버리스 프록시**로 웹에서도 네이버 지역검색·카카오 로컬·유튜브 설명글/댓글 동작 · **웹 번들에 API 키 0건**
@@ -117,7 +118,7 @@ https://<내주소>/api/youtube?id=2QZPPEle9IY&hl=ko      → {"title":"...","de
 
 ```bash
 npx expo export --platform web     # 번들 빌드 → 에러 0건 (키 없는 상태로도 빌드 확인)
-npm test                           # 단위·통합 500건 통과 (추출기 269 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 52) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 524건 통과 (추출기 276 + 웹 프록시 38 + API 핸들러 65 + 위치·거리 76 + 화면 렌더 스모크 69) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -130,6 +131,24 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v1.7에서 달라진 점 (2026-11-15) — [매장 정보 보기] 를 앱 안 네이버 플레이스 모달로
+
+상훈 님이 **매장 정보를 누를 때마다 카카오맵으로 빠져나가는** 흐름을 바꿔 달라고 한 버전입니다.
+
+1. **앱 안 모달** — `src/components/InAppPlaceModal.web.js`. [매장 정보 보기] 를 누르면 화면 전체(모바일 폭) 모달이 뜨고,
+   본문에 `<iframe src="https://m.place.naver.com/place/list?query=동네 가게명">` 를 그대로 띄웁니다. 브라우저 탭이 바뀌지 않습니다.
+   (`m.place.naver.com` 은 `X-Frame-Options` / CSP `frame-ancestors` 를 보내지 않아 iframe 이 막히지 않습니다 — 2026-11-15 응답 헤더 확인)
+2. **헤더** — 가게 이름 · 동네 + `[새 창으로 열기]`(외부 열기 폴백) + `[닫기]`. ESC 키로도 닫힙니다.
+3. **차단 대비 두 겹** — ① 하단에 **항상 보이는** `화면이 비어 있으면 · [네이버 지도로 열기]` 줄,
+   ② iframe 이 6초 안에 로드되지 않거나 `about:blank` 로 남아 있으면(= 브라우저가 거부) 상단에 안내 배너 + `[네이버 지도로 열기]` 버튼.
+   iframe 은 지우지 않아 사용자가 직접 확인할 수 있습니다.
+4. **버튼은 이제 항상 보입니다** — 예전에는 지도 API 가 준 `placeUrl` 이 있을 때만 [매장 정보 보기] 가 나왔지만,
+   이제는 가게 이름 + 동네로 네이버 플레이스를 찾으므로 **저장된 매장 페이지가 없어도** 버튼이 뜹니다. (오른쪽 라벨 `네이버 플레이스`)
+5. **아이폰·안드로이드** — `InAppPlaceModal.js` (네이티브) 는 같은 헤더를 쓰고, iframe 대신
+   `[네이버 지도로 열기]` · `[네이버 플레이스 웹으로 열기]` · (있으면) `[저장된 매장 페이지 열기]` 를 제공합니다.
+6. **검증** — `npm test` **524건 통과**(모달 주소·iframe·차단 감지·SSR 안전 검사 24건 추가) · `npx expo export --platform web` 에러 0건
+   · `https://reelpin.vercel.app` 라이브에서 핀 클릭 → [매장 정보 보기] → 모달 안에서 네이버 플레이스가 실제로 그려지는지 스크린샷 확인.
 
 ## v1.6에서 달라진 점 (2026-11-15) — 웹 지도를 네이버 지도로
 
@@ -260,7 +279,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 | 탭 | 파일 | 내용 |
 | --- | --- | --- |
-| 📍 지도 | `src/screens/MapScreen.js` | **실제 지도(웹 네이버 지도)** + **내 위치·반경 500m 원**, [📍 내 위치] · [주변 500m] 버튼, 500m 진입 배너(실제 거리), 주변 목록(거리순) + 근처 알림 토글, 핀 상세 시트(출처 배지 + **내 위치에서 320m** + 원본 릴스 + 매장 정보 + 네이버지도·카카오맵) |
+| 📍 지도 | `src/screens/MapScreen.js` | **실제 지도(웹 네이버 지도)** + **내 위치·반경 500m 원**, [📍 내 위치] · [주변 500m] 버튼, 500m 진입 배너(실제 거리), 주변 목록(거리순) + 근처 알림 토글, 핀 상세 시트(출처 배지 + **내 위치에서 320m** + 원본 릴스 + **앱 안 네이버 플레이스 모달** + 네이버지도·카카오맵) |
 | 🔗 저장 | `src/screens/PasteScreen.js` | **릴스 링크 ↔ 가게명으로 찾기** 모드 전환, 클립보드 자동 감지, 장소 추출·직접 검색, **출처 배지가 붙은 후보 라디오 선택**, [지도에 핀 꽂기] → AsyncStorage 저장 후 지도 탭 이동 |
 | 👤 내 정보 | `src/screens/ProfileScreen.js` | 저장 핀 카운터(N/10 무료), 지오펜스 반경 300m·500m·1km, 프로 플랜 카드(월 2,900원), 내 릴스 지도 링크 복사 |
 
@@ -268,6 +287,8 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 - `src/components/RealMapView.web.js` — **웹 실제 지도** — 1순위 **네이버 지도**(`ncpKeyId`, 핀·내 위치 점·500m 원·`fitBounds`/`morph`/확대축소) + **Leaflet 폴백**(OSM 타일), 둘 다 `useEffect` 안에서만 로드
 - `src/components/RealMapView.js` — 네이티브 폴백(기존 `MapCanvas` 그대로)
+- `src/components/InAppPlaceModal.web.js` — **웹 인앱 네이버 플레이스 모달** — `<iframe src={naverPlaceSearchUrl(pin)}>`, 헤더 `[새 창으로 열기]`·`[닫기]`(ESC), 6초 시간 초과·`about:blank` 차단 감지 → `[네이버 지도로 열기]` 원탭 폴백
+- `src/components/InAppPlaceModal.js` — **네이티브(iOS·Android) 모달** — 같은 헤더 + 네이버 지도/플레이스 웹/저장된 매장 페이지 열기
 - `src/components/MapCanvas.js` — 좌표 → 화면 투영 지도 캔버스(드래그 팬, 핀, 이름표)
 - `src/services/location.js` — `distanceMeters`(Haversine) · `formatDistance` · `findNearbyPins` · `nearestPin` · `requestCurrentPosition` · `watchPosition` + 한국어 권한 안내
 - `src/services/notifications.js` — 브라우저 알림 권한·500m 진입 알림(`firstNewNearby` 로 중복 방지, 미지원이면 조용히 false)
@@ -279,7 +300,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - `vercel.json` — 빌드(`npx expo export --platform web`)·출력(`dist`)·`/api/*` 함수·SPA 라우팅
 - `src/utils/pins.js` — 후보 → 핀 변환(`buildPin`), v1.0 핀 마이그레이션(`normalizePins`), 중복 판정(`findExistingPin`)
 - `src/storage.js` — AsyncStorage 저장/불러오기 (핀·반경·플랜)
-- `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백, `openPlace()`(매장 정보 열기)
+- `src/utils/links.js` — 네이버지도 `nmap://`, 카카오맵 `kakaomap://` 딥링크 + 웹 폴백, `naverPlaceSearchUrl()`(인앱 모달 주소), `openExternalUrl()`·`openPlace()`(매장 정보 열기)
 
 ---
 
@@ -355,7 +376,7 @@ eas submit --platform ios
 1. `react-native-safe-area-context` / `SafeAreaProvider` **미사용** — iOS 17/18 Expo Go 네이티브 모듈 충돌 회피. RN 기본 `SafeAreaView` + Android `StatusBar.currentHeight` 사용.
 2. `app.json`에 `extra.eas.projectId` **미포함** — `null` 매니페스트 크래시 원인 제거.
 3. `bundleIdentifier: com.odol.reelpin`.
-4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 52건 통과(웹 지도 `RealMapView.web.js` SSR 안전 + 네이버 지도 스크립트 규격 검사 포함).
+4. `expo export --platform web` 빌드 0 에러, 화면/컴포넌트 렌더 스모크 69건 통과(웹 지도 `RealMapView.web.js` SSR 안전 + 네이버 지도 스크립트 규격 검사 + v1.7 인앱 네이버 플레이스 모달 검사 포함).
 5. `.env`는 `.gitignore`에 있어 커밋·ZIP에 포함되지 않습니다. 저장소·배포본에는 빈 값만 있는 `.env.example`만 들어갑니다.
 
 > v1.2는 v1.1에 **유튜브 무인증 oEmbed · 공유 텍스트+링크 혼합 입력 · OG 메타 · 한국어 키워드 정제기**를 더한 버전입니다.

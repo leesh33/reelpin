@@ -84,8 +84,22 @@ export function normalizePlaceUrl(raw) {
   return '';
 }
 
-/** [매장 정보 보기] — 카카오맵 매장 페이지·네이버 링크·구글 지도·가게 홈페이지를 엽니다. */
-export async function openPlace(rawUrl) {
+/**
+ * v1.7 — 앱 안 모달(InAppPlaceModal)이 여는 네이버 모바일 플레이스 검색 주소.
+ * m.place.naver.com 은 X-Frame-Options / CSP frame-ancestors 를 보내지 않아
+ * 웹에서 iframe 안에 그대로 띄울 수 있습니다.
+ *   예) https://m.place.naver.com/place/list?query=%EC%84%B1%EC%88%98%EB%8F%99%20%EB%B2%A0%ED%86%B5
+ */
+export function naverPlaceSearchUrl(pin) {
+  const query = [pin && pin.area, pin && pin.name]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+  return `https://m.place.naver.com/place/list?query=${encodeURIComponent(query)}`;
+}
+
+/** http(s) 주소를 기기 기본 브라우저(또는 그 앱)로 엽니다. */
+export async function openExternalUrl(rawUrl) {
   const url = normalizePlaceUrl(rawUrl);
   if (!url) return { opened: false, url: '' };
   try {
@@ -94,6 +108,11 @@ export async function openPlace(rawUrl) {
   } catch (e) {
     return { opened: false, url };
   }
+}
+
+/** [매장 정보 보기] — 카카오맵 매장 페이지·네이버 링크·구글 지도·가게 홈페이지를 엽니다. */
+export async function openPlace(rawUrl) {
+  return openExternalUrl(rawUrl);
 }
 
 /** 내 릴스 지도 공유용 텍스트/링크 */

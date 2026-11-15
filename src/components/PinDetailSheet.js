@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
-import { openMap, openPlace, openSource } from '../utils/links';
+import { openMap, openSource } from '../utils/links';
 import { formatDistance } from '../services/location';
+import InAppPlaceModal from './InAppPlaceModal';
 import ProviderBadges from './ProviderBadge';
 
 const PLATFORM_LABEL = {
@@ -16,6 +17,9 @@ const PLATFORM_LABEL = {
 };
 
 export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onClose, onDelete, onToast }) {
+  // v1.7 — [매장 정보 보기] 는 브라우저 밖으로 나가지 않고 앱 안 모달을 엽니다.
+  const [placeModalOpen, setPlaceModalOpen] = useState(false);
+
   if (!pin) return null;
   const radiusLabel = radiusMeters >= 1000 ? '1km' : radiusMeters + 'm';
   const hasDistance = distanceMeters !== null && distanceMeters !== undefined && Number.isFinite(distanceMeters) && distanceMeters >= 0;
@@ -33,15 +37,8 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
     }
   };
 
-  const handlePlace = async () => {
-    const result = await openPlace(pin.placeUrl);
-    if (onToast) {
-      onToast(
-        result.opened
-          ? (pin.placeUrlLabel ? pin.placeUrlLabel + '로 열었어요' : '매장 정보를 열었어요')
-          : '매장 정보를 열 수 없어요. 잠시 후 다시 시도해 주세요'
-      );
-    }
+  const handlePlace = () => {
+    setPlaceModalOpen(true);
   };
 
   return (
@@ -125,20 +122,18 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
         </Text>
       </View>
 
-      {/* 지도 API가 준 매장 페이지가 있을 때만 — 없으면 지도 검색 버튼으로 안내 */}
-      {!!pin.placeUrl && (
-        <Pressable
-          style={styles.placeBtn}
-          onPress={handlePlace}
-          accessibilityRole="link"
-          accessibilityLabel="매장 정보 보기"
-        >
-          <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
-          <Text style={styles.placeBtnText}>매장 정보 보기</Text>
-          {!!pin.placeUrlLabel && <Text style={styles.placeBtnMeta}>{pin.placeUrlLabel}</Text>}
-          <Ionicons name="open-outline" size={14} color={colors.coralDark} />
-        </Pressable>
-      )}
+      {/* v1.7 — 저장된 매장 페이지가 없어도 가게 이름+동네로 네이버 플레이스를 앱 안에서 엽니다 */}
+      <Pressable
+        style={styles.placeBtn}
+        onPress={handlePlace}
+        accessibilityRole="button"
+        accessibilityLabel="매장 정보 보기"
+      >
+        <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
+        <Text style={styles.placeBtnText}>매장 정보 보기</Text>
+        <Text style={styles.placeBtnMeta}>네이버 플레이스</Text>
+        <Ionicons name="expand-outline" size={14} color={colors.coralDark} />
+      </Pressable>
 
       <View style={styles.btnRow}>
         <Pressable
@@ -163,6 +158,14 @@ export default function PinDetailSheet({ pin, radiusMeters, distanceMeters, onCl
         <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
         <Text style={styles.deleteText}>핀 삭제</Text>
       </Pressable>
+
+      {placeModalOpen && (
+        <InAppPlaceModal
+          pin={pin}
+          onClose={() => setPlaceModalOpen(false)}
+          onToast={onToast}
+        />
+      )}
     </View>
   );
 }
