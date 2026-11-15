@@ -269,10 +269,27 @@ export function buildShareUrl(pins, options = {}) {
   return origin + '/?' + SHARE_PARAM + '=' + code;
 }
 
+/**
+ * 핀들이 한 동네에 몰려 있을 때만 그 동네 이름을 씁니다.
+ * (여러 동네에 흩어져 있으면 '내 릴스 맛집 지도' 가 맞습니다)
+ */
+export function dominantArea(pins) {
+  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
+  if (!list.length) return '';
+  const counts = {};
+  list.forEach((pin) => {
+    const area = String((pin && pin.area) || '').trim();
+    if (area) counts[area] = (counts[area] || 0) + 1;
+  });
+  const ranked = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+  if (!ranked.length) return '';
+  return counts[ranked[0]] * 2 >= list.length ? ranked[0] : '';
+}
+
 /** 공유와 함께 보여 줄 짧은 문구 */
 export function shareMessage(pins, options = {}) {
   const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
-  const area = (list[0] && list[0].area) || '';
+  const area = dominantArea(list);
   const title = options.title || (area ? '내 ' + area + ' 릴스 지도' : '내 릴스 맛집 지도');
   return title + ' · ' + list.length + '곳';
 }

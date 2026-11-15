@@ -75,6 +75,7 @@ import {
   buildShareUrl,
   parseShareFromUrl,
   shareMessage,
+  dominantArea,
   base64UrlEncode,
   base64UrlDecode,
   utf8Encode,
@@ -1360,7 +1361,16 @@ const parsedShare = parseShareFromUrl(new URL(shareUrl).search);
 check('share parse: ?share= 읽기', parsedShare && parsedShare.count === 8, JSON.stringify(parsedShare && parsedShare.count));
 check('share parse: #share= 읽기', (parseShareFromUrl('#share=' + shareCode) || {}).count === 8);
 check('share parse: 없으면 null', parseShareFromUrl('?x=1') === null && parseShareFromUrl('') === null);
-check('share message: N곳 표기', shareMessage(SHARE_PINS) === '내 성수동 릴스 지도 · 8곳', shareMessage(SHARE_PINS));
+check('share message: 여러 동네면 지역명 없이', shareMessage(SHARE_PINS) === '내 릴스 맛집 지도 · 8곳', shareMessage(SHARE_PINS));
+check(
+  'share message: 한 동네에 몰리면 동네 이름',
+  shareMessage([
+    { name: 'A', area: '성수동' },
+    { name: 'B', area: '성수동' },
+    { name: 'C', area: '성수동' },
+  ]) === '내 성수동 릴스 지도 · 3곳',
+  shareMessage([{ name: 'A', area: '성수동' }, { name: 'B', area: '성수동' }, { name: 'C', area: '성수동' }])
+);
 check('share: base64url 왕복', base64UrlDecode(base64UrlEncode(utf8Encode('릴스핀 r2 ✓'))).length > 0 && utf8Decode(base64UrlDecode(base64UrlEncode(utf8Encode('릴스핀 r2 ✓')))) === '릴스핀 r2 ✓');
 check('share: base64url 은 + / = 를 쓰지 않음', !/[+/=]/.test(base64UrlEncode(utf8Encode('~~~???___한글'))));
 
