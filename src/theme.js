@@ -63,6 +63,41 @@ export const spacing = {
   xxl: 28,
 };
 
+/*
+ * 지도 우측 하단 컨트롤 정렬값 — 한 곳에서 관리합니다.
+ *   · '+ / −' 확대·축소 박스(RealMapView.web.js 의 zoomCol)
+ *   · '내 위치(파란 FAB) · 지도 공유 · 주변 500m' 세로 스택(MapScreen.actionCol)
+ *   · '반경 500m 주변 목록' 패널(nearbyPanel)
+ * 세 컨트롤 모두 `rightInset` 으로 오른쪽 끝선을 맞추고, 아래에서 위로
+ *   +/−  →(stackGap)→  FAB  →  지도 공유  →  주변 500m  →(colGap)→  주변 목록 패널
+ * 순서로 쌓입니다. +/− 는 지도 아래 끝에서 zoomBottom 만큼 띄워
+ * NAVER 로고(아래 4px, 높이 ~12px)와 겹치지 않게 합니다.
+ */
+export const mapControls = (() => {
+  const rightInset = 12; // 세 컨트롤 공통 오른쪽 여백
+  const controlSize = 34; // '주변 500m · 지도 공유' 핀 높이 = '+ / −' 버튼 크기
+  const fabSize = 46; // 파란 '내 위치' FAB
+  const colGap = 8; // 세로 스택 간격
+  const zoomBottom = 26; // +/− 박스 아래 끝 — NAVER 로고 위로 12px 이상 띄움
+  const zoomBoxHeight = controlSize * 2 + 3; // 위·아래 테두리 1 + 구분선 1
+  const stackGap = 9; // +/− 박스와 파란 FAB 사이 간격
+  const actionStackHeight = controlSize * 2 + fabSize + colGap * 2;
+  const actionBottom = zoomBottom + zoomBoxHeight + stackGap;
+  const panelBottom = actionBottom + actionStackHeight + colGap;
+  return {
+    rightInset,
+    controlSize,
+    fabSize,
+    colGap,
+    zoomBottom,
+    zoomBoxHeight,
+    stackGap,
+    actionStackHeight,
+    actionBottom,
+    panelBottom,
+  };
+})();
+
 export const cardShadow = {
   shadowColor: '#0F172A',
   shadowOpacity: 0.08,

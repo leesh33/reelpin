@@ -29,7 +29,7 @@ import InAppPlaceModalWeb, {
 import fs from 'node:fs';
 import path from 'node:path';
 import { injectPwaHead, PWA_REQUIRED_MARKERS } from '../scripts/patch-web-html.mjs';
-import { colors } from '../src/theme';
+import { colors, mapControls } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
 
 const noop = () => {};
@@ -340,6 +340,34 @@ for (const [label, ok, extra] of v211Checks) {
   }
 }
 
+// ── v2.1.2: 지도 우측 하단 컨트롤 일직선 정렬 + 반경 배너 다크 차콜 대비 ──
+const bannerSource = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceBanner.js'), 'utf8');
+const bannerCode = bannerSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+const v212Checks = [
+  ['지도 우측 하단: +/− 박스가 주변 500m·지도 공유·내 위치와 같은 rightInset',
+    mapSource.indexOf('right: mapControls.rightInset') > 0 && mapSource2.indexOf('right: mapControls.rightInset') > 0 && mapSource.indexOf('right: 68') < 0,
+    'zoomCol/actionCol 둘 다 mapControls.rightInset'],
+  ['지도 우측 하단: +/− 는 NAVER 로고 위로 충분히 띄움 (≥20px)',
+    mapControls.zoomBottom >= 20, String(mapControls.zoomBottom)],
+  ['지도 우측 하단: +/− 박스와 내 위치 FAB 가 겹치지 않음',
+    mapControls.actionBottom >= mapControls.zoomBottom + mapControls.zoomBoxHeight + 4,
+    String(mapControls.actionBottom) + ' vs ' + String(mapControls.zoomBottom + mapControls.zoomBoxHeight)],
+  ['반경 알림 배너: 다크 차콜 카드 + 흰 글씨',
+    bannerCode.indexOf('backgroundColor: colors.charcoal') > 0 && /title: \{[\s\S]{0,160}color: colors\.white/.test(bannerCode), bannerSource.length + ' bytes'],
+  ['반경 알림 배너: 500m 진입(지금) 상태는 코랄 강조',
+    bannerCode.indexOf('wrapLive') > 0 && /nowChipLive: \{[\s\S]{0,80}colors\.coral/.test(bannerCode), '코랄 테두리 + 코랄 배지'],
+  ['지도 우측 하단: 주변 목록 패널이 버튼 스택을 가리지 않음',
+    mapControls.panelBottom >= mapControls.actionBottom + mapControls.actionStackHeight && mapSource2.indexOf('bottom: mapControls.panelBottom') > 0,
+    String(mapControls.panelBottom) + ' vs ' + String(mapControls.actionBottom + mapControls.actionStackHeight)],
+];
+for (const [label, ok, extra] of v212Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 // PWA: index.html 메타 주입 (Expo 기본 템플릿에 실제로 들어가는지)
 const EXPO_TEMPLATE =
   '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" />' +
@@ -409,6 +437,7 @@ const total =
   v2Checks.length +
   v21Checks.length +
   v211Checks.length +
+  v212Checks.length +
   pwaChecks.length +
   assetChecks.length +
   2;

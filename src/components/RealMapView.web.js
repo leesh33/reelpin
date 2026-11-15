@@ -17,7 +17,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, typography } from '../theme';
+import { colors, mapControls, radius, typography } from '../theme';
 import { normalizeCoords } from '../services/location';
 
 // ── 네이버 지도 설정 ──────────────────────────────────────────
@@ -974,8 +974,10 @@ const styles = StyleSheet.create({
   },
   zoomCol: {
     position: 'absolute',
-    right: 68,
-    bottom: 12,
+    // '주변 500m · 지도 공유 · 내 위치'와 같은 오른쪽 끝선 (theme.mapControls)
+    right: mapControls.rightInset,
+    // 지도 아래 끝의 NAVER 로고와 겹치지 않게 띄웁니다.
+    bottom: mapControls.zoomBottom,
     borderRadius: 10,
     overflow: 'hidden',
     borderWidth: 1,

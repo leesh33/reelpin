@@ -22,7 +22,7 @@ import {
   requestNotificationPermission,
   showNearbyNotification,
 } from '../services/notifications';
-import { colors, cardShadow, radius, typography } from '../theme';
+import { colors, cardShadow, mapControls, radius, typography } from '../theme';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 
 export default function MapScreen({
@@ -651,16 +651,18 @@ const styles = StyleSheet.create({
   },
   actionCol: {
     position: 'absolute',
-    right: 12,
-    bottom: 96,
+    // '+ / −' · 주변 500m · 지도 공유와 같은 오른쪽 끝선 (theme.mapControls)
+    right: mapControls.rightInset,
+    // +/− 박스 위에 9px 간격을 두고 스택이 쌓입니다.
+    bottom: mapControls.actionBottom,
     alignItems: 'flex-end',
-    gap: 8,
+    gap: mapControls.colGap,
   },
   nearbyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    height: 34,
+    height: mapControls.controlSize,
     paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: 'rgba(15,23,42,0.86)',
@@ -673,9 +675,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   fab: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: mapControls.fabSize,
+    height: mapControls.fabSize,
+    borderRadius: mapControls.fabSize / 2,
     backgroundColor: colors.coral,
     alignItems: 'center',
     justifyContent: 'center',
@@ -692,7 +694,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 158,
+    // 버튼 스택(+/- · 내 위치 · 지도 공유 · 주변 500m) 위로 올려 놓아 서로 가리지 않습니다.
+    bottom: mapControls.panelBottom,
     maxHeight: 260,
     backgroundColor: colors.card,
     borderRadius: radius.lg,
