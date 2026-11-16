@@ -201,6 +201,26 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 - `npm run export:web` — **에러 0건**.
 - 390×844 실측: `reelpin-verify-v2.19/check-390x844.mjs` (A 지도 하단바 · B 컬렉션 만들기→담기→지도 필터 · C ☰ 내 정보/서브 페이지, 단계별 새 창) → **VERIFY_OK**.
 
+### 5. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `7f6d842` · Vercel Production success)
+
+| 항목 | 실측값 |
+|---|---|
+| 하단바 | `100,778 · 190×54` · `rgba(255,255,255,0.92)` · `999px` · `blur(12px)` · 바닥 여백 12px · **중심 x=195(가운데 정렬)** |
+| 탭 3칸 | `지도 109,783` / `＋ 168,783` / `컬렉션 227,783` — 각 `54×44`, **글자 0개(아이콘만)** |
+| 겹침 | 왼쪽 알약 `12,685 · 101×31` · 왼쪽 도구 `12,724 · 46×44` · 내 위치 FAB `332,626` · 축소 `343,717` — 하단바(y=778) 위 → **겹침 0** |
+| 컬렉션 | 빈 상태 → `새 컬렉션`(`검단 점심 코스` / `회사 근처 12시~1시` / 🍜) → 상세에서 핀 2곳 체크(`aria-checked=true` 2) → 목록 카드 `1개 컬렉션 · 2곳 담김` · `2곳 · 가본 곳 1` |
+| 컬렉션 지도 | `[지도에서 보기]` → 상단 칩 `🍜 검단 점심 코스 2곳` `16,117 · 153×34` · `×` 로 해제(칩 0개) |
+| ☰ 시트 | `0,118 · 390×726` — `내 정보 / 계정 · 동기화 · 설정` · 통합 계정 카드 · 설정 3행 · 저장 요약 |
+| 서브 페이지 | `분류 관리`(분류 3개·`기본` 잠금·`추가`) → `‹ 뒤로` 복귀 · `지오펜스 알림 반경`(300m/500m/1km) · `앱 정보`(`릴스핀 v2.19.0` · `com.odol.reelpin`) |
+| 버전 | 라이브 번들 `릴스핀 v2.19.0` (☰ 앱 정보 · 하단 시트 발끝) |
+
+- 스크린샷: `reelpin-verify-v2.19/A1-map-compact-tabbar-390x844.png` · `B1-collections-empty-390x844.png` · `B2-collection-create-sheet-390x844.png` · `B3-collection-detail-pins-390x844.png` · `B4-collections-list-card-390x844.png` · `B5-map-collection-filter-390x844.png` · `C1-header-menu-merged-390x844.png` · `C2-menu-sub-categories-390x844.png` · `C3-menu-sub-radius-390x844.png` · `C4-menu-sub-about-390x844.png`
+
+### 6. 📁 바뀐 파일
+
+- 새 파일: `src/screens/CollectionsScreen.js` · `src/utils/collections.js` · `test/collections-test.mjs`
+- 고친 파일: `src/components/TabBar.js` · `src/components/MenuDrawerModal.js` · `src/screens/ProfileScreen.js`(panel 모드) · `src/screens/MapScreen.js`(컬렉션 필터) · `src/theme.js` · `src/storage.js` · `App.js` · `src/components/AppHeader.js` · `test/run-tests.mjs` · `test/ssr-smoke.jsx` · `package.json` · `app.json`
+
 ## v2.18.0에서 달라진 점 (2026-11-16) — 🫧 플로팅 하단바 · 내 정보 서브 페이지 · 저장 헤더 통일 · 지도 흰 칩
 
 상훈 님 요청 (첨부 `IMG_9090` — hypevibe 하단 바):
