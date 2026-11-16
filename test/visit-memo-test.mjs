@@ -304,7 +304,7 @@ check('배선: 내 정보에 한도 문구·프로그레스 없음', profile.ind
 check(
   '배선: 지도가 방문 필터(가본 곳만 보기)를 쓰고 상세 시트에 콜백 전달',
   map.indexOf('MapToolsMenu') > 0 &&
-    map.indexOf('changeVisitFilter(VISIT_DONE)') > 0 &&
+    map.indexOf('filterByVisit(baseFiltered, VISIT_DONE)') > 0 &&
     map.indexOf('const visitedOnly = visitFilter === VISIT_DONE') > 0 &&
     map.indexOf('onToggleVisited={onTogglePinVisited}') > 0 &&
     map.indexOf('onChangeMemo={onChangePinMemo}') > 0

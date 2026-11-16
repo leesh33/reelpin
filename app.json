@@ -2,7 +2,7 @@
   "expo": {
     "name": "릴스핀",
     "slug": "reelpin",
-    "version": "2.17.0",
+    "version": "2.17.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "reelpin",
@@ -26,7 +26,7 @@
     },
     "android": {
       "package": "com.odol.reelpin",
-      "versionCode": 7,
+      "versionCode": 8,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0F172A"

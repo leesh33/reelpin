@@ -590,6 +590,49 @@ export default function MapScreen({
     setVisitFilter((current) => (current === value && value !== VISIT_ALL ? VISIT_ALL : value));
   }, []);
 
+  /**
+   * v2.17.1 — 왼쪽 하단 메뉴의 「가본 곳만 보기」 스위치.
+   *
+   * 상훈 님 제보(2026-11-16): "가본곳만 보기가 반대로 되어있는거 같아 · ON을 했을 때
+   * 안가본곳이 나오는거같아" — 필터 자체는 `filterByVisit(…, VISIT_DONE)` 로 옳게 걸리고
+   * 있었지만(visited === true 핀만), **지도는 그 자리에 그대로 있고 핀만 사라져서**
+   * 가본 곳이 화면 밖이면(예: 12km 밖) 아무 일도 안 일어난 것처럼 보였고, 화면에 남은
+   * 네이버 기본 지도의 가게 라벨들이 '안 가본 곳' 처럼 읽혔습니다.
+   * → 켜면 지도를 **가본 곳에 바로 맞춰**(범위·확대) 보여 주고, 문구로도 상태를 알립니다.
+   *   끄면 전체로 돌아가며 지도도 전체 핀에 맞춥니다. 가본 곳이 0곳이면 안내를 띄웁니다.
+   */
+  const toggleVisitedOnly = useCallback(() => {
+    if (visitedOnly) {
+      setVisitFilter(VISIT_ALL);
+      const coords = mapCoordsOf(baseFiltered);
+      if (coords.length >= 2) {
+        setFit(coords);
+        setFitKey((k) => k + 1);
+      } else if (coords.length === 1) {
+        setFocus({ lat: coords[0].lat, lng: coords[0].lng });
+        setFocusKey((k) => k + 1);
+      }
+      showToast('전체 핀 ' + baseFiltered.length + '곳을 다시 보여드려요');
+      return;
+    }
+    const visitedPins = filterByVisit(baseFiltered, VISIT_DONE);
+    setVisitFilter(VISIT_DONE);
+    const coords = mapCoordsOf(visitedPins);
+    if (coords.length >= 2) {
+      setFit(coords);
+      setFitKey((k) => k + 1);
+    } else if (coords.length === 1) {
+      setFocus({ lat: coords[0].lat, lng: coords[0].lng });
+      setFocusKey((k) => k + 1);
+    }
+    setNearbyOpen(false);
+    if (!visitedPins.length) {
+      showToast('아직 [가봤어요]로 체크한 곳이 없어요 · 핀을 열어 체크해 두세요');
+    } else {
+      showToast('가본 곳만 보는 중 · ' + visitedPins.length + '곳');
+    }
+  }, [visitedOnly, baseFiltered, showToast]);
+
   return (
     <View style={styles.root}>
       <AppHeader badge="지도" {...header} />
@@ -723,8 +766,17 @@ export default function MapScreen({
               totalCount: pins.length,
               visitFilter,
             })}
+            nearbyOpen={nearbyOpen}
+            nearbyCount={nearbyList.length}
+            nearbyRadius={NEARBY_RADIUS_M}
+            hasMyCoords={Boolean(myCoords)}
             onToggleOpen={() => setToolsOpen((open) => !open)}
-            onToggleVisited={() => changeVisitFilter(VISIT_DONE)}
+            onToggleVisited={toggleVisitedOnly}
+            onPressNearby={() => {
+              // v2.17.1 — 카드를 접고 기존 반경 500m 패널을 그대로 열고/닫습니다.
+              setToolsOpen(false);
+              toggleNearby();
+            }}
             onShare={() => {
               setToolsOpen(false);
               shareMyMap();
@@ -734,7 +786,7 @@ export default function MapScreen({
 
         {/* 반경 500m 주변 목록 */}
         {view === 'map' && !selectedPin && nearbyOpen && (
-          <View style={styles.nearbyPanel}>
+          <View style={styles.nearbyPanel} testID="nearby-panel">
             <View style={styles.panelHead}>
               <Text style={styles.panelTitle}>
                 {'반경 ' + NEARBY_RADIUS_M + 'm · ' + nearbyList.length + '곳'}
@@ -813,7 +865,8 @@ export default function MapScreen({
           </View>
         )}
 
-        {/* 목록 보기 · 주변 500m · 내 위치 버튼 (v2.17: `지도 공유` 는 왼쪽 하단 펌찄 메뉴로 이동) */}
+        {/* 목록 보기 · 내 위치 버튼 (v2.17: `지도 공유` → 왼쪽 하단 펌찄 메뉴,
+            v2.17.1: `주변 500m` 도 같은 왼쪽 하단 메뉴로 이동) */}
         {view === 'map' && !selectedPin && (
           <View style={styles.actionCol}>
             <Pressable
@@ -825,16 +878,6 @@ export default function MapScreen({
             >
               <Ionicons name="list-outline" size={14} color={colors.white} />
               <Text style={styles.nearbyBtnText}>목록 보기</Text>
-            </Pressable>
-            <Pressable
-              style={styles.nearbyBtn}
-              onPress={toggleNearby}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: nearbyOpen }}
-              accessibilityLabel="반경 500m 주변 보기"
-            >
-              <Ionicons name="storefront-outline" size={14} color={colors.white} />
-              <Text style={styles.nearbyBtnText}>{'주변 ' + NEARBY_RADIUS_M + 'm'}</Text>
             </Pressable>
             <Pressable
               style={[styles.fab, myCoords && styles.fabLive]}
@@ -863,7 +906,46 @@ export default function MapScreen({
           </View>
         )}
 
-        {selectedPin && (
+        {/* v2.17.1 — 가본 곳만 보기 ON인데 체크한 곳이 없을 때: 빈 지도 대신 이유와 빠져나갈 길 */}
+        {view === 'map' && !selectedPin && visitedOnly && filtered.length === 0 && pins.length > 0 && (
+          <View style={styles.visitedEmptyCard} testID="visited-only-empty">
+            <View style={styles.visitedEmptyHead}>
+              <Ionicons name="checkmark-circle-outline" size={16} color={colors.visit} />
+              <Text style={styles.visitedEmptyTitle}>가본 곳만 보는 중</Text>
+            </View>
+            <Text style={styles.visitedEmptySub}>
+              {'아직 [가봤어요]로 체크한 곳이 없어요.\n핀을 열어 체크하거나 아래 버튼으로 전체를 보세요.'}
+            </Text>
+            <Pressable
+              style={styles.visitedEmptyBtn}
+              onPress={toggleVisitedOnly}
+              accessibilityRole="button"
+              accessibilityLabel="전체 핀 보기"
+              testID="visited-only-show-all"
+            >
+              <Text style={styles.visitedEmptyBtnText}>전체 핀 보기</Text>
+            </Pressable>
+          </View>
+        )}
+      </View>
+
+      {/*
+        v2.17.1 — 핀 상세는 **화면 최상위 레이어**로 띄웁니다 (상훈 님 요청:
+        "빨간 동그라미 친 부분을 흐릿하게 표현할 수 있을까? 레이어 팝업이 떴다는 걸
+         표현하고 싶어 · 짝대기 3개 눌렀을 때 처럼").
+        · 지도 영역(mapArea) 안이 아니라 MapScreen 맨 위에 그려서 **Reelspin 헤더·카테고리 칩·
+          배너까지** 한꺼번에 어둑해집니다(☰ 메뉴 시트와 같은 결).
+        · 바깥 어두운 곳을 탭하면 닫힙니다. 시트 본체(주황 헤더·maxHeight 86%·✕)는 그대로.
+      */}
+      {selectedPin && (
+        <View style={styles.detailLayer} testID="pin-detail-layer">
+          <Pressable
+            style={styles.detailBackdrop}
+            onPress={() => onSelectPin(null)}
+            accessibilityRole="button"
+            accessibilityLabel="핀 상세 닫기"
+            testID="pin-detail-backdrop"
+          />
           <PinDetailSheet
             pin={selectedPin}
             categories={categories}
@@ -878,8 +960,8 @@ export default function MapScreen({
             onToast={onToast}
             readOnly={selectedIsShared}
           />
-        )}
-      </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -1175,6 +1257,63 @@ const styles = StyleSheet.create({
   emptyBtnText: {
     color: colors.white,
     fontSize: 13,
+    fontWeight: '800',
+  },
+  // ── v2.17.1 — 핀 상세 레이어(딤) ─────────────────────────────
+  // 히더·카테고리 칩·배너까지 한꺼번에 어둑해지도록 MapScreen 맨 위에 깔립니다.
+  detailLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40,
+    elevation: 40,
+  },
+  detailBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    // 웹(아이폰 사파리)에서는 은은한 블러까지 — 레이어 팝업이라는 걸 한눌에 알 수 있게
+    ...(Platform.OS === 'web' ? { backdropFilter: 'blur(2px)' } : null),
+  },
+  // ── v2.17.1 — 가본 곳만 보기 ON + 가본 곳 0곳 안내 ─────────
+  visitedEmptyCard: {
+    position: 'absolute',
+    left: 28,
+    right: 28,
+    top: '34%',
+    backgroundColor: 'rgba(20,31,53,0.95)',
+    borderRadius: radius.lg,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: colors.navyLine,
+    alignItems: 'center',
+    gap: 6,
+  },
+  visitedEmptyHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  visitedEmptyTitle: {
+    ...typography.h3,
+    color: colors.white,
+  },
+  visitedEmptySub: {
+    ...typography.sub,
+    color: '#9FB0C8',
+    fontSize: 12,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  visitedEmptyBtn: {
+    marginTop: 6,
+    height: 34,
+    paddingHorizontal: 16,
+    borderRadius: 999,
+    backgroundColor: colors.coral,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visitedEmptyBtnText: {
+    color: colors.white,
+    fontSize: 12.5,
     fontWeight: '800',
   },
 });

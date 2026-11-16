@@ -1,19 +1,24 @@
 /**
- * src/components/MapToolsMenu.js — v2.17
+ * src/components/MapToolsMenu.js — v2.17.1
  * ─────────────────────────────────────────────────────────────
  * 지도 **왼쪽 하단**의 펼침 메뉴 — 상훈 님 요청:
  *   "미방문 아이콘, 가봤어요 아이콘, 지도 공유 버튼은 지도 왼쪽 하단에 버튼을 두고
  *    누르면 아래 두 개가 펼쳐지면서 기능들을 할 수 있게 해 줘
  *      가본곳만 보기 Y/N on off
- *      지도 공유 하기 버튼"
+ *      지도 공유 하기 버튼"  (v2.17)
+ *   "주변 500m 보기 버튼도 지도 왼쪽 하단의 버튼 안으로 넣을 수 있을까?"  (v2.17.1)
  *
  * v2.17 에서 지도 상단의 두 번째 줄(`전체 / ○ 미방문 / ✓ 가봤어요`)과
  * 오른쪽 스택의 `지도 공유` 를 없애고, 그 두 기능을 **이 버튼 하나**로 모았습니다.
+ * v2.17.1 에서 오른쪽 스택의 `주변 500m` 까지 이 카드 안으로 들어옵니다.
  *
  *   [5 / 5 핀 표시 중]  ← 개수 요약(칩이 아니라 회색 알약)
  *   ┌──────────────────────┐
  *   │ 가본 곳만 보기   ( ●) │  ← Y/N 스위치 (켜면 visited === true 핀만)
  *   │ 가본 곳 2곳 / 전체 5곳 │
+ *   │ ──────────────────── │
+ *   │ 🏪 주변 500m 보기  ›  │  ← 반경 500m 패널 열기/닫기 (기존 toggleNearby 그대로)
+ *   │ 반경 500m 안 2곳       │
  *   │ ──────────────────── │
  *   │ ↗ 지도 공유하기       │  ← 기존 shareMyMap 그대로
  *   └──────────────────────┘
@@ -50,10 +55,25 @@ export default function MapToolsMenu({
   visitedCount = 0,
   totalCount = 0,
   summary = '',
+  // v2.17.1 — 주변 500m 보기 (오른쪽 스택에서 이 카드 안으로)
+  nearbyOpen = false,
+  nearbyCount = 0,
+  nearbyRadius = 500,
+  hasMyCoords = false,
+  onPressNearby,
   onToggleOpen,
   onToggleVisited,
   onShare,
 }) {
+  const nearbySub = nearbyOpen
+    ? '반경 ' + nearbyRadius + 'm · ' + nearbyCount + '곳 보는 중'
+    : hasMyCoords
+    ? '반경 ' + nearbyRadius + 'm 안 ' + nearbyCount + '곳'
+    : '내 위치를 켜면 가까운 순으로';
+  // 켜져 있을 때는 문구로도 상태를 분명히 — 스위치 모양만 보고 헷갈리지 않게
+  const visitedSub = visitedOnly
+    ? '가본 곳 ' + visitedCount + '곳만 보는 중'
+    : '가본 곳 ' + visitedCount + '곳 / 전체 ' + totalCount + '곳';
   // 카드 등장 — 접힘 상태에서는 그리지 않으므로, 열릴 때 0 → 1 로 살짝 올라오며 나타납니다.
   const progress = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -93,8 +113,8 @@ export default function MapToolsMenu({
           <View style={styles.row}>
             <View style={styles.labelWrap}>
               <Text style={styles.label}>가본 곳만 보기</Text>
-              <Text style={styles.subLabel} numberOfLines={1}>
-                {'가본 곳 ' + visitedCount + '곳 / 전체 ' + totalCount + '곳'}
+              <Text style={[styles.subLabel, visitedOnly && styles.subLabelOn]} numberOfLines={1}>
+                {visitedSub}
               </Text>
             </View>
             <Pressable
@@ -111,6 +131,34 @@ export default function MapToolsMenu({
               <View style={[styles.knob, visitedOnly && styles.knobOn]} />
             </Pressable>
           </View>
+
+          <View style={styles.divider} />
+
+          {/* v2.17.1 — 주변 500m 보기: 오른쪽 스택 버튼을 이 카드 안으로 옮겼습니다.
+              누르면 카드를 접고 기존 반경 500m 패널을 그대로 열고/닫습니다. */}
+          <Pressable
+            style={({ pressed }) => [styles.nearbyRow, pressed && styles.nearbyRowPressed]}
+            onPress={onPressNearby}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: nearbyOpen }}
+            accessibilityLabel={'반경 ' + nearbyRadius + 'm 주변 보기'}
+            testID="map-tools-nearby"
+          >
+            <View style={styles.nearbyIcon}>
+              <Ionicons name="storefront-outline" size={14} color={colors.coral} />
+            </View>
+            <View style={styles.nearbyTextWrap}>
+              <Text style={styles.nearbyLabel}>{'주변 ' + nearbyRadius + 'm 보기'}</Text>
+              <Text style={styles.nearbySub} numberOfLines={1}>
+                {nearbySub}
+              </Text>
+            </View>
+            <Ionicons
+              name={nearbyOpen ? 'chevron-down' : 'chevron-forward'}
+              size={14}
+              color="#9FB0C8"
+            />
+          </Pressable>
 
           <View style={styles.divider} />
 
@@ -212,6 +260,47 @@ const styles = StyleSheet.create({
     ...typography.tiny,
     fontSize: 10.5,
     marginTop: 2,
+    color: '#9FB0C8',
+  },
+  // 켜져 있으면 '가본 곳 N곳만 보는 중' — 초록 글씨로 상태를 한 번 더 알립니다
+  subLabelOn: {
+    color: colors.visit,
+    fontWeight: '800',
+  },
+  // v2.17.1 — 주변 500m 보기 행
+  nearbyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 6,
+    borderRadius: radius.sm,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  nearbyRowPressed: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  nearbyIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,90,54,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nearbyTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  nearbyLabel: {
+    color: colors.white,
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  nearbySub: {
+    ...typography.tiny,
+    fontSize: 10,
+    marginTop: 1,
     color: '#9FB0C8',
   },
   switch: {
