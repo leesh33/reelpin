@@ -19,7 +19,7 @@ export const PLACE_INFO_TTL_MS = 6 * 60 * 60 * 1000;
 /** 서버 프록시 응답 대기 (업스트림 4.5초 + 여유) */
 export const PLACE_INFO_TIMEOUT_MS = 9000;
 
-export const NAIVER_PLACE_ENDPOINT = '/api/naver-place';
+export const NAVER_PLACE_ENDPOINT = '/api/naver-place';
 export const KAKAO_PLACE_ENDPOINT = '/api/kakao-place';
 
 /** 네이버 플레이스 링크·id 에서 placeId (없으면 '') */
@@ -68,7 +68,7 @@ export function placeInfoTargetOf(pin) {
 
 export function placeInfoPathOf(target) {
   if (!target || !target.id) return '';
-  return (target.provider === 'kakao' ? KAKAO_PLACE_ENDPOINT : NAIVER_PLACE_ENDPOINT) + '?id=' + encodeURIComponent(target.id);
+  return (target.provider === 'kakao' ? KAKAO_PLACE_ENDPOINT : NAVER_PLACE_ENDPOINT) + '?id=' + encodeURIComponent(target.id);
 }
 
 /** 지금 다시 불러야 하는가 — 없거나 6시간 넘은 것만 */
