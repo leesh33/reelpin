@@ -121,10 +121,10 @@ export default function PinDetailSheet({
 
   return (
     <View style={styles.sheet}>
-      {/* 헤더 바 — v2.11: 오른쪽 위 ✕ 가 있는 화면은 모두 같은 다크 차콜(#1C1C1E) 헤더를 씁니다.
-          가게 이름(흰색)과 닫기 버튼(반투명 원 + 흰 ✕)이 한눈에 갈리고,
+      {/* 헤더 바 — v2.14.1: 상훈 님 요청으로 핀 상세 시트만 **릴스핀 브랜드 주황(#FF5A36)** 헤더로 바꿨습니다.
+          주황 위에서도 가게 이름(흰색)과 닫기 버튼(반투명 흰 원 + 흰 ✕)이 또렷하게 갈리고,
           시트 위쪽 둥근 모서리까지 그대로 이어집니다. */}
-      <View style={styles.headerBar}>
+      <View style={styles.headerBar} testID="pin-sheet-header">
         <View style={styles.handle} />
         <View style={styles.headerRow}>
           <Text style={styles.name} numberOfLines={1}>
@@ -424,9 +424,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xxl,
     ...sheetShadow,
   },
-  // 다크 차콜 헤더 바 — 시트 위쪽 둥근 모서리를 그대로 물려받습니다.
+  // 브랜드 주황 헤더 바 — 시트 위쪽 둥근 모서리를 그대로 물려받습니다.
   headerBar: {
-    backgroundColor: colors.charcoal,
+    backgroundColor: colors.coral,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: 20,
@@ -438,7 +438,8 @@ const styles = StyleSheet.create({
     width: 42,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(255,255,255,0.28)',
+    // 주황 헤더 위에서도 보이도록 조금 더 밝은 반투명 흰색
+    backgroundColor: 'rgba(255,255,255,0.45)',
     marginBottom: 12,
   },
   headerRow: {
@@ -520,7 +521,8 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: colors.charcoalPill,
+    // 주황 배경 위 반투명 흰 원 — 눌러야 할 곳이 한눈에 보입니다.
+    backgroundColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
   },

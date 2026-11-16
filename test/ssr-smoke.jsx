@@ -7,7 +7,10 @@ import ProfileScreen from '../src/screens/ProfileScreen';
 import PinDetailSheet from '../src/components/PinDetailSheet';
 import ProviderBadges from '../src/components/ProviderBadge';
 import ExtractedTitleNote from '../src/components/ExtractedTitleNote';
-import GeofenceBanner from '../src/components/GeofenceBanner';
+import GeofenceBanner, {
+  DISMISS_SWIPE_DISTANCE,
+  swipeDismissDecision,
+} from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
 import CategoryPicker from '../src/components/CategoryPicker';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
@@ -599,8 +602,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.14.0', pkg.version === '2.14.0', pkg.version],
-  ['버전: app.json 2.14.0', expoConfig.version === '2.14.0', expoConfig.version],
+  ['버전: package.json 2.14.1', pkg.version === '2.14.1', pkg.version],
+  ['버전: app.json 2.14.1', expoConfig.version === '2.14.1', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -854,16 +857,16 @@ const CLOSE_HEADER_FILES = [
   ['인앱 매장 정보 모달(웹)', webModalSource211, 'styles.header'],
   ['인앱 매장 정보 모달(iOS·안드로이드)', nativeModalSource211, 'styles.header'],
 ];
+// v2.14.1 — 핀 상세 시트만 상훈 님 요청으로 **브랜드 주황 헤더**를 씁니다(나머지 3곳은 다크 차콜).
+const CHARCOAL_HEADER_FILES = CLOSE_HEADER_FILES.filter(([label]) => label !== '핀 상세 시트');
 
 const v211HeaderChecks = [
   ['헤더 통일: 저장 화면 헤더가 다크 차콜', /header: \{[\s\S]{0,400}?backgroundColor: colors\.charcoal,/.test(pasteSource211)],
   ['헤더 통일: 저장 화면 로고 흰색 · [저장] 뱃지 반투명', /brandText: \{[\s\S]{0,120}?color: colors\.white/.test(pasteSource211) && /brandBadge: \{[\s\S]{0,80}?backgroundColor: colors\.charcoalPill/.test(pasteSource211)],
   ['헤더 통일: 저장 화면 닫기 = 반투명 원 + 흰 ✕', /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(pasteSource211) && /name="close" size=\{18\} color=\{colors\.white\}/.test(pasteSource211)],
-  ['헤더 통일: 상세 시트 헤더 바가 다크 차콜 + 위쪽 둥근 모서리', /headerBar: \{[\s\S]{0,260}?backgroundColor: colors\.charcoal,[\s\S]{0,200}?borderTopLeftRadius: radius\.xxl/.test(sheetSource211)],
-  ['헤더 통일: 상세 시트 가게명 흰색 · 닫기 반투명 원 + 흰 ✕', /name: \{[\s\S]{0,140}?color: colors\.white/.test(sheetSource211) && /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(sheetSource211) && /name="close" size=\{18\} color=\{colors\.white\}/.test(sheetSource211)],
-  ['헤더 통일: 상세 시트 드래그 핸들도 밝은 반투명', /handle: \{[\s\S]{0,180}?backgroundColor: 'rgba\(255,255,255,0\.28\)'/.test(sheetSource211)],
-  // ✕ 헤더를 가진 화면은 빠짐없이 charcoal 을 써야 합니다 (색을 되돌리면 여기서 걸립니다)
-  ...CLOSE_HEADER_FILES.map(([label, source, styleKey]) => [
+  // v2.14.1 — 상세 시트 헤더는 다크 차콜이 아니라 브랜드 주황입니다(아래 v2.14.1 검사에서 확인).
+  // ✕ 헤더를 가진 나머지 화면은 빠짐없이 charcoal 을 써야 합니다 (색을 되돌리면 여기서 걸립니다)
+  ...CHARCOAL_HEADER_FILES.map(([label, source, styleKey]) => [
     '헤더 통일: ' + label + ' 도 다크 차콜',
     source.indexOf(styleKey) > 0 && source.indexOf('colors.charcoal') > 0,
     styleKey,
@@ -930,7 +933,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.14.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.14.0') > 0],
+  ['프로필: 버전 표기 v2.14.1', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.14.1') > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -953,8 +956,8 @@ const v213SheetChecks = [
   ],
   [
     '핀 시트: 헤더(가게 이름·✕)는 스크롤 밖 상단 고정',
-    pinDetailSource.indexOf('<View style={styles.headerBar}>') > 0 &&
-      pinDetailSource.indexOf('<View style={styles.headerBar}>') < pinDetailSource.indexOf('<ScrollView'),
+    pinDetailSource.indexOf('<View style={styles.headerBar}') > 0 &&
+      pinDetailSource.indexOf('<View style={styles.headerBar}') < pinDetailSource.indexOf('<ScrollView'),
   ],
   [
     '핀 시트: 본문만 스크롤(style=bodyScroll · contentContainerStyle=body)',
@@ -1086,6 +1089,125 @@ for (const [label, ok, extra] of v214RenderChecks) {
   }
 }
 
+// ── v2.14.1 위로 스와이프 닫기 배너 + 핀 상세 시트 주황 헤더 ─────────────────
+const bannerSource2141 = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceBanner.js'), 'utf8');
+const mapSource2141 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const bannerSwipeHtml = renderToString(
+  <GeofenceBanner
+    pin={SEED_PINS[0]}
+    radiusMeters={500}
+    onPress={noop}
+    onDismiss={noop}
+    title="반경 500m 앞, 저장한 맛집이 있어요"
+    sub={SEED_PINS[0].name + ' · 320m'}
+    badge="지금"
+  />
+);
+const v2141Checks = [
+  // ① 판정 규칙 — 위로 32px 이상 또는 빠른 플릭이면 닫힘, 아니면 스냅백
+  ['스와이프: 위로 32px 이면 닫힘', swipeDismissDecision({ dy: -DISMISS_SWIPE_DISTANCE, vy: 0 }) === true],
+  ['스와이프: 위로 31px · 느리면 원위치', swipeDismissDecision({ dy: -31, vy: -0.1 }) === false],
+  ['스와이프: 위로 14px · 0.8px/ms 빠른 플릭이면 닫힘', swipeDismissDecision({ dy: -14, vy: -0.8 }) === true],
+  ['스와이프: 12px 미만 플릭은 원위치', swipeDismissDecision({ dy: -11, vy: -1.4 }) === false],
+  ['스와이프: 아래로 끌면 닫히지 않음', swipeDismissDecision({ dy: 60, vy: 1.2 }) === false],
+  ['스와이프: 움직임 없으면 그대로', swipeDismissDecision({}) === false && swipeDismissDecision() === false],
+  // ② 웹(아이폰 사파리) 터치 + 포인터, 네이티브 PanResponder
+  [
+    '배너: 웹 DOM 터치 3종(onTouchStart/Move/End) 처리',
+    bannerSource2141.indexOf('onTouchStart:') > 0 &&
+      bannerSource2141.indexOf('onTouchMove:') > 0 &&
+      bannerSource2141.indexOf('onTouchEnd:') > 0 &&
+      bannerSource2141.indexOf('onTouchCancel:') > 0,
+  ],
+  [
+    '배너: 마우스 포인터 드래그도 처리',
+    bannerSource2141.indexOf('onPointerDown:') > 0 &&
+      bannerSource2141.indexOf('onPointerMove:') > 0 &&
+      bannerSource2141.indexOf('onPointerUp:') > 0,
+  ],
+  [
+    '배너: 터치와 포인터가 겹치지 않게 터치 포인터는 건너뜀',
+    /ne\.pointerType === 'touch'\) return/.test(bannerSource2141),
+  ],
+  [
+    '배너: 네이티브는 PanResponder(세로 6px 이상일 때만)',
+    bannerSource2141.indexOf('PanResponder.create') > 0 &&
+      /onMoveShouldSetPanResponder: \(e, g\) => g\.dy <= -6/.test(bannerSource2141),
+  ],
+  [
+    '배너: 손가락을 따라 위로 밀림(setValue translateY)',
+    /translateY\.setValue\(/.test(bannerSource2141) && bannerSource2141.indexOf('DISMISS_OFFSCREEN_DISTANCE') > 0,
+  ],
+  [
+    '배너: 닫힘은 위로 밀며 투명해지는 애니메이션(160ms)',
+    /Animated\.parallel\(\[/.test(bannerSource2141) &&
+      /DISMISS_ANIM_MS = 160/.test(bannerSource2141) &&
+      /Animated\.timing\(opacity,[\s\S]{0,120}?toValue: 0/.test(bannerSource2141),
+  ],
+  [
+    '배너: 살짝 끌면 원위치 스냅백(spring)',
+    /Animated\.spring\(translateY,[\s\S]{0,80}?toValue: 0/.test(bannerSource2141),
+  ],
+  [
+    '배너: onDismiss 는 닫힘 애니메이션이 끝난 뒤 호출',
+    /\.start\(\(\{ finished \}\) => \{[\s\S]{0,160}?onDismissRef\.current/.test(bannerSource2141),
+  ],
+  [
+    '배너: 스와이프 뒤 딸려오는 탭은 한 번 무시(핀 상세 오픈 방지)',
+    bannerSource2141.indexOf('skipPressRef') > 0 && bannerSource2141.indexOf('handlePress(') > 0,
+  ],
+  ['배너: 임계값 32px · 플릭 0.5px/ms 공개 상수', bannerSource2141.indexOf('export const DISMISS_SWIPE_DISTANCE = 32') > 0 && bannerSource2141.indexOf('export const DISMISS_FLICK_VELOCITY = 0.5') > 0],
+  // ③ MapScreen — 닫힌 배너를 같은 상태에서는 다시 띄우지 않음
+  ['지도: dismissedBannerKey 상태', mapSource2141.indexOf('const [dismissedBannerKey, setDismissedBannerKey] = useState(') > 0],
+  [
+    '지도: 배너 키 = 가게 id + 모드(near/closest)',
+    /banner\.pin\.id \+ ':' \+ \(banner\.tone === 'muted' \? 'closest' : 'near'\)/.test(mapSource2141),
+  ],
+  ['지도: 닫힌 배너는 그리지 않음', mapSource2141.indexOf('const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey') > 0 && mapSource2141.indexOf('{!bannerHidden && (') > 0],
+  ['지도: 배너에 onDismiss 전달', mapSource2141.indexOf('onDismiss={dismissBanner}') > 0],
+  [
+    '지도: [내 위치]를 새로 누르면 닫힘 기록을 지움',
+    /const locateFromUser = useCallback\([\s\S]{0,200}?setDismissedBannerKey\(''\)/.test(mapSource2141),
+  ],
+  [
+    '지도: 내 위치 버튼들이 locateFromUser 사용(3곳 이상)',
+    (mapSource2141.match(/locateFromUser\(\)/g) || []).length >= 4,
+  ],
+  // ④ 핀 상세 시트 — 브랜드 주황 헤더
+  [
+    '핀 시트: 헤더 배경이 브랜드 주황(#FF5A36)',
+    /headerBar: \{[\s\S]{0,200}?backgroundColor: colors\.coral,/.test(pinDetailSource) && colors.coral === '#FF5A36',
+  ],
+  [
+    '핀 시트: 주황 위 드래그 핸들 rgba(255,255,255,0.45)',
+    /handle: \{[\s\S]{0,240}?'rgba\(255,255,255,0\.45\)'/.test(pinDetailSource),
+  ],
+  ['핀 시트: 가게 이름은 흰색', /name: \{[\s\S]{0,140}?color: colors\.white/.test(pinDetailSource)],
+  [
+    '핀 시트: 닫기 = 반투명 흰 원(0.22) + 흰 ✕',
+    /closeBtn: \{[\s\S]{0,240}?rgba\(255,255,255,0\.22\)/.test(pinDetailSource) &&
+      /name="close" size=\{18\} color=\{colors\.white\}/.test(pinDetailSource),
+  ],
+  [
+    '핀 시트: 86% 높이 상한 · 헤더 고정 · 본문 스크롤 유지',
+    /sheet: \{[\s\S]{0,260}?maxHeight: '86%'/.test(pinDetailSource) &&
+      pinDetailSource.indexOf('testID="pin-sheet-scroll"') > 0 &&
+      pinDetailSource.indexOf('<View style={styles.headerBar}') < pinDetailSource.indexOf('<ScrollView'),
+  ],
+  [
+    '배너: 스와이프 래퍼로 감싸 렌더됨(geofence-banner)',
+    bannerSwipeHtml.indexOf('geofence-banner') > 0 &&
+      bannerSwipeHtml.indexOf('반경 500m 앞, 저장한 맛집이 있어요') > 0,
+  ],
+];
+for (const [label, ok, extra] of v2141Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -1111,6 +1233,7 @@ const total =
   v213SheetChecks.length +
   v214Checks.length +
   v214RenderChecks.length +
+  v2141Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

@@ -125,6 +125,8 @@ export default function MapScreen({
   const [locationError, setLocationError] = useState('');
   const [nearbyOpen, setNearbyOpen] = useState(false);
   const [alertsOn, setAlertsOn] = useState(false);
+  // v2.14.1 — 위로 스와이프로 닫은 배너의 키 (같은 상태면 다시 뜨지 않게)
+  const [dismissedBannerKey, setDismissedBannerKey] = useState('');
   const [notifyPermission, setNotifyPermission] = useState(() => notificationPermission());
 
   const notifiedRef = useRef(new Set());
@@ -237,6 +239,18 @@ export default function MapScreen({
       }
     },
     [applyPosition, showToast]
+  );
+
+  /**
+   * v2.14.1 — 사용자가 직접 누른 [내 위치] 버튼.
+   * 스와이프로 닫아 둔 배너라도 위치를 새로 확인하면 다시 보여 줄 수 있게 닫힘 기록을 지웁니다.
+   */
+  const locateFromUser = useCallback(
+    (options) => {
+      setDismissedBannerKey('');
+      return locate(options);
+    },
+    [locate]
   );
 
   /**
@@ -466,9 +480,28 @@ export default function MapScreen({
     return { pin: null, empty: false, needsLocation: false, target: null };
   }, [myCoords, nearby, closest, pins.length]);
 
+  /**
+   * v2.14.1 — 배너 한 장을 가리키는 키. 위로 스와이프해 닫으면 이 키를 기억해 두고,
+   * 같은 키(같은 가게·같은 모드)의 배너는 다시 띄우지 않습니다.
+   * · 다른 가게가 가장 가까워지거나 반경 안팎이 바뀌면 키가 달라져 다시 보입니다.
+   * · 사용자가 [내 위치]를 새로 누르면 닫힘 기록을 지워 다시 보입니다(locateFromUser).
+   */
+  const bannerKey = useMemo(() => {
+    if (banner.empty) return 'empty';
+    if (banner.needsLocation) return 'needs-location';
+    if (banner.pin) return banner.pin.id + ':' + (banner.tone === 'muted' ? 'closest' : 'near');
+    return '';
+  }, [banner]);
+
+  const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey;
+
+  const dismissBanner = useCallback(() => {
+    if (bannerKey) setDismissedBannerKey(bannerKey);
+  }, [bannerKey]);
+
   const focusBannerPin = () => {
     if (banner.needsLocation) {
-      locate();
+      locateFromUser();
       return;
     }
     if (!banner.target) {
@@ -590,20 +623,24 @@ export default function MapScreen({
             </Pressable>
           </View>
         )}
-        <GeofenceBanner
-          pin={banner.pin}
-          radiusMeters={radiusMeters}
-          onPress={focusBannerPin}
-          onLocate={() => locate()}
-          locating={locating && !myCoords}
-          empty={banner.empty}
-          needsLocation={banner.needsLocation}
-          hintTitle={'내 위치를 켜면 가까운 맛집과 ' + NEARBY_RADIUS_M + 'm 알림이 보여요'}
-          title={banner.title}
-          sub={banner.sub}
-          badge={banner.badge}
-          tone={banner.tone}
-        />
+        {!bannerHidden && (
+          <GeofenceBanner
+            key={bannerKey}
+            pin={banner.pin}
+            radiusMeters={radiusMeters}
+            onPress={focusBannerPin}
+            onLocate={() => locateFromUser()}
+            onDismiss={dismissBanner}
+            locating={locating && !myCoords}
+            empty={banner.empty}
+            needsLocation={banner.needsLocation}
+            hintTitle={'내 위치를 켜면 가까운 맛집과 ' + NEARBY_RADIUS_M + 'm 알림이 보여요'}
+            title={banner.title}
+            sub={banner.sub}
+            badge={banner.badge}
+            tone={banner.tone}
+          />
+        )}
         <View style={styles.searchWrap}>
           <PinSearchBar value={query} onChange={setQuery} onClear={clearSearch} />
         </View>
@@ -632,7 +669,7 @@ export default function MapScreen({
           </View>
         )}
         {!!locationError && (
-          <Pressable style={styles.errorChip} onPress={() => locate()} accessibilityRole="button">
+          <Pressable style={styles.errorChip} onPress={() => locateFromUser()} accessibilityRole="button">
             <Ionicons name="alert-circle" size={12} color={colors.white} />
             <Text style={styles.errorText} numberOfLines={2}>
               {locationError}
@@ -687,7 +724,7 @@ export default function MapScreen({
               <Text style={styles.panelEmpty}>
                 {'내 위치를 켜면 반경 ' + NEARBY_RADIUS_M + 'm 안의 저장 장소를 가까운 순으로 보여드려요.'}
               </Text>
-              <Pressable style={styles.panelLocateBtn} onPress={() => locate()} accessibilityRole="button">
+              <Pressable style={styles.panelLocateBtn} onPress={() => locateFromUser()} accessibilityRole="button">
                 {locating ? (
                   <ActivityIndicator color={colors.white} size="small" />
                 ) : (
@@ -769,7 +806,7 @@ export default function MapScreen({
           </Pressable>
           <Pressable
             style={[styles.fab, myCoords && styles.fabLive]}
-            onPress={() => locate()}
+            onPress={() => locateFromUser()}
             accessibilityRole="button"
             accessibilityLabel="내 위치 찾기"
           >
