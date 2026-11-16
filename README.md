@@ -213,7 +213,24 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 - `npm run test:collections` — ☰ 서브 페이지 4종 · 버전 2.19.1 검사로 갱신해 **통과**.
 - `npm run export:web` — **에러 0건**.
 
-### 7. 📁 바뀐 파일
+### 7. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `9c0758b` · Vercel Production success)
+
+`reelpin-verify-v2.19.1/check-390x844.mjs` 로 **로컬 dist → 라이브** 두 번 실측(둘 다 **VERIFY_OK**, 이슈 0):
+
+| 항목 | 실측값 |
+|---|---|
+| 목록 보기 시트 | `0, 118.17 · 390×725.83`(화면의 86%) · 위 모서리 `28px` · 딤 `rgba(15,23,42,0.55)` · 지도가 뒤에 그대로 남음 · `✕` 닫힘 · 바깥 탭 닫힘 |
+| 돋보기 시트 | **같은 값** `0, 118.17 · 390×725.83` · `28px` · `rgba(15,23,42,0.55)` |
+| 알림 모음 시트 | **같은 값** · 헤더 `🔔 알림 모음 / 내 위치 반경 500m 안 2곳` |
+| 내 정보 시트 | **같은 값** — 네 화면이 한 컴포넌트라 높이·딤·모서리가 완전히 같음 |
+| 시군구동 | 추천 장소 = `맛집 · 인천 서구 당하동` · `카페 · 서울 강남구 역삼동` · `맛집 · 경기 고양시 일산서구 일산동` |
+| 내 정보 순서 | 계정 카드 → 저장한 장소 → 내 지도 공유하기 → 설정 목록(DOM 순서 확인) · `알림 설정` 행 있음 · 발끝 `릴스핀 v2.19.1` |
+| 알림 설정 | `‹ 뒤로` 서브 페이지 · 스위치 `aria-checked` **false → true** · `켜짐` 문구 · `지오펜스 알림 반경 ›` 연결 |
+| 가봤어요 | 미방문 `가봤어요`(빈 박스·`aria-checked=false`) → 탭 → `가봤어요 (방문 완료)`(초록 ✓·`aria-checked=true`) → 목록 `✓ 방문완료` 배지까지 같은 값 |
+
+- 스크린샷: `reelpin-verify-v2.19.1/A1-map-list-sheet-390x844.png` · `B1-search-sheet-district-390x844.png` · `C1-alert-sheet-390x844.png` · `D1-profile-sheet-order-390x844.png` · `D2-alerts-setting-off-390x844.png` · `D3-alerts-setting-on-390x844.png` · `E1-visit-unchecked-390x844.png` · `E2-visit-checked-390x844.png` · `E3-list-visited-badge-390x844.png`
+
+### 8. 📁 바뀐 파일
 
 - 새 파일: `src/components/LayerSheet.js` · `src/utils/areaLabel.js`
 - 고친 파일: `src/components/SearchOverlayModal.js` · `src/components/AlertInbox.js` · `src/components/MenuDrawerModal.js` · `src/components/PinListView.js` · `src/components/PinDetailSheet.js` · `src/screens/ProfileScreen.js` · `src/screens/MapScreen.js` · `src/storage.js` · `App.js` · `test/ssr-smoke.jsx` · `test/collections-test.mjs` · `package.json` · `app.json`
