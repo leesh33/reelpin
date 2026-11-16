@@ -11,6 +11,7 @@
  *     ├─ SourceAdapter.fetchMetadata()    … 유튜브 / 인스타 메타데이터
  *     ├─ LlmAdapter.extractPlaceJson()    … 캡션 → {가게명·지역·메뉴·카테고리}
  *     ├─ searchPlaceProviders()           … 카카오 로컬 + 네이버 지역검색 + 구글 Places 병렬 조회 → 후보 병합
+ *     │    └─ backfillNaverByAddress()    … v2.12 카카오만 찾았고 네이버가 비었을 때 주소(동·도로명·구)로 네이버 교차 보강
  *     └─ offlineSmartExtract()            … API 키가 하나도 없거나 전부 실패하면 오프라인 추출기로 폴백
  *
  * 설계 원칙
@@ -1527,7 +1528,13 @@ export async function searchMultiPlaces(items, options = {}) {
     list.map(async (item) => {
       const chainList = Array.isArray(item.queries) && item.queries.length ? item.queries : [item.name];
       for (const q of chainList) {
-        const res = await searchPlaceProviders({ query: q, limit, providers: options.providers });
+        const res = await searchPlaceProviders({
+          query: q,
+          limit,
+          providers: options.providers,
+          // 여러 가게를 동시에 찾을 때는 후보마다 1회까지만 보강합니다(요청 폭주 방지).
+          backfill: 1,
+        });
         (res.providersUsed || []).forEach((p) => providersUsed.add(p));
         (res.providersTried || []).forEach((p) => providersTried.add(p));
         (res.failures || []).forEach((f) => failures.push({ ...f, query: q }));
@@ -2005,6 +2012,204 @@ function samePlace(a, b) {
   return false;
 }
 
+// ─────────────────────────────────────────────────────────────
+// v2.12 · 주소 기반 네이버 안전 교차 보강
+// ─────────────────────────────────────────────────────────────
+//  문제: `동대문 영화장` 처럼 **광역/구 단위 검색어**로 카카오는 찾는데 네이버 지역검색이
+//        빈 결과(`items: []`)를 주는 경우가 있습니다. (같은 가게도 `동대문구 영화장`·`휘경로 영화장`
+//        으로는 정상 반환) → 카카오 후보 **1곳만** 뜨고 네이버 배지가 빠집니다.
+//  해결: 카카오 후보의 **실제 주소**(법정동·도로명·구)로 네이버를 1~2회 보강 조회합니다.
+//  안전: 두 후보가 ① 이름이 정규화 일치/상호 포함이고 ② 좌표 200m 이내 **또는** 도로명·지번 주소가
+//        같을 때만 합칩니다. 주소·좌표가 어긋나는 **동명이인은 절대 합치지 않습니다.**
+
+/** 보강 조회로 인정할 최대 좌표 거리(m) — 이보다 멀면 주소가 같아야만 같은 가게로 봅니다. */
+export const NAVER_BACKFILL_MAX_DISTANCE_M = 200;
+/** 한 번의 지도 검색에서 네이버 보강 조회에 쓸 수 있는 최대 요청 수 (후보 3곳 × 2회 이내) */
+export const NAVER_BACKFILL_MAX_QUERIES = 4;
+/** 보강 조회 한 건의 응답 대기 한도 — 실패해도 원래 결과로 계속 진행합니다. */
+export const NAVER_BACKFILL_TIMEOUT_MS = 3500;
+
+/**
+ * 주소에서 시·구(`동대문구`)·법정동(`이문동`)·도로명(`휘경로`)·번지(`3-8`) 조각을 뽑습니다.
+ * 토큰 단위로 보기 때문에 `동대문구` 를 동으로 오인하지 않습니다.
+ * @param {string} address
+ * @returns {{gu:string, dong:string, road:string, roadNo:string, lot:string}}
+ */
+export function addressParts(address) {
+  const text = String(address == null ? '' : address).replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const parts = { gu: '', dong: '', road: '', roadNo: '', lot: '' };
+  if (!text) return parts;
+  const tokens = text.split(' ').filter(Boolean);
+  tokens.forEach((token, i) => {
+    if (!parts.gu && /^[가-힣]{2,6}[구군]$/.test(token)) parts.gu = token;
+    if (!parts.dong && /^[가-힣]{1,6}(?:동|읍|면)(?:\d+가)?$/.test(token)) parts.dong = token;
+    if (!parts.road && /^[가-힣]{2,10}(?:로|길)$/.test(token) && /^\d/.test(tokens[i + 1] || '')) {
+      parts.road = token;
+      parts.roadNo = tokens[i + 1];
+    }
+    // 번지 — 도로명 뒤 숫자(roadNo)는 번지로 세지 않습니다. (지번 주소에만 있는 값)
+    if (!parts.lot && /^\d{1,5}(?:-\d{1,5})?$/.test(token) && token !== parts.roadNo) parts.lot = token;
+  });
+  return parts;
+}
+
+/** 두 주소가 같은 곳인지 — 도로명+번지 또는 법정동+번지가 같아야 합니다. (구가 다르면 다른 곳) */
+export function sameAddress(a, b) {
+  const A = addressParts(a);
+  const B = addressParts(b);
+  // 구가 다르면 다른 곳 — 도로명이 우연히 같아도(전국의 `중앙로`) 합치지 않습니다.
+  if (A.gu && B.gu && A.gu !== B.gu) return false;
+  if (A.road && B.road && A.road === B.road && A.roadNo && A.roadNo === B.roadNo) return true;
+  if (A.dong && B.dong && A.dong === B.dong && A.lot && A.lot === B.lot) return true;
+  return false;
+}
+
+/**
+ * 카카오 후보 → 네이버 보강 검색어 1~2개.
+ * `서울 동대문구 휘경로 3-8` + `영화장` → `휘경로 영화장`, `동대문구 영화장`
+ * (법정동이 주소에 있으면 `이문동 영화장` 이 먼저 — 더 좁은 단위가 먼저입니다)
+ * @param {object} candidate 카카오 후보
+ * @returns {string[]} 최대 2개
+ */
+export function naverBackfillQueries(candidate) {
+  const name = String((candidate && candidate.name) || '').trim();
+  if (!name) return [];
+  const nameKey = normalizeName(name);
+  if (!nameKey) return [];
+  const parts = addressParts(candidate.address);
+  const tokens = [parts.dong, parts.road, parts.gu];
+  const out = [];
+  tokens.forEach((token) => {
+    const value = String(token || '').trim();
+    const key = normalizeName(value);
+    if (!key) return;
+    if (key === nameKey) return;
+    // 이미 상호 안에 들어 있는 동네 이름은 붙이지 않습니다. (`이문동 영화장` + `이문동`)
+    if (nameKey.indexOf(key) >= 0) return;
+    const query = value + ' ' + name;
+    if (out.indexOf(query) < 0) out.push(query);
+  });
+  return out.slice(0, 2);
+}
+
+/**
+ * 네이버 후보가 카카오 후보와 **같은 가게**인지 안전하게 판정합니다.
+ *   ① 상호 정규화 일치 또는 상호 포함 (두 글자 이상)
+ *   ② 좌표 200m 이내 **또는** 도로명·지번 주소 일치
+ * 하나라도 어긋나면 `false` — 동명이인은 합치지 않습니다.
+ * @param {object} candidate 카카오 후보
+ * @param {object} item 네이버 후보
+ * @returns {boolean}
+ */
+export function naverBackfillMatch(candidate, item) {
+  const na = normalizeName(candidate && candidate.name);
+  const nb = normalizeName(item && item.name);
+  if (!na || !nb) return false;
+  const nameOk =
+    na === nb ||
+    (na.length >= 2 && nb.length >= 2 && (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0));
+  if (!nameOk) return false;
+  const d = distanceMeters(candidate, item);
+  if (Number.isFinite(d) && d <= NAVER_BACKFILL_MAX_DISTANCE_M) return true;
+  return sameAddress(candidate && candidate.address, item && item.address);
+}
+
+/** 네이버가 확인해 준 후보를 카카오 후보에 합칩니다 — 배지·출처·빈 필드만 채웁니다. */
+function mergeNaverBackfill(candidate, item, query) {
+  const providers = Array.isArray(candidate.providers) ? candidate.providers.slice() : [];
+  if (candidate.provider && providers.indexOf(candidate.provider) < 0) providers.push(candidate.provider);
+  if (providers.indexOf('naver') < 0) providers.push('naver');
+  candidate.providers = providers;
+  // 두 지도가 같은 가게를 확인해 줬으니 신뢰도를 조금 올립니다. (기존 병합 규칙과 같은 폭)
+  const base = Number.isFinite(candidate.confidence) ? candidate.confidence : 0.86;
+  candidate.confidence = clamp(Math.max(base, 0.86) + 0.04, 0.3, 0.99);
+  if (!candidate.phone && item.phone) candidate.phone = item.phone;
+  if (!candidate.address && item.address) candidate.address = item.address;
+  if (!candidate.area && item.area) candidate.area = item.area;
+  if (!candidate.placeUrl && item.placeUrl) {
+    candidate.placeUrl = item.placeUrl;
+    candidate.placeUrlLabel = item.placeUrlLabel || '';
+  }
+  if (!candidate.naverPlaceId && item.naverPlaceId) candidate.naverPlaceId = item.naverPlaceId;
+  // 근거 추적용 — 어떤 검색어로 네이버가 확인해 줬는지 남깁니다.
+  candidate.naverBackfillQuery = query;
+}
+
+/**
+ * 카카오만 잡힌 상위 후보(1~3곳)에 대해 주소 기반으로 네이버 지역검색을 보강합니다.
+ * - 네이버 배지가 없는 **카카오 후보**만 대상
+ * - 후보당 검색어 1~2개, 전체 요청 `maxQueries` 건 이내
+ * - 실패·타임아웃은 조용히 넘어갑니다(원래 결과 유지)
+ * @param {{candidates:Array<object>, maxQueries?:number, timeoutMs?:number}} options
+ * @returns {Promise<{queries:string[], matched:number}>}
+ */
+export async function backfillNaverByAddress({ candidates, maxQueries = NAVER_BACKFILL_MAX_QUERIES, timeoutMs = NAVER_BACKFILL_TIMEOUT_MS } = {}) {
+  const list = Array.isArray(candidates) ? candidates.slice(0, 3) : [];
+  const budget = Math.max(0, Math.min(NAVER_BACKFILL_MAX_QUERIES, Number(maxQueries) || 0));
+  const empty = { queries: [], matched: 0 };
+  if (!list.length || !budget) return empty;
+
+  const targets = list
+    .filter((c) => {
+      if (!c || !c.name) return false;
+      const providers = Array.isArray(c.providers) ? c.providers : [];
+      if (providers.indexOf('naver') >= 0) return false;
+      // 카카오가 찾은 후보만 — 네이버·구글 단독 후보는 보강할 주소 기준이 없습니다.
+      return c.provider === 'kakao' || providers.indexOf('kakao') >= 0;
+    })
+    .map((candidate) => ({ candidate, queries: naverBackfillQueries(candidate) }))
+    .filter((t) => t.queries.length);
+  if (!targets.length) return empty;
+
+  // 1차로 후보마다 한 번씩, 예산이 남으면 2차 검색어까지.
+  const plan = [];
+  targets.forEach((t) => {
+    if (plan.length < budget) plan.push({ candidate: t.candidate, query: t.queries[0] });
+  });
+  targets.forEach((t) => {
+    if (plan.length < budget && t.queries[1]) plan.push({ candidate: t.candidate, query: t.queries[1] });
+  });
+
+  const withTimeout = (promise, ms) =>
+    Promise.race([
+      promise,
+      new Promise((resolve) => {
+        const timer = setTimeout(() => resolve(null), ms);
+        if (timer && typeof timer.unref === 'function') timer.unref();
+      }),
+    ]);
+
+  const outcomes = await Promise.all(
+    plan.map(async (entry) => {
+      try {
+        const items = await withTimeout(
+          naverLocalAdapter.search({ query: entry.query, limit: 3 }),
+          timeoutMs
+        );
+        return { ...entry, items: Array.isArray(items) ? items : [] };
+      } catch (e) {
+        return { ...entry, items: [] };
+      }
+    })
+  );
+
+  const queries = [];
+  let matched = 0;
+  outcomes.forEach((outcome) => {
+    const { candidate, query } = outcome;
+    if (!candidate || !candidate.name) return;
+    const providers = Array.isArray(candidate.providers) ? candidate.providers : [];
+    if (providers.indexOf('naver') >= 0) return; // 이미 앞선 보강에서 확인됨
+    const hit = (outcome.items || []).find((item) => naverBackfillMatch(candidate, item));
+    if (!hit) return;
+    mergeNaverBackfill(candidate, hit, query);
+    queries.push(query);
+    matched += 1;
+  });
+
+  return { queries, matched };
+}
+
 // 앱 카테고리(맛집·카페·디저트·베이커리·가볼곳)로 정규화
 const GROUP_CODE_CATEGORY = {
   FD6: '맛집', // 음식점
@@ -2395,13 +2600,16 @@ function mergeProviderResults(groups, query) {
 /**
  * 설정된 지도 API(카카오·네이버·구글)를 동시에 조회하고 후보를 합칩니다.
  * - 한 곳이 실패(401·네트워크·CORS)해도 나머지 결과로 후보를 채웁니다.
+ * - 카카오만 찾고 네이버가 비었으면 **카카오 후보의 주소(동·도로명·구)** 로 네이버를
+ *   보강 조회합니다(v2.12). 이름+좌표 200m/주소가 모두 맞을 때만 `naver` 로 합칩니다.
  * - 키가 하나도 없으면 아무 요청도 보내지 않고 빈 결과를 돌려줍니다(→ 오프라인 추출기 폴백).
  *
- * @param {{query:string, limit?:number, providers?:string[]}} options
+ * @param {{query:string, limit?:number, providers?:string[], backfill?:number}} options
+ *        `backfill` 은 v2.12 네이버 보강 조회 허용 건수(기본 4, 0이면 끔).
  * @returns {Promise<{candidates:Array<object>, providersTried:string[], providersUsed:string[],
- *                    failures:Array<{provider:string,error:string}>, reason?:string}>}
+ *                    failures:Array<{provider:string,error:string}>, naverBackfill?:object, reason?:string}>}
  */
-export async function searchPlaceProviders({ query, limit = 3, providers } = {}) {
+export async function searchPlaceProviders({ query, limit = 3, providers, backfill } = {}) {
   const q = String(query || '').trim();
   const empty = { candidates: [], providersTried: [], providersUsed: [], failures: [] };
   if (!q) return { ...empty, reason: 'empty-query' };
@@ -2425,11 +2633,40 @@ export async function searchPlaceProviders({ query, limit = 3, providers } = {})
   const groups = results.filter((r) => r.items.length).map((r) => ({ provider: r.provider, items: r.items }));
   const candidates = mergeProviderResults(groups, q);
 
+  // ── v2.12 · 카카오만 찾았는데 네이버가 비었을 때 — 주소 기반 네이버 안전 교차 보강 ──
+  //   `동대문 영화장` → 카카오 1곳 · 네이버 `items: []` 인 경우, `휘경로 영화장`·`동대문구 영화장`
+  //   으로 네이버를 1~2회 더 물어 이름+좌표/주소가 맞는 것만 `naver` 로 합칩니다.
+  let backfillResult;
+  const naverTried = results.some((r) => r.provider === 'naver' && r.ok);
+  const naverAllowed = !providers || providers.includes('naver');
+  const budget = backfill == null ? NAVER_BACKFILL_MAX_QUERIES : Math.max(0, Number(backfill) || 0);
+  const needsBackfill =
+    naverTried &&
+    naverAllowed &&
+    budget > 0 &&
+    candidates.some((c) => {
+      const list = Array.isArray(c.providers) ? c.providers : [];
+      return list.indexOf('naver') < 0 && (c.provider === 'kakao' || list.indexOf('kakao') >= 0);
+    });
+  if (needsBackfill) {
+    backfillResult = await backfillNaverByAddress({ candidates, maxQueries: budget });
+    if (backfillResult.matched) {
+      // 보강으로 확인된 후보가 있으면 신뢰도 순서를 다시 잡고, 출처에도 네이버를 넣습니다.
+      candidates.sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+    }
+  }
+
+  const usedProviders = groups.map((g) => g.provider);
+  if (backfillResult && backfillResult.matched && usedProviders.indexOf('naver') < 0) {
+    usedProviders.push('naver');
+  }
+
   return {
     candidates,
     providersTried: results.map((r) => r.provider),
-    providersUsed: groups.map((g) => g.provider),
+    providersUsed: usedProviders,
     failures: results.filter((r) => !r.ok).map((r) => ({ provider: r.provider, error: r.error })),
+    naverBackfill: backfillResult,
     reason: candidates.length ? undefined : 'no-result',
   };
 }
@@ -2468,6 +2705,8 @@ export async function searchPlacesDirect(rawQuery, options = {}) {
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
+      // v2.12 — 주소 기반 네이버 보강 내역(근거 추적용)
+      naverBackfill: chain.naverBackfill,
     };
   }
 
@@ -2856,6 +3095,7 @@ export async function extractPlaces(rawInput, options = {}) {
   };
   let usedQuery = '';
   const attempts = [];
+  let naverBackfill = { queries: [], matched: 0 };
   for (const q of queryList) {
     const res = await searchPlaceProviders({ query: q, limit: 3 });
     attempts.push({
@@ -2863,8 +3103,16 @@ export async function extractPlaces(rawInput, options = {}) {
       resultCount: (res.candidates || []).length,
       providersUsed: res.providersUsed || [],
       failures: res.failures || [],
+      // v2.12 — 주소 기반 네이버 보강 조회 내역(근거 추적용)
+      naverBackfill: res.naverBackfill && res.naverBackfill.matched ? res.naverBackfill : undefined,
       reason: res.reason,
     });
+    if (res.naverBackfill && res.naverBackfill.matched) {
+      naverBackfill = {
+        queries: naverBackfill.queries.concat(res.naverBackfill.queries),
+        matched: naverBackfill.matched + res.naverBackfill.matched,
+      };
+    }
     chain = {
       candidates: res.candidates || [],
       providersTried: Array.from(
@@ -2888,6 +3136,7 @@ export async function extractPlaces(rawInput, options = {}) {
     query: usedQuery || derived.query || '',
     queryList,
     attempts,
+    naverBackfill,
   };
 
   if (chain.candidates.length) {

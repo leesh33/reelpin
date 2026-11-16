@@ -48,6 +48,13 @@ import {
   isBasePredicate,
   regionWordsOf,
   filterQueriesByArea,
+  // v2.12 — 주소 기반 네이버 안전 교차 보강
+  addressParts,
+  sameAddress,
+  naverBackfillQueries,
+  naverBackfillMatch,
+  backfillNaverByAddress,
+  NAVER_BACKFILL_MAX_QUERIES,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -1889,6 +1896,208 @@ const dodiaGuard = await extractPlaces('https://youtube.com/shorts/WtB53sC3weY')
 check('지역 방어 흐름: 울산으로 검색하지 않음', !hasWord((dodiaGuard.attempts || []).map((a) => a.query), '울산'), JSON.stringify((dodiaGuard.attempts || []).map((a) => a.query)));
 check('지역 방어 흐름: 첫 후보는 여전히 디오디아2.0', (dodiaGuard.candidates[0] || {}).name === '디오디아2.0', JSON.stringify((dodiaGuard.candidates[0] || {}).name));
 delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+
+// ── 17-6. v2.12: 주소 기반 네이버 안전 교차 보강 ────────────────
+//  실제 사례: `동대문 영화장` → 카카오 1곳 · 네이버 items: [] (원인 재현)
+//  → 카카오 주소(서울 동대문구 휘경로 3-8)에서 뽑은 `휘경로 영화장` / `동대문구 영화장` 으로
+//    네이버를 보강 조회해 이름+좌표(200m)/주소가 맞을 때만 naver 배지로 합칩니다.
+const YOUNGHWA_KAKAO_DOC = {
+  id: '9316895',
+  place_name: '영화장',
+  category_name: '음식점 > 중식 > 중국요리',
+  category_group_code: 'FD6',
+  phone: '02-966-0000',
+  address_name: '서울 동대문구 이문동 288-23',
+  road_address_name: '서울 동대문구 휘경로 3-8',
+  x: '127.06094341092403',
+  y: '37.59657922820571',
+  place_url: 'http://place.map.kakao.com/9316895',
+};
+const YOUNGHWA_NAVER_ITEM = {
+  title: '<b>영화장</b>',
+  link: '',
+  category: '중식>중식당',
+  telephone: '',
+  address: '서울특별시 동대문구 이문동 288-23',
+  roadAddress: '서울특별시 동대문구 휘경로 3-8',
+  mapx: '1270609498',
+  mapy: '375965687',
+};
+// 같은 이름이지만 부산에 있는 다른 가게 — 절대 합치면 안 됩니다.
+const YOUNGHWA_NAVER_BUSAN = {
+  title: '<b>영화장</b>',
+  link: '',
+  category: '중식>중식당',
+  telephone: '',
+  address: '부산광역시 동래구 온천동 1-1',
+  roadAddress: '부산광역시 동래구 중앙대로 1000',
+  mapx: '129.0800000',
+  mapy: '35.2000000',
+};
+
+// 단위 — 주소 조각 · 보강 검색어
+const partsRoad = addressParts('서울 동대문구 휘경로 3-8');
+check('v2.12 주소: 구/도로명/번지 분리', partsRoad.gu === '동대문구' && partsRoad.road === '휘경로' && partsRoad.roadNo === '3-8', JSON.stringify(partsRoad));
+check('v2.12 주소: 도로명주소에는 동이 없음', partsRoad.dong === '', JSON.stringify(partsRoad));
+const partsLot = addressParts('서울 동대문구 이문동 288-23');
+check('v2.12 주소: 법정동/지번 분리', partsLot.dong === '이문동' && partsLot.lot === '288-23', JSON.stringify(partsLot));
+check('v2.12 주소: 동대문구를 동으로 오인하지 않음', partsLot.dong !== '동대문구');
+check(
+  'v2.12 주소: 휘경로 3-8 과 서울특별시 동대문구 휘경로 3-8 은 같은 곳',
+  sameAddress('서울 동대문구 휘경로 3-8', '서울특별시 동대문구 휘경로 3-8') === true
+);
+check(
+  'v2.12 주소: 지번(이문동 288-23)도 같은 곳',
+  sameAddress('서울 동대문구 이문동 288-23', '서울특별시 동대문구 이문동 288-23') === true
+);
+check(
+  'v2.12 주소: 구가 다르면 다른 곳 (전국의 중앙로 방어)',
+  sameAddress('서울 동대문구 중앙로 10', '부산 동래구 중앙로 10') === false
+);
+
+const backfillQueries = naverBackfillQueries({ name: '영화장', address: '서울 동대문구 휘경로 3-8' });
+check('v2.12 검색어: 도로명·구 보강 질의 2개', backfillQueries.length === 2, JSON.stringify(backfillQueries));
+check('v2.12 검색어: 휘경로 영화장', backfillQueries[0] === '휘경로 영화장', backfillQueries[0]);
+check('v2.12 검색어: 동대문구 영화장', backfillQueries[1] === '동대문구 영화장', backfillQueries[1]);
+const backfillDong = naverBackfillQueries({ name: '영화장', address: '서울 동대문구 이문동 288-23' });
+check('v2.12 검색어: 지번주소면 법정동이 먼저', backfillDong[0] === '이문동 영화장', JSON.stringify(backfillDong));
+const backfillDup = naverBackfillQueries({ name: '이문동 영화장', address: '서울 동대문구 이문동 288-23' });
+check(
+  'v2.12 검색어: 상호에 이미 있는 동네는 중복해 붙이지 않음',
+  !backfillDup.some((q) => q.indexOf('이문동 이문동') >= 0),
+  JSON.stringify(backfillDup)
+);
+check('v2.12 검색어: 주소 없는 후보는 보강 질의 0개', naverBackfillQueries({ name: '영화장', address: '' }).length === 0);
+
+// 단위 — 안전 매칭(이름 + 좌표 200m 또는 주소)
+const kakaoYoung = { name: '영화장', address: '서울 동대문구 휘경로 3-8', lat: 37.59657922820571, lng: 127.06094341092403 };
+const naverYoung = { name: '영화장', address: '서울특별시 동대문구 휘경로 3-8', lat: 37.5965687, lng: 127.0609498 };
+const naverBusan = { name: '영화장', address: '부산광역시 동래구 중앙대로 1000', lat: 35.2, lng: 129.08 };
+check('v2.12 매칭: 같은 이름 + 1m → 같은 가게', naverBackfillMatch(kakaoYoung, naverYoung) === true);
+check('v2.12 매칭: 같은 이름이어도 부산(주소·좌표 불일치) → 병합 거부', naverBackfillMatch(kakaoYoung, naverBusan) === false);
+check(
+  'v2.12 매칭: 좌표가 멀어도 도로명+번지가 같으면 같은 가게',
+  naverBackfillMatch(
+    { name: '영화장', address: '서울 동대문구 휘경로 3-8', lat: 37.6, lng: 127.06 },
+    { name: '영화장', address: '서울특별시 동대문구 휘경로 3-8', lat: 37.61, lng: 127.07 }
+  ) === true
+);
+check(
+  'v2.12 매칭: 이름이 다르면(영화반점) 거리·주소가 같아도 병합 거부',
+  naverBackfillMatch(kakaoYoung, { ...naverYoung, name: '영화반점' }) === false,
+  '영화반점'
+);
+check(
+  'v2.12 매칭: 이름 포함 관계는 1m 이내면 같은 가게(영화장 ⊂ 영화장식당)',
+  naverBackfillMatch(kakaoYoung, { ...naverYoung, name: '영화장식당' }) === true
+);
+
+// 통합 — `동대문 영화장`: 1차 네이버 빈 결과 → 보강 질의로 매칭
+setKeys({ kakao: 'KAKAOKEY', naver: true });
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q.includes('영화장') ? [YOUNGHWA_KAKAO_DOC] : [] });
+  }
+  // 네이버: `동대문 영화장` 은 total 만 있고 items 가 비어 옵니다(실제 현상).
+  const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+  if (q === '동대문 영화장') return jsonRes({ total: 1, items: [] });
+  if (q.includes('영화장')) return jsonRes({ total: 1, items: [YOUNGHWA_NAVER_ITEM] });
+  return jsonRes({ total: 0, items: [] });
+};
+const younghwa = await searchPlaceProviders({ query: '동대문 영화장' });
+check('v2.12 흐름: 카카오 후보 1곳 유지', younghwa.candidates.length === 1 && younghwa.candidates[0].name === '영화장', JSON.stringify(younghwa.candidates.map((c) => c.name)));
+check(
+  'v2.12 흐름: 보강 질의에 도로명/구가 들어감',
+  calls.filter((c) => c.url.includes('naverapihub') || c.url.includes('openapi.naver.com')).some((c) => {
+    const q = decodeURIComponent(c.url.split('query=')[1].split('&')[0]);
+    return q === '휘경로 영화장' || q === '동대문구 영화장';
+  }),
+  calls.map((c) => c.url).join(' | ')
+);
+const younghwaTop = younghwa.candidates[0];
+check('v2.12 흐름: naver 배지 추가', JSON.stringify(younghwaTop.providers) === '["kakao","naver"]', JSON.stringify(younghwaTop.providers));
+check('v2.12 흐름: providersUsed 에 naver 포함', younghwa.providersUsed.includes('naver'), JSON.stringify(younghwa.providersUsed));
+check('v2.12 흐름: 보강 매칭 1건 기록', younghwa.naverBackfill && younghwa.naverBackfill.matched === 1, JSON.stringify(younghwa.naverBackfill));
+check('v2.12 흐름: 보강 신뢰도 상승', younghwaTop.confidence > 0.9, String(younghwaTop.confidence));
+check('v2.12 흐름: 근거 검색어 기록', /영화장/.test(String(younghwaTop.naverBackfillQuery)) && /휘경로|동대문구/.test(String(younghwaTop.naverBackfillQuery)), String(younghwaTop.naverBackfillQuery));
+check('v2.12 흐름: 주소는 카카오 것을 유지', younghwaTop.address === '서울 동대문구 휘경로 3-8', younghwaTop.address);
+const younghwaNaverCalls = calls.filter((c) => c.url.includes('naverapihub') || c.url.includes('openapi.naver.com')).length;
+check('v2.12 흐름: 보강 요청은 최대 4건', younghwaNaverCalls <= 1 + NAVER_BACKFILL_MAX_QUERIES, String(younghwaNaverCalls));
+
+// 통합 — 동명이인(부산)만 나오면 병합 거부
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [YOUNGHWA_KAKAO_DOC] });
+  const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+  if (q === '동대문 영화장') return jsonRes({ total: 1, items: [] });
+  return jsonRes({ total: 1, items: [YOUNGHWA_NAVER_BUSAN] });
+};
+const younghwaWrong = await searchPlaceProviders({ query: '동대문 영화장' });
+check(
+  'v2.12 동명이인: naver 배지 붙지 않음',
+  JSON.stringify(younghwaWrong.candidates[0].providers) === '["kakao"]',
+  JSON.stringify(younghwaWrong.candidates[0].providers)
+);
+check('v2.12 동명이인: 보강 매칭 0건', younghwaWrong.naverBackfill && younghwaWrong.naverBackfill.matched === 0, JSON.stringify(younghwaWrong.naverBackfill));
+check('v2.12 동명이인: providersUsed 는 kakao 만', JSON.stringify(younghwaWrong.providersUsed) === '["kakao"]', JSON.stringify(younghwaWrong.providersUsed));
+check('v2.12 동명이인: 부산 주소가 섞이지 않음', younghwaWrong.candidates[0].address === '서울 동대문구 휘경로 3-8', younghwaWrong.candidates[0].address);
+
+// 통합 — 1차에 네이버가 이미 같은 가게를 찾았으면 보강 조회를 하지 않습니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [YOUNGHWA_KAKAO_DOC] });
+  return jsonRes({ total: 1, items: [YOUNGHWA_NAVER_ITEM] });
+};
+const younghwaNormal = await searchPlaceProviders({ query: '동대문 영화장' });
+check('v2.12 정상: 요청 2건(카카오+네이버)만', calls.length === 2, String(calls.length));
+check('v2.12 정상: 보강 매칭 기록 없음', !younghwaNormal.naverBackfill || younghwaNormal.naverBackfill.matched === 0);
+check('v2.12 정상: naver 배지 유지', younghwaNormal.candidates[0].providers.includes('naver'), JSON.stringify(younghwaNormal.candidates[0].providers));
+
+// 통합 — 네이버가 실패(401)했을 때는 보강도 시도하지 않습니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [YOUNGHWA_KAKAO_DOC] });
+  return errRes(401);
+};
+const younghwaFail = await searchPlaceProviders({ query: '동대문 영화장' });
+check('v2.12 네이버 실패: 추가 요청 없음', calls.length === 2, String(calls.length));
+check('v2.12 네이버 실패: 실패로 기록', younghwaFail.failures.some((f) => f.provider === 'naver'), JSON.stringify(younghwaFail.failures));
+
+// 통합 — backfill:0 이면 보강 조회를 하지 않습니다. (여러 가게 동시 매칭 등)
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [YOUNGHWA_KAKAO_DOC] });
+  const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+  if (q === '동대문 영화장') return jsonRes({ total: 1, items: [] });
+  return jsonRes({ total: 1, items: [YOUNGHWA_NAVER_ITEM] });
+};
+const younghwaOff = await searchPlaceProviders({ query: '동대문 영화장', backfill: 0 });
+check('v2.12 backfill:0 → 요청 2건', calls.length === 2, String(calls.length));
+check('v2.12 backfill:0 → naver 배지 없음', !younghwaOff.candidates[0].providers.includes('naver'), JSON.stringify(younghwaOff.candidates[0].providers));
+
+// 통합 — 직접 검색(`가게명으로 찾기`)도 같은 보강을 씁니다.
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('dapi.kakao.com')) return jsonRes({ documents: [YOUNGHWA_KAKAO_DOC] });
+  const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+  if (q === '동대문 영화장') return jsonRes({ total: 1, items: [] });
+  return jsonRes({ total: 1, items: [YOUNGHWA_NAVER_ITEM] });
+};
+const younghwaDirect = await searchPlacesDirect('동대문 영화장');
+check('v2.12 직접 검색: 결과 1곳', younghwaDirect.ok === true && younghwaDirect.candidates.length === 1, JSON.stringify(younghwaDirect.candidates.map((c) => c.name)));
+check('v2.12 직접 검색: naver 배지', younghwaDirect.candidates[0].providers.includes('naver'), JSON.stringify(younghwaDirect.candidates[0].providers));
+check('v2.12 직접 검색: usedAdapter 에 naver', String(younghwaDirect.usedAdapter).includes('naver'), String(younghwaDirect.usedAdapter));
+check('v2.12 직접 검색: 보강 내역 반환', younghwaDirect.naverBackfill && younghwaDirect.naverBackfill.matched === 1, JSON.stringify(younghwaDirect.naverBackfill));
+
+setKeys({});
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;
