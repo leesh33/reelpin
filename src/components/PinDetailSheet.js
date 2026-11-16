@@ -276,6 +276,19 @@ export default function PinDetailSheet({
           </Text>
         )}
 
+        {/* v2.13 — 📸 사진으로 저장한 핀은 원본 링크가 없습니다. 빈 링크 행 대신 출처만 밝힙니다. */}
+        {!pin.sourceUrl && pin.platform === 'photo' && (
+          <View style={styles.sourceRow} testID="pin-photo-source">
+            <View style={styles.sourceIcon}>
+              <Ionicons name="image" size={12} color={colors.coral} />
+            </View>
+            <View style={styles.sourceTextWrap}>
+              <Text style={styles.sourceLabel}>{platform}</Text>
+              <Text style={styles.sourceUrl}>캡처·사진에서 읽은 가게예요</Text>
+            </View>
+          </View>
+        )}
+
         {!!pin.sourceUrl && (
           <Pressable
             style={styles.sourceRow}

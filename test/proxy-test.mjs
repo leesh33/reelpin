@@ -629,6 +629,11 @@ check(
   JSON.stringify(placeItemsOfPhoto.map((i) => i.queries))
 );
 check('web/photo: 이름 없는 항목은 버림', imagePlaceItems({ places: [{ name: '', area: '성수동' }] }).length === 0);
+check(
+  'web/photo: 이름에 이미 동네가 있으면 두 번 붙이지 않음',
+  JSON.stringify(imagePlaceItems({ places: [{ name: '성수동 어니언', area: '성수동' }] })[0].queries) === JSON.stringify(['성수동 어니언']),
+  JSON.stringify(imagePlaceItems({ places: [{ name: '성수동 어니언', area: '성수동' }] })[0].queries)
+);
 
 
 // ── 9. 네트워크 예외도 앱을 멈추지 않음 ─────────────────────

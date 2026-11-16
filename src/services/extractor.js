@@ -1089,7 +1089,8 @@ export function imagePlaceItems(analysis, max = 6) {
       const v = String(q || '').replace(/\s+/g, ' ').trim();
       if (v.length >= 2 && queries.indexOf(v) < 0) queries.push(v);
     };
-    if (area) push(area + ' ' + name);
+    // 사진 속 이름이 '성수동 어니언' 처럼 동네를 이미 품고 있으면 두 번 붙이지 않습니다.
+    if (area && name.indexOf(area) < 0) push(area + ' ' + name);
     push(name);
     if (!queries.length) return;
     items.push({
