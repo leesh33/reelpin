@@ -1601,6 +1601,8 @@ const styles = StyleSheet.create({
     right: mapControls.rightInset,
     // v2.18 — 지도 아래 끝의 NAVER 로고·플로팅 탭바와 겹치지 않게 띄웁니다
     //          (mapControls.zoomBottom 에 탭바 높이가 이미 더해져 있습니다).
+    // v2.19.2 — 스택 순서를 뒤집어 `내 위치` FAB **위**에 +/− 박스가 옵니다
+    //          (mapControls.zoomBottom = actionBottom + fabSize + stackGap).
     bottom: mapControls.zoomBottom,
     borderRadius: 10,
     overflow: 'hidden',

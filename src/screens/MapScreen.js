@@ -937,7 +937,9 @@ export default function MapScreen({
 
         {/* 오른쪽 하단 — v2.18: `목록 보기` 는 **상단 분류 칩 줄 맨 앞 아이콘 버튼**으로
             올라가고, 여기에는 파란 `내 위치` FAB 하나만 남았습니다.
-            (v2.17: `지도 공유` → 왼쪽 하단 메뉴, v2.17.1: `주변 500m` → 같은 메뉴) */}
+            (v2.17: `지도 공유` → 왼쪽 하단 메뉴, v2.17.1: `주변 500m` → 같은 메뉴)
+            v2.19.2 — 상훈 님 요청대로 `+/−` 와 자리를 맞바꿔, **맨 아래 = 내 위치 FAB**,
+            그 위 = `+/−` 확대·축소 박스입니다. */}
         {view === 'map' && !selectedPin && (
           <View style={styles.actionCol}>
             <Pressable
@@ -1220,7 +1222,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     // '+ / −' · 주변 500m · 지도 공유와 같은 오른쪽 끝선 (theme.mapControls)
     right: mapControls.rightInset,
-    // +/− 박스 위에 9px 간격을 두고 스택이 쌓입니다.
+    // v2.19.2 — 스택의 **맨 아래** 자리 = 내 위치 FAB (그 위 9px 에 +/− 박스가 옵니다).
     bottom: mapControls.actionBottom,
     alignItems: 'flex-end',
     gap: mapControls.colGap,

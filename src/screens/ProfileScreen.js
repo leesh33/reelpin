@@ -485,7 +485,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.19.1';
+export const APP_INFO_VERSION = '릴스핀 v2.19.2';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -952,13 +952,13 @@ export default function ProfileScreen({
             <Pressable
               style={styles.subBack}
               onPress={closeSub}
-              hitSlop={8}
+              hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="뒤로"
               testID="profile-sub-back"
             >
-              <Ionicons name="chevron-back" size={18} color={colors.text} />
-              <Text style={styles.subBackText}>뒤로</Text>
+              {/* v2.19.2 — 상훈 님 요청: 서브 페이지 뒤로 버튼의 한글을 빼고 `‹` 만 보이게 */}
+              <Ionicons name="chevron-back" size={20} color={colors.text} />
             </Pressable>
             <Text style={styles.subTitle} numberOfLines={1}>
               {SUB_PAGES[sub].title}
@@ -1118,15 +1118,11 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line,
   },
   subBack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
+    // v2.19.2 — 화면에는 `‹` 하나(한글 `뒤로` 없음). 제목이 가운데 오도록 자리는 그대로 둡니다.
     minWidth: 68,
-  },
-  subBackText: {
-    fontSize: 13.5,
-    fontWeight: '800',
-    color: colors.text,
+    height: 28,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   subTitle: {
     flex: 1,

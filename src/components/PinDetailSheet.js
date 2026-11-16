@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, sheetShadow, typography } from '../theme';
+import { colors, radius, sheetShadow, tabBar, typography } from '../theme';
 import { openMap, openPhone, openSource, telUrlOf } from '../utils/links';
 import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
@@ -58,6 +58,10 @@ export default function PinDetailSheet({
   const categoryBadgeBorder = categoryTint(categoryName, categories, 0.3);
   const categoryBadgeText = categoryTextColor(categoryName, categories);
   const categoryDot = getCategoryColor(categoryName, categories);
+  // v2.19.2 — 상훈 님 요청 "탭 색상과 동일하게 헤더색상을 바꿔줘"
+  //   헤더 배경 = 그 핀의 분류 색(getCategoryColor) — 지도 핀·필터 칩·분류 배지와 같은 색
+  //   분류를 바꾸면 이 값이 다시 계산되어 헤더 색도 그 자리에서 바뀝니다.
+  const headerColor = categoryDot;
   // v2.10 — ✅ 가봤어요 · 📝 한줄 메모
   const visited = pin.visited === true;
   const savedMemo = String(pin.memo || '');
@@ -121,10 +125,11 @@ export default function PinDetailSheet({
 
   return (
     <View style={styles.sheet}>
-      {/* 헤더 바 — v2.14.1: 상훈 님 요청으로 핀 상세 시트만 **릴스핀 브랜드 주황(#FF5A36)** 헤더로 바꿨습니다.
-          주황 위에서도 가게 이름(흰색)과 닫기 버튼(반투명 흰 원 + 흰 ✕)이 또렷하게 갈리고,
-          시트 위쪽 둥근 모서리까지 그대로 이어집니다. */}
-      <View style={styles.headerBar} testID="pin-sheet-header">
+      {/* 헤더 바 — v2.19.2: 상훈 님 요청으로 헤더 배경을 **그 핀의 분류 색**으로 맞췄습니다.
+          (맛집 = 코랄 #FF5A36 · 카페 = 민트 #14B8A6 · 가볼곳 = 블루 #3B82F6 · 커스텀 분류 = 각 분류 색)
+          분류를 바꾸면 헤더 색도 즉시 따라 바뀌고, 흰 가게 이름·반투명 흰 원 ✕ 는 그대로라
+          어떤 분류 색 위에서도 또렷합니다. 시트 위쪽 둥근 모서리도 그대로 이어집니다. */}
+      <View style={[styles.headerBar, { backgroundColor: headerColor }]} testID="pin-sheet-header">
         <View style={styles.handle} />
         <View style={styles.headerRow}>
           <Text style={styles.name} numberOfLines={1}>
@@ -429,9 +434,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xxl,
     ...sheetShadow,
   },
-  // 브랜드 주황 헤더 바 — 시트 위쪽 둥근 모서리를 그대로 물려받습니다.
+  // 분류 색 헤더 바 — 시트 위쪽 둥근 모서리를 그대로 물려받습니다.
+  // 배경색은 분류마다 달라서 인라인으로 받습니다({ backgroundColor: headerColor }).
   headerBar: {
-    backgroundColor: colors.coral,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: 20,
@@ -457,6 +462,10 @@ const styles = StyleSheet.create({
     ...typography.h2,
     fontSize: 19,
     color: colors.white,
+    // v2.19.2 — 민트(카페)처럼 밝은 분류 색 위에서도 흰 이름이 또렷하게 (얇은 그림자)
+    textShadowColor: 'rgba(15,23,42,0.30)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   // 헤더(고정) 아래에서 본문만 스크롤 — maxHeight 안에서 줄어들 수 있게 flexShrink
   bodyScroll: {
@@ -466,7 +475,10 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 16,
+    // v2.19.2 — 시트가 화면 바닥까지 내려오는데 플로팅 하단바(알약)가 그 위에 떠 있어,
+    //   맨 아래 `네이버지도 / 카카오맵 열기` 버튼이 알약에 살짝 가렸습니다.
+    //   본문 끝 여백을 알약 높이 + 뜬 간격(tabBar.floatTop) + 10px 만큼 확보합니다.
+    paddingBottom: tabBar.floatTop + 10,
   },
   chipRow: {
     flexDirection: 'row',

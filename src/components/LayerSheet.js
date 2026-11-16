@@ -15,7 +15,9 @@
  *   · 바깥 : 화면 전체를 덮는 어두운 딤(`SHEET_BACKDROP`) — 누르면 닫힙니다
  *   · 시트 : 화면 높이의 `SHEET_HEIGHT`(86%) · 위쪽 둥근 모서리(`radius.xxl`) · 시트 그림자
  *   · 머리 : 다크 차콜 바 — 코랄 원 아이콘 + 제목/보조줄 + 반투명 흰 원 `✕`
- *            (`onBack` 을 주면 아이콘 자리가 `‹ 뒤로` 로 바뀝니다 — 서브 페이지)
+ *            (`onBack` 을 주면 아이콘 자리가 `‹` 화살표 하나로 바뀝니다 — 서브 페이지)
+ *            v2.19.2 — 상훈 님 요청 "레이어팝업의 뒤로 버튼의 한글은 없애줘(< 만 나오게)"
+ *            → 화면에는 `‹` 만. 읽어 주는 이름은 `accessibilityLabel`(기본 `뒤로`)에 그대로 남습니다.
  *   · 본문 : `children` (스크롤은 부르는 쪽이 만듭니다)
  *   · 발끝 : `footer` (선택)
  */
@@ -38,7 +40,7 @@ export default function LayerSheet({
   iconSize = 16,
   title = '',
   sub = '',
-  // 서브 페이지 — 주면 헤더가 `‹ 뒤로` + 서브 제목으로 바뀝니다
+  // 서브 페이지 — 주면 헤더가 `‹` + 서브 제목으로 바뀝니다 (한글 라벨은 화면에 그리지 않음)
   onBack = null,
   backLabel = '뒤로',
   closeLabel = '닫기',
@@ -70,13 +72,12 @@ export default function LayerSheet({
             <Pressable
               style={styles.backBtn}
               onPress={onBack}
-              hitSlop={8}
+              hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={backLabel}
               testID={backTestID || testID + '-back'}
             >
-              <Ionicons name="chevron-back" size={18} color={colors.white} />
-              <Text style={styles.backText}>{backLabel}</Text>
+              <Ionicons name="chevron-back" size={20} color={colors.white} />
             </Pressable>
           ) : (
             <View style={styles.headIcon}>
@@ -150,16 +151,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backBtn: {
-    flexDirection: 'row',
+    // v2.19.2 — 화면에는 `‹` 하나. 아이콘만 보이지만 누를 수 있는 넓이는 30px 로 유지합니다.
+    width: 30,
+    height: 30,
     alignItems: 'center',
-    gap: 1,
-    minWidth: 56,
-    marginLeft: -4,
-  },
-  backText: {
-    color: colors.white,
-    fontSize: 13.5,
-    fontWeight: '800',
+    justifyContent: 'center',
+    marginLeft: -6,
   },
   headText: {
     flex: 1,

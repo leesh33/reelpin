@@ -517,9 +517,10 @@ const v212Checks = [
     'zoomCol/actionCol 둘 다 mapControls.rightInset'],
   ['지도 우측 하단: +/− 는 NAVER 로고 위로 충분히 띄움 (≥20px)',
     mapControls.zoomBottom >= 20, String(mapControls.zoomBottom)],
-  ['지도 우측 하단: +/− 박스와 내 위치 FAB 가 겹치지 않음',
-    mapControls.actionBottom >= mapControls.zoomBottom + mapControls.zoomBoxHeight + 4,
-    String(mapControls.actionBottom) + ' vs ' + String(mapControls.zoomBottom + mapControls.zoomBoxHeight)],
+  // v2.19.2 — 자리를 맞바꿔 `내 위치` FAB 가 맨 아래, 그 위에 +/− 박스
+  ['지도 우측 하단: 내 위치 FAB(아래) 와 +/− 박스(위) 가 겹치지 않음',
+    mapControls.zoomBottom >= mapControls.actionBottom + mapControls.fabSize + 4,
+    String(mapControls.zoomBottom) + ' vs ' + String(mapControls.actionBottom + mapControls.fabSize)],
   ['반경 알림 배너: 다크 차콜 카드 + 흰 글씨',
     bannerCode.indexOf('backgroundColor: colors.charcoal') > 0 && /title: \{[\s\S]{0,160}color: colors\.white/.test(bannerCode), bannerSource.length + ' bytes'],
   ['반경 알림 배너: 500m 진입(지금) 상태는 코랄 강조',
@@ -642,8 +643,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.19.1', pkg.version === '2.19.1', pkg.version],
-  ['버전: app.json 2.19.1', expoConfig.version === '2.19.1', expoConfig.version],
+  ['버전: package.json 2.19.2', pkg.version === '2.19.2', pkg.version],
+  ['버전: app.json 2.19.2', expoConfig.version === '2.19.2', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -1003,7 +1004,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.19.1', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.1") > 0],
+  ['프로필: 버전 표기 v2.19.2', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.2") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1026,8 +1027,8 @@ const v213SheetChecks = [
   ],
   [
     '핀 시트: 헤더(가게 이름·✕)는 스크롤 밖 상단 고정',
-    pinDetailSource.indexOf('<View style={styles.headerBar}') > 0 &&
-      pinDetailSource.indexOf('<View style={styles.headerBar}') < pinDetailSource.indexOf('<ScrollView'),
+    pinDetailSource.indexOf('testID="pin-sheet-header"') > 0 &&
+      pinDetailSource.indexOf('testID="pin-sheet-header"') < pinDetailSource.indexOf('<ScrollView'),
   ],
   [
     '핀 시트: 본문만 스크롤(style=bodyScroll · contentContainerStyle=body)',
@@ -1035,8 +1036,10 @@ const v213SheetChecks = [
       /bodyScroll: \{[\s\S]{0,80}?flexShrink: 1/.test(pinDetailSource),
   ],
   [
+    // v2.19.2 — 본문 끝 여백을 플로팅 하단바 높이만큼 확보 (맨 아래 지도 버튼이 가리지 않게)
     '핀 시트: 본문 아래 여백은 스크롤 안쪽으로',
-    /body: \{[\s\S]{0,120}?paddingBottom: 16/.test(pinDetailSource) && !/sheet: \{[\s\S]{0,300}?paddingBottom: 16/.test(pinDetailSource),
+    /body: \{[\s\S]{0,300}?paddingBottom: tabBar\.floatTop \+ 10/.test(pinDetailSource) &&
+      !/sheet: \{[\s\S]{0,300}?paddingBottom/.test(pinDetailSource),
   ],
   ['핀 시트: ✕ 닫기 버튼은 그대로', pinDetailSource.indexOf('accessibilityLabel="상세 닫기"') > 0],
 ];
@@ -1247,10 +1250,12 @@ const v2141Checks = [
     '지도: 내 위치 자리(오류 칩·주변 패널·FAB)가 모두 locateFromUser 사용',
     (mapSource2141.match(/locateFromUser\(\)/g) || []).length >= 3,
   ],
-  // ④ 핀 상세 시트 — 브랜드 주황 헤더
+  // ④ 핀 상세 시트 — v2.19.2: 헤더 배경은 그 핀의 **분류 색**(getCategoryColor)
   [
-    '핀 시트: 헤더 배경이 브랜드 주황(#FF5A36)',
-    /headerBar: \{[\s\S]{0,200}?backgroundColor: colors\.coral,/.test(pinDetailSource) && colors.coral === '#FF5A36',
+    '핀 시트: 헤더 배경 = 분류 색 (인라인 backgroundColor: headerColor)',
+    pinDetailSource.indexOf('const headerColor = categoryDot;') > 0 &&
+      pinDetailSource.indexOf('style={[styles.headerBar, { backgroundColor: headerColor }]}') > 0 &&
+      DEFAULT_CATEGORY_COLORS['가볼곳'] === '#3B82F6',
   ],
   [
     '핀 시트: 주황 위 드래그 핸들 rgba(255,255,255,0.45)',
@@ -1266,7 +1271,7 @@ const v2141Checks = [
     '핀 시트: 86% 높이 상한 · 헤더 고정 · 본문 스크롤 유지',
     /sheet: \{[\s\S]{0,260}?maxHeight: '86%'/.test(pinDetailSource) &&
       pinDetailSource.indexOf('testID="pin-sheet-scroll"') > 0 &&
-      pinDetailSource.indexOf('<View style={styles.headerBar}') < pinDetailSource.indexOf('<ScrollView'),
+      pinDetailSource.indexOf('testID="pin-sheet-header"') < pinDetailSource.indexOf('<ScrollView'),
   ],
   [
     '배너: 스와이프 래퍼로 감싸 렌더됨(geofence-banner)',
@@ -1511,7 +1516,7 @@ const v216Checks = [
   // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
   ['메뉴(v2.19): 분류 관리 → 시트 안 서브 페이지', appSource215.indexOf('setCategoriesFocus(') < 0 && profileSource215.indexOf("openSub('categories')") > 0 && menuSource216.indexOf('onOpenSub={setSub}') > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
   ['메뉴(v2.19): 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && profileSource215.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.19.1 표기', menuHtml216.indexOf('릴스핀 v2.19.1') > 0 && APP_VERSION_LABEL === '릴스핀 v2.19.1', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.19.2 표기', menuHtml216.indexOf('릴스핀 v2.19.2') > 0 && APP_VERSION_LABEL === '릴스핀 v2.19.2', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1625,7 +1630,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.19.1', APP_VERSION_LABEL === '릴스핀 v2.19.1' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.1") > 0],
+  ['버전: 메뉴·프로필 모두 v2.19.2', APP_VERSION_LABEL === '릴스핀 v2.19.2' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.2") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1706,7 +1711,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.19.1', APP_VERSION_LABEL === '릴스핀 v2.19.1'],
+  ['버전: v2.19.2', APP_VERSION_LABEL === '릴스핀 v2.19.2'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1749,7 +1754,7 @@ const v218Checks = [
   ['v2.18 지도: 목록 아이콘 버튼이 분류 맨 앞', /<View style=\{styles\.row\}>[\s\S]{0,400}?testID="map-list-toggle"[\s\S]{0,900}?<ScrollView/.test(filterChipsSource218) && filterChipsSource218.indexOf('map-list-toggle') > 0],
   ['v2.18 지도: MapScreen 이 목록 전환을 칩 줄에 넘김', mapSource218.indexOf('onToggleView={toggleView}') > 0 && mapSource218.indexOf('목록 보기</Text>') < 0],
   ['v2.18 지도: 왼쪽 하단 도구·오른쪽 버튼이 탭바 위로(tabBar/floatLift)', mapSource218.indexOf('bottom: tabBar.controlsBottom') < 0 ? (fs.readFileSync(path.join(process.cwd(), 'src/components/MapToolsMenu.js'), 'utf8').indexOf('bottom: tabBar.controlsBottom') > 0) : true],
-  ['v2.18 지도: +/− 박스·내 위치도 탭바 위로 (mapControls.zoomBottom = 26 + floatTop)', mapControls.floatLift === tabBar.floatTop && mapControls.zoomBottom === 26 + tabBar.floatTop && mapControls.actionStackHeight === mapControls.fabSize],
+  ['v2.18 지도: +/− 박스·내 위치도 탭바 위로 (mapControls.stackBottom = 26 + floatTop)', mapControls.floatLift === tabBar.floatTop && mapControls.stackBottom === 26 + tabBar.floatTop && mapControls.actionStackHeight === mapControls.fabSize],
   ['v2.18 지도: NAVER 로고를 탭바 위로 올리는 처리', webMapSource218.indexOf('export function liftNaverLogo') > 0 && webMapSource218.indexOf('liftNaverLogo(node, tabBar.floatTop + 6)') > 0 && webMapSource218.indexOf('export function liftLeafletBottom') > 0],
   // ③ 저장 — 검색과 같은 헤더 · 탭 이름 · 원탭/붙여넣기 제거
   // v2.19.1 — 저장 화면은 OverlayHeader, 검색 팝업은 같은 다크 차콜 헤더를 가진 LayerSheet 시트
@@ -1762,7 +1767,7 @@ const v218Checks = [
   ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
   ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
   ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
-  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.19.1') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.19.2') > 0],
   ['v2.19: ☰ 시트가 분류 관리 서브 페이지를 직접 연다', profileSource218.indexOf("openSub('categories')") > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
 ];
 for (const [label, ok, extra] of v218Checks) {
@@ -1883,7 +1888,7 @@ const v219Checks = [
   ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
-  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.19.1') > 0],
+  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.19.2') > 0],
   ['v2.19 앱: 내 정보 탭 제거 · ☰ 시트가 ProfileScreen(panel) 사용', appSource219.indexOf("tab !== 'profile'") < 0 && appSource219.indexOf('<MenuDrawerModal') > 0 && appSource219.indexOf('panel') < 0 && menuSource219.indexOf('panel') > 0],
   // ③ 📂 컬렉션 탭
   ['v2.19 컬렉션: 목록 머리(내 컬렉션 · N개 · M곳 · 새 컬렉션)', collectionsListHtml219.indexOf('내 컬렉션') > 0 && collectionsListHtml219.indexOf('2개 컬렉션 · 2곳 담김') > 0 && collectionsListHtml219.indexOf('collection-new') > 0],
@@ -1898,7 +1903,7 @@ const v219Checks = [
   ['v2.19 저장: 컬렉션은 기기에 저장(reelpin.collections.v1)', storageSource219.indexOf("'reelpin.collections.v1'") > 0 && appSource219.indexOf('saveCollections(collections)') > 0],
   ['v2.19 저장: 핀을 지우면 컬렉션에서도 정리(prune)', appSource219.indexOf('pruneCollections(prev, pins)') > 0],
   ['v2.19: 하단바 탭은 App 이 collections 를 그림', appSource219.indexOf('<CollectionsScreen') > 0 && appSource219.indexOf("tab !== 'collections'") > 0],
-  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.19.1', APP_VERSION_LABEL === '릴스핀 v2.19.1' && profileSource219.indexOf("'릴스핀 v2.19.1'") > 0 && pkg.version === '2.19.1'],
+  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.19.2', APP_VERSION_LABEL === '릴스핀 v2.19.2' && profileSource219.indexOf("'릴스핀 v2.19.2'") > 0 && pkg.version === '2.19.2'],
 ];
 for (const [label, ok, extra] of v219Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1907,7 +1912,6 @@ for (const [label, ok, extra] of v219Checks) {
     console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
   }
 }
-
 
 // ── v2.19.1: 팝업 3종 통일 · 가봤어요 체크 · 알림 설정 · 시군구동 ────────────────
 // 상훈 님이 2026-11-17 `https://reelpin.vercel.app`(v2.19.0)을 직접 써보고 주신 6가지 디테일.
@@ -2056,9 +2060,130 @@ const v2191Checks = [
   ['시군구동: 검색 팝업 추천 카드에 그대로 보임', areaOverlayHtml191.indexOf('인천 서구 당하동') > 0 && areaOverlayHtml191.indexOf('서울 강남구 역삼동') > 0 && areaOverlayHtml191.indexOf('경기 고양시 일산서구 일산동') < 0],
   ['시군구동: `분류 · 지역` 한 줄 표기', placeMetaLabel(AREA_PINS_191[0]) === '맛집 · 인천 서구 당하동' && placeMetaLabel({ name: 'x' }) === '내 지도'],
   // ⑥ 버전
-  ['v2.19.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.19.1' && APP_INFO_VERSION === '릴스핀 v2.19.1' && pkg.version === '2.19.1' && expoConfig.version === '2.19.1'],
+  ['v2.19.2 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.19.2' && APP_INFO_VERSION === '릴스핀 v2.19.2' && pkg.version === '2.19.2' && expoConfig.version === '2.19.2'],
 ];
 for (const [label, ok, extra] of v2191Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.19.2: 상세 헤더 = 분류 색 · 서브 뒤로 `‹` 만 · 지도 +/− ↔ 내 위치 자리 ─────
+// 상훈 님이 2026-11-17 아이폰 실사용 캡처(IMG_9091)와 함께 주신 3가지 수정.
+const pinSheetSource2192 = sheetSource;
+const layerSheetSource2192 = layerSheetSource191;
+const profileSource2192 = profileSource191;
+const mapSource2192 = mapSource191;
+const webMapSource2192 = webMapSource218;
+const CATS_2192 = ['맛집', '카페', '가볼곳', '아이랑'];
+/** '#RRGGBB' → react-native-web SSR 인라인 스타일 표기 'rgba(r,g,b,1.00)' */
+const rgbaOf2192 = (hex) => {
+  const raw = String(hex).replace('#', '');
+  return 'rgba(' + parseInt(raw.slice(0, 2), 16) + ',' + parseInt(raw.slice(2, 4), 16) + ',' + parseInt(raw.slice(4, 6), 16) + ',1.00)';
+};
+/** 핀 상세 시트 헤더 div 의 style 문자열만 뽑습니다 (분류 색이 인라인으로 들어갑니다) */
+const pinHeaderStyle2192 = (category) => {
+  const html = renderToString(
+    <PinDetailSheet
+      pin={{ ...SEARCH_PIN, id: 'hdr-' + category, category }}
+      radiusMeters={300}
+      onClose={noop}
+      onDelete={noop}
+      onToast={noop}
+      categories={CATS_2192}
+    />
+  );
+  const at = html.indexOf('data-testid="pin-sheet-header"');
+  if (at < 0) return '';
+  const start = html.lastIndexOf('<div', at);
+  return html.slice(start, at);
+};
+const headerStyleCoral = pinHeaderStyle2192('맛집');
+const headerStyleMint = pinHeaderStyle2192('카페');
+const headerStyleBlue = pinHeaderStyle2192('가볼곳');
+const headerStyleCustom = pinHeaderStyle2192('아이랑');
+
+const v2192Checks = [
+  // ① 상세 시트 헤더 = 분류 색
+  ['v2.19.2 핀 시트: `맛집` 헤더 = 코랄 ' + DEFAULT_CATEGORY_COLORS['맛집'], headerStyleCoral.indexOf(rgbaOf2192('#FF5A36')) > 0, headerStyleCoral.slice(0, 160)],
+  ['v2.19.2 핀 시트: `카페` 헤더 = 민트 ' + DEFAULT_CATEGORY_COLORS['카페'], headerStyleMint.indexOf(rgbaOf2192('#14B8A6')) > 0, headerStyleMint.slice(0, 160)],
+  ['v2.19.2 핀 시트: `가볼곳` 헤더 = 블루 ' + DEFAULT_CATEGORY_COLORS['가볼곳'], headerStyleBlue.indexOf(rgbaOf2192('#3B82F6')) > 0, headerStyleBlue.slice(0, 160)],
+  ['v2.19.2 핀 시트: 커스텀 분류도 그 분류 색', headerStyleCustom.indexOf(rgbaOf2192(CUSTOM_CATEGORY_COLORS[0])) > 0, headerStyleCustom.slice(0, 160)],
+  [
+    'v2.19.2 핀 시트: 헤더 색 = getCategoryColor(pin.category) — 분류를 바꾸면 즉시 바뀜',
+    pinSheetSource2192.indexOf('const headerColor = categoryDot;') > 0 &&
+      pinSheetSource2192.indexOf('const categoryDot = getCategoryColor(categoryName, categories);') > 0 &&
+      pinSheetSource2192.indexOf('style={[styles.headerBar, { backgroundColor: headerColor }]}') > 0 &&
+      pinSheetSource2192.indexOf('onChangeCategory(pin.id, name)') > 0,
+  ],
+  [
+    'v2.19.2 핀 시트: 흰 이름(그림자) · 반투명 흰 원 ✕ 유지',
+    /name: \{[\s\S]{0,320}?color: colors\.white[\s\S]{0,200}?textShadowColor/.test(pinSheetSource2192) &&
+      /closeBtn: \{[\s\S]{0,240}?rgba\(255,255,255,0\.22\)/.test(pinSheetSource2192) &&
+      /name="close" size=\{18\} color=\{colors\.white\}/.test(pinSheetSource2192),
+  ],
+  [
+    'v2.19.2 핀 시트: 본문 끝 여백 = tabBar.floatTop + 10 (플로팅 하단바에 지도 버튼이 안 가림)',
+    /body: \{[\s\S]{0,320}?paddingBottom: tabBar\.floatTop \+ 10/.test(pinSheetSource2192) && tabBar.floatTop === 66,
+  ],
+  // ② 레이어 팝업 서브 페이지 뒤로 버튼 = `‹` 만
+  [
+    'v2.19.2 레이어 팝업: 서브 뒤로 버튼에 한글 `뒤로` 가 화면에 없음',
+    menuCatHtml219.indexOf('menu-sub-back') > 0 &&
+      menuCatHtml219.indexOf('>뒤로<') < 0 &&
+      menuCatHtml219.indexOf('aria-label="뒤로"') > 0,
+  ],
+  [
+    'v2.19.2 레이어 팝업: 뒤로 버튼은 chevron 아이콘 하나 (Text 없음)',
+    /<Ionicons name="chevron-back" size=\{20\} color=\{colors\.white\} \/>\s*<\/Pressable>/.test(layerSheetSource2192) &&
+      layerSheetSource2192.indexOf('styles.backText') < 0,
+  ],
+  [
+    'v2.19.2 내 정보 단독 서브(지오펜스 반경): 뒤로도 `‹` 만 + aria-label 유지',
+    radiusHtml218.indexOf('profile-sub-back') > 0 &&
+      radiusHtml218.indexOf('>뒤로<') < 0 &&
+      radiusHtml218.indexOf('aria-label="뒤로"') > 0,
+  ],
+  [
+    'v2.19.2 내 정보: 서브 뒤로 버튼 소스에 Text 한글 없음',
+    profileSource2192.indexOf('subBackText') < 0 &&
+      /<Ionicons name="chevron-back" size=\{20\} color=\{colors\.text\} \/>/.test(profileSource2192) &&
+      profileSource2192.indexOf('accessibilityLabel="뒤로"') > 0,
+  ],
+  // ③ 지도 오른쪽: 위 = +/−, 아래 = 내 위치
+  [
+    'v2.19.2 지도: 내 위치 FAB 가 맨 아래 (actionBottom = stackBottom = 26 + floatTop)',
+    mapControls.actionBottom === mapControls.stackBottom &&
+      mapControls.stackBottom === 26 + tabBar.floatTop &&
+      mapControls.actionStackHeight === mapControls.fabSize,
+    String(mapControls.actionBottom),
+  ],
+  [
+    'v2.19.2 지도: +/− 박스는 FAB 위 (zoomBottom = actionBottom + fabSize + stackGap)',
+    mapControls.zoomBottom === mapControls.actionBottom + mapControls.fabSize + mapControls.stackGap,
+    String(mapControls.zoomBottom) + ' vs ' + String(mapControls.actionBottom + mapControls.fabSize + mapControls.stackGap),
+  ],
+  [
+    'v2.19.2 지도: 주변 목록 패널은 +/− 박스 위로',
+    mapControls.panelBottom === mapControls.zoomBottom + mapControls.zoomBoxHeight + mapControls.colGap,
+    String(mapControls.panelBottom),
+  ],
+  [
+    'v2.19.2 지도: zoomCol 은 zoomBottom · actionCol 은 actionBottom 사용',
+    webMapSource2192.indexOf('bottom: mapControls.zoomBottom') > 0 &&
+      mapSource2192.indexOf('bottom: mapControls.actionBottom') > 0 &&
+      mapSource2192.indexOf('bottom: mapControls.panelBottom') > 0,
+  ],
+  [
+    'v2.19.2 지도: 두 컨트롤 모두 오른쪽 끝선 rightInset 유지 (겹침 0)',
+    mapControls.rightInset === 12 && mapSource2192.indexOf('right: mapControls.rightInset') > 0 && webMapSource2192.indexOf('right: mapControls.rightInset') > 0,
+  ],
+  // ④ 버전
+  ['v2.19.2 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.19.2' && APP_INFO_VERSION === '릴스핀 v2.19.2' && pkg.version === '2.19.2' && expoConfig.version === '2.19.2'],
+];
+for (const [label, ok, extra] of v2192Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -2099,6 +2224,7 @@ const total =
   v218Checks.length +
   v219Checks.length +
   v2191Checks.length +
+  v2192Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

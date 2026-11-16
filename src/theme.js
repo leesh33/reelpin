@@ -106,12 +106,12 @@ export const tabBar = (() => {
 
 /*
  * 지도 우측 하단 컨트롤 정렬값 — 한 곳에서 관리합니다.
+ *   · '내 위치' 파란 FAB (MapScreen.actionCol)
  *   · '+ / −' 확대·축소 박스(RealMapView.web.js 의 zoomCol)
- *   · '내 위치(파란 FAB) · 목록 보기' 세로 스택(MapScreen.actionCol)
  *   · '반경 500m 주변 목록' 패널(nearbyPanel)
- * 세 컨트롤 모두 `rightInset` 으로 오른쪽 끝선을 맞추고, 아래에서 위로
- *   +/−  →(stackGap)→  FAB  →  목록 보기  →(colGap)→  주변 목록 패널
- * 순서로 쌓입니다. +/− 는 지도 아래 끝에서 zoomBottom 만큼 띄워
+ * 세 컨트롤 모두 `rightInset` 으로 오른쪽 끝선을 맞추고, **아래에서 위로**
+ *   FAB(내 위치)  →(stackGap)→  +/−  →(colGap)→  주변 목록 패널
+ * 순서로 쌓입니다. 스택의 바닥은 지도 아래 끝에서 stackBottom 만큼 띄워
  * NAVER 로고(아래 4px, 높이 ~12px)와 겹치지 않게 합니다.
  *
  * v2.17 — `지도 공유` 를 이 스택에서 빼고 지도 **왼쪽 하단 펌찄 메뉴**(MapToolsMenu)로 옮겼습니다.
@@ -120,27 +120,32 @@ export const tabBar = (() => {
  * v2.18 — `목록 보기` 는 지도 상단 분류 칩 줄의 **맨 앞 아이콘 버튼**으로 올라가 오른쪽 스택은
  *   **`내 위치 FAB` 한 칸**만 남았습니다. 그리고 플로팅 탭바가 지도 아래 끝을 덮으므로,
  *   모든 지도 컨트롤을 `tabBar.floatTop` 만큼 **통째로 위로** 올립니다.
+ * v2.19.2 — 상훈 님 요청 "확대축소 버튼과 내위치 버튼 위치를 바꾸자":
+ *   예전(위=FAB · 아래=+/−) → 지금(**위=+/− · 아래=내 위치 FAB**).
+ *   스택의 바닥값은 `stackBottom`(탭바·NAVER 로고 위 26px)이고, 그 위로 FAB → +/− 순서입니다.
  */
 export const mapControls = (() => {
   const rightInset = 12; // 세 컨트롤 공통 오른쪽 여백
   const controlSize = 34; // '+ / −' 버튼 크기
   const fabSize = 46; // 파란 '내 위치' FAB
   const colGap = 8; // 세로 스택 간격
-  // v2.18 — 플로팅 탭바(70) + 로고를 덮지 않기 위한 6px
+  // v2.18 — 플로팅 탭바(70) + 로고를 덮지 않기 위한 26px
   const floatLift = tabBar.floatTop;
-  const zoomBottom = 26 + floatLift; // +/− 박스 아래 끝 — 탭바·NAVER 로고 위로 띄움
+  const stackGap = 9; // 파란 FAB 와 +/− 박스 사이 간격
   const zoomBoxHeight = controlSize * 2 + 3; // 위·아래 테두리 1 + 구분선 1
-  const stackGap = 9; // +/− 박스와 파란 FAB 사이 간격
-  // v2.18 — 내 위치 FAB 한 칸
+  // v2.19.2 — 오른쪽 스택 순서 (아래 → 위): 내 위치 FAB → +/− → 주변 목록 패널
+  const stackBottom = 26 + floatLift; // 스택 맨 아래(내 위치 FAB)의 아래 끝 — 탭바·NAVER 로고 위로 띄움
+  const actionBottom = stackBottom; // 내 위치 FAB
   const actionStackHeight = fabSize;
-  const actionBottom = zoomBottom + zoomBoxHeight + stackGap;
-  const panelBottom = actionBottom + actionStackHeight + colGap;
+  const zoomBottom = actionBottom + fabSize + stackGap; // +/− 박스 아래 끝 — FAB 위
+  const panelBottom = zoomBottom + zoomBoxHeight + colGap;
   return {
     rightInset,
     controlSize,
     fabSize,
     colGap,
     floatLift,
+    stackBottom,
     zoomBottom,
     zoomBoxHeight,
     stackGap,
