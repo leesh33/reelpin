@@ -27,6 +27,7 @@ import AppHeader, { HEADER_ACTIONS, alertBadgeLabel, HEADER_TABS } from '../src/
 import AlertInbox from '../src/components/AlertInbox';
 import SearchOverlayModal from '../src/components/SearchOverlayModal';
 import MenuDrawerModal, { APP_VERSION_LABEL } from '../src/components/MenuDrawerModal';
+import { APP_INFO_BUNDLE } from '../src/screens/ProfileScreen';
 import {
   OVERLAY_RESULT_MAX,
   RECOMMEND_MAX,
@@ -70,7 +71,7 @@ import InAppPlaceModalWeb, {
 import fs from 'node:fs';
 import path from 'node:path';
 import { injectPwaHead, PWA_REQUIRED_MARKERS, PWA_APP_TITLE } from '../scripts/patch-web-html.mjs';
-import { colors, mapControls } from '../src/theme';
+import { colors, mapControls, tabBar } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
 // v2.17 — '가본 곳만 보기' Y/N 이 쓰는 방문 필터 규칙
 import { VISIT_ALL, VISIT_DONE, filterByVisit } from '../src/utils/searchPins';
@@ -222,11 +223,11 @@ const contentCases = [
   ['ProfileScreen: 매직링크 안내', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} onMagicLink={noop} />, ['매직링크']],
   ['ProfileScreen: 소셜 로그인 3개(카카오·구글·Apple)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} onOAuth={noop} />, ['카카오', '구글', 'Apple']],
   ['ProfileScreen(미설정): 기기 안에만 저장 안내', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured={false} cloudUser={null} />, ['지금은 기기 안에만 저장돼요', 'SUPABASE_URL']],
-  ['ProfileScreen(로그인 후): 이메일·동기화 켜짐·N개', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'andy@example.com' }} cloudPinCount={7} onSyncNow={noop} onSignOut={noop} />, ['andy@example.com', '클라우드 동기화 켜짐', '개 저장됨', '지금 동기화', '로그아웃', '기기 + 클라우드(Supabase)']],
+  ['ProfileScreen(로그인 후): 이메일·동기화 켜짐·N개', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'andy@example.com' }} cloudPinCount={7} onSyncNow={noop} onSignOut={noop} />, ['andy@example.com', '클라우드 동기화 켜짐', '개 저장됨', '지금 동기화', '로그아웃', '계정 · 클라우드 동기화']],
   ['ProfileScreen(로그인 후): 동기화 실패 안내', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={{ id: 'u-1', email: 'a@b.com' }} cloudPinCount={3} cloudMessage="클라우드 저장 실패 · 기기에는 저장돼 있어요" />, ['기기에는 저장돼 있어요']],
   // v2.1.1 — 클립보드는 사용자가 버튼을 눌렀을 때만 (아이폰 사파리 붙여넣기 팝업 방지)
-  ['PasteScreen: [클립보드에서 붙여넣기] 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['클립보드에서 붙여넣기']],
-  ['PasteScreen: 링크 입력 + 붙여넣기 버튼 렌더', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 · 쇼츠 링크', '클립보드에서 붙여넣기']],
+  // v2.18 — [클립보드에서 붙여넣기] 버튼은 없앴습니다(상훈 님 요청). 링크 입력창 + 추출 흐름만 남습니다.
+  ['PasteScreen: 릴스·쇼츠로 찾기 탭 + 링크 입력창', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스·쇼츠로 찾기', '릴스 · 쇼츠 링크', '장소 추출하기']],
   // v2.14 — 📸 사진으로 찾기 탭 (웹 = react-native-web 렌더에서 탭·카드·버튼이 보입니다)
   ['PasteScreen(사진으로 찾기): 업로드 카드 + 큰 버튼', <PasteScreen pinCount={4} isPro={false} initialMode="photo" onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['인스타 캡처·스크린샷 올리기', '사진 속 가게 이름과 동네를 AI가 읽어', '사진·캡처 고르기']],
   // v2.2 — 분류 직접 고르기 · 만들기 · 관리
@@ -235,7 +236,8 @@ const contentCases = [
   ['MapScreen: 커스텀 분류 칩', <MapScreen pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onChangePinCategory={noop} onAddCategory={noop} />, ['아이랑 1']],
   ['PinDetailSheet: 분류 칩으로 바로 변경', <PinDetailSheet pin={{ ...SEARCH_PIN, category: '아이랑' }} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} onChangeCategory={noop} onAddCategory={noop} />, ['누르면 바로 바뀌어요', '분류 추가', '분류 아이랑']],
   ['PinDetailSheet: 공유받은 핀은 분류 변경 없음', <PinDetailSheet pin={SHARED_PINS[0]} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly onChangeCategory={noop} />, ['공유받은 맛집이에요']],
-  ['ProfileScreen: 분류 관리 카드(수정·삭제·추가)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />, ['분류 관리', '아이랑', '기본', '수정', '삭제', '새 분류 이름', '핀 1개']],
+  // v2.18 — 분류 관리는 `분류 관리 ›` 행을 눌러 들어가는 **별도 서브 페이지**입니다.
+  ['ProfileScreen: 분류 관리 서브 페이지(수정·삭제·추가)', <ProfileScreen initialSub="categories" name="이상훈" handle="odol" pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />, ['분류 관리', '뒤로', '아이랑', '기본', '수정', '삭제', '새 분류 이름', '핀 1개']],
   // v2.5 — 🔍 검색 · 📋 목록 보기
   ['MapScreen: 헤더 🔍 돋보기(지도 위 검색창은 없음)', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} header={{ onPressSearch: noop, onPressAlerts: noop, onPressMenu: noop }} />, ['장소 검색', '알림 모음', '메뉴', '맛집']],
   ['MapScreen: [목록 보기] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['목록 보기']],
@@ -480,11 +482,11 @@ for (const [label, ok] of v21Checks) {
 // 주석은 빼고 '실제 코드'만 검사합니다. (설명 주석에 적힌 옛 코드 때문에 오탐하지 않게)
 const pasteCode = pasteSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const v211Checks = [
-  ['PasteScreen: readClipboard 호출은 사용자 버튼(applyPaste) 한 곳뿐', (pasteCode.match(/readClipboard\(\)/g) || []).length === 1, String((pasteCode.match(/readClipboard\(\)/g) || []).length)],
+  // v2.18 — 붙여넣기 버튼을 없애면서 클립보드 읽기 코드 자체를 걷어냈습니다(0건이 정상).
+  ['PasteScreen: 클립보드 읽기 코드 없음(getStringAsync 0건)', (pasteCode.match(/getStringAsync\(/g) || []).length === 0, String((pasteCode.match(/getStringAsync\(/g) || []).length)],
   ['PasteScreen: useEffect 로 클립보드를 읽지 않음', !/useEffect\([\s\S]{0,120}readClipboard/.test(pasteCode) && pasteCode.indexOf('if (active && !isSearch)') < 0],
   ['PasteScreen: navigator.clipboard.readText 직접 호출 없음', pasteCode.indexOf('readText(') < 0],
-  ['PasteScreen: 클립보드 읽기(getStringAsync)는 한 곳뿐', (pasteCode.match(/getStringAsync\(/g) || []).length === 1, String((pasteCode.match(/getStringAsync\(/g) || []).length)],
-  ['PasteScreen: [클립보드에서 붙여넣기] 버튼', pasteSource.indexOf('클립보드에서 붙여넣기') > 0],
+  ['PasteScreen: [클립보드에서 붙여넣기] 버튼 없음', pasteCode.indexOf('클립보드에서 붙여넣기') < 0],
   ['PasteScreen: 자동 감지 배너 문구 제거', pasteSource.indexOf('방금 복사한 링크가 있어요') < 0],
   ['App: PasteScreen 에 active(자동 읽기 트리거) 미전달', /<PasteScreen[\s\S]{0,120}?active=/.test(appSource) === false],
 ];
@@ -630,8 +632,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.17.1', pkg.version === '2.17.1', pkg.version],
-  ['버전: app.json 2.17.1', expoConfig.version === '2.17.1', expoConfig.version],
+  ['버전: package.json 2.18.0', pkg.version === '2.18.0', pkg.version],
+  ['버전: app.json 2.18.0', expoConfig.version === '2.18.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -665,7 +667,8 @@ const v213Checks = [
   ['중복 안내: 칩 아래 locationHint 제거',
     mapSource2.indexOf('locationHint') < 0],
   // v2.1.3 — 계정 · 클라우드 동기화 카드는 '내 정보' 스크롤 맨 아래로
-  ['내 정보 탭: 계정 카드가 맨 아래(프로필·핀·반경·프로·앱 정보 뒤)',
+  // v2.18 — 프로필(이름) + 계정·클라우드 동기화(로그인/로그아웃)를 **맨 위 한 카드**로 통합
+  ['내 정보 탭: 통합 계정 카드가 맨 위', 
     (() => {
       const html = renderToString(
         <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} cloudConfigured cloudUser={null} cloudPinCount={0} onSignIn={noop} onSignUp={noop} onMagicLink={noop} onOAuth={noop} onSignOut={noop} onSyncNow={noop} />
@@ -673,10 +676,11 @@ const v213Checks = [
       const at = html.indexOf('계정 · 클라우드 동기화');
       return (
         at > 0 &&
-        at > html.indexOf('저장한 핀') &&
-        at > html.indexOf('지오펜스 알림 반경') &&
-        at > html.indexOf('프로 시작하기') &&
-        at > html.indexOf('번들 ID')
+        at < html.indexOf('분류 관리') &&
+        at < html.indexOf('저장한 장소') &&
+        at < html.indexOf('지오펜스 알림 반경') &&
+        at < html.indexOf('프로 시작하기') &&
+        html.indexOf('무료 플랜') > 0 && html.indexOf('무료 플랜') < at
       );
     })()],
 ];
@@ -787,7 +791,8 @@ const pasteBrandHtml = renderToString(
 );
 const brandChecks = [
   ['브랜드: src·App.js 에 ReelPin/Reelpin 표기 0건', brandOffenders.length === 0, brandOffenders.map((f) => path.relative(process.cwd(), f)).join(' ')],
-  ['브랜드: 저장 화면 상단 로고 Reelspin', pasteBrandHtml.indexOf('Reelspin') > 0 && pasteBrandHtml.indexOf('ReelPin') < 0],
+  // v2.18 — 저장 화면 헤더는 🔍 장소 검색과 같은 OverlayHeader(제목 '저장')를 씁니다.
+  ['브랜드: 저장 화면 헤더는 OverlayHeader(저장) · ReelPin 0건', pasteSource.indexOf('<OverlayHeader') > 0 && pasteBrandHtml.indexOf('ReelPin') < 0],
   ['브랜드: 스플래시 로고 Reelspin', appSource.indexOf('splashTitle}>Reelspin<') > 0],
   ['브랜드: 앱 이름(app.json)·PWA 이름은 릴스핀', expoConfig.name === '릴스핀' && manifest.short_name === '릴스핀' && PWA_APP_TITLE === '릴스핀', expoConfig.name + ' / ' + manifest.short_name],
   ['브랜드: 기술 식별자는 그대로 (스킴·번들 ID·저장 키·배포 주소)',
@@ -885,6 +890,11 @@ const searchOverlaySource216 = fs.readFileSync(
   path.join(process.cwd(), 'src/components/SearchOverlayModal.js'),
   'utf8'
 );
+// v2.18 — 저장 화면 · 🔍 장소 검색이 함께 쓰는 다크 차콜 헤더
+const overlayHeaderSource218 = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/OverlayHeader.js'),
+  'utf8'
+);
 const CLOSE_HEADER_FILES = [
   // v2.15 — 저장 화면의 ✕ 헤더는 공통 AppHeader 로 옮겼습니다(지도·내 정보 탭도 같은 헤더).
   ['공통 헤더(AppHeader)', headerSource215, 'styles.header'],
@@ -892,7 +902,8 @@ const CLOSE_HEADER_FILES = [
   ['인앱 매장 정보 모달(웹)', webModalSource211, 'styles.header'],
   ['인앱 매장 정보 모달(iOS·안드로이드)', nativeModalSource211, 'styles.header'],
   // v2.16 — 저장 화면 형태의 검색 레이어 팝업
-  ['검색 레이어 팝업(🔍)', searchOverlaySource216, 'styles.header'],
+  // v2.18 — 헤더 몸통은 OverlayHeader.js 로 옮겼습니다(저장 화면과 같은 컴포넌트).
+  ['검색 레이어 팝업(🔍)', overlayHeaderSource218, 'charcoal'],
 ];
 // v2.14.1 — 핀 상세 시트만 상훈 님 요청으로 **브랜드 주황 헤더**를 씁니다(나머지 3곳은 다크 차콜).
 const CHARCOAL_HEADER_FILES = CLOSE_HEADER_FILES.filter(([label]) => label !== '핀 상세 시트');
@@ -927,7 +938,9 @@ const v211HeaderChecks = [
       const withCloseHeader = files.filter((f) =>
         /accessibilityLabel="(닫기|상세 닫기)"|accessibilityLabel=\{closeLabel\}/.test(fs.readFileSync(f, 'utf8'))
       );
-      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'PinDetailSheet.js', 'SearchOverlayModal.js'];
+      // v2.18 — 저장 화면·검색 팝업이 같이 쓰는 OverlayHeader.js 가 헤 더로 들어왔습니다.
+      // v2.18 — 저장 화면·검색 팝업의 ✕ 는 OverlayHeader.js 하나로 모였습니다(SearchOverlayModal 에서는 빠짐).
+      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'OverlayHeader.js', 'PinDetailSheet.js'];
       return (
         withCloseHeader.length === wanted.length &&
         wanted.every((w) => withCloseHeader.some((f) => f.endsWith(w)))
@@ -971,7 +984,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.17.1', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.17.1') > 0],
+  ['프로필: 버전 표기 v2.18.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.18.0") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1072,12 +1085,13 @@ const v214Checks = [
     pasteSource.indexOf("(PHOTO_STAGES[stage] || 'AI 사진 분석') + ' 중…'") > 0,
   ],
   [
-    '저장 화면: 사진 탭에는 원탭 프리셋 없음',
-    /\{!isPhoto && \(\s*<>\s*<View style=\{styles\.presetHead\}/.test(pasteSource),
+    // v2.18 — 프리셋은 가게명 탭의 `이렇게 찾아보세요` 하나만 (원탭 테스트 영역 제거)
+    '저장 화면: 프리셋은 가게명 탭에만',
+    /\{isSearch && \(\s*<>\s*<View style=\{styles\.presetHead\}/.test(pasteSource) && pasteCode.indexOf('원탭 테스트') < 0,
   ],
   [
-    '저장 화면: 링크 탭은 붙여넣기 버튼 하나(옆의 좁은 사진 버튼 제거)',
-    pasteSource.indexOf('📸 캡처·사진으로 찾기') < 0 && pasteSource.indexOf('linkActionRow') > 0,
+    '저장 화면: 링크 탭에 붙여넣기 버튼 없음(입력창 + 추출만)',
+    pasteSource.indexOf('📸 캡처·사진으로 찾기') < 0 && pasteSource.indexOf('linkActionRow') < 0 && pasteSource.indexOf('clipboard-outline') < 0,
   ],
   [
     '저장 화면: 사진 안내 문구는 사진 탭으로 이동',
@@ -1113,11 +1127,13 @@ const photoTabHtml = renderToString(
 );
 const v214RenderChecks = [
   ['저장 화면(링크 탭): 사진 안내 문구·사진 버튼 없음', linkTabHtml.indexOf('사진 속 가게 이름과 동네를 AI가 읽어') < 0 && linkTabHtml.indexOf('캡처·사진으로 찾기') < 0],
-  ['저장 화면(링크 탭): 링크 입력 + 붙여넣기 + 장소 추출하기', linkTabHtml.indexOf('릴스 · 쇼츠 링크') > 0 && linkTabHtml.indexOf('클립보드에서 붙여넣기') > 0 && linkTabHtml.indexOf('장소 추출하기') > 0],
+  // v2.18 — 붙여넣기 버튼·원탭 테스트 영역 제거, 탭 이름은 `릴스·쇼츠로 찾기`
+  ['저장 화면(링크 탭): 탭 이름 `릴스·쇼츠로 찾기` + 링크 입력 + 장소 추출하기', linkTabHtml.indexOf('릴스·쇼츠로 찾기') > 0 && linkTabHtml.indexOf('릴스 · 쇼츠 링크') > 0 && linkTabHtml.indexOf('장소 추출하기') > 0],
+  ['저장 화면(링크 탭): 붙여넣기 버튼·원탭 테스트 없음', linkTabHtml.indexOf('클립보드에서 붙여넣기') < 0 && linkTabHtml.indexOf('원탭 테스트') < 0],
   ['저장 화면(사진 탭): 링크 입력·원탭 테스트 없음', photoTabHtml.indexOf('릴스 · 쇼츠 링크') < 0 && photoTabHtml.indexOf('원탭 테스트') < 0 && photoTabHtml.indexOf('장소 추출하기') < 0],
   ['저장 화면(사진 탭): 업로드 카드 + 큰 사진 버튼', photoTabHtml.indexOf('인스타 캡처·스크린샷 올리기') > 0 && photoTabHtml.indexOf('사진·캡처 고르기') > 0],
   ['저장 화면(사진 탭): 안내 3단계', photoTabHtml.indexOf('사진 한 장이면 충분해요') > 0],
-  ['저장 화면: 어느 탭에서든 3탭이 모두 보임', ['릴스 링크', '사진으로 찾기', '가게명 찾기'].every((t) => photoTabHtml.indexOf(t) >= 0 && linkTabHtml.indexOf(t) >= 0)],
+  ['저장 화면: 어느 탭에서든 3탭이 모두 보임', ['릴스·쇼츠로 찾기', '사진으로 찾기', '가게명 찾기'].every((t) => photoTabHtml.indexOf(t) >= 0 && linkTabHtml.indexOf(t) >= 0)],
 ];
 for (const [label, ok, extra] of v214RenderChecks) {
   if (ok) console.log('OK   ' + label);
@@ -1314,7 +1330,8 @@ const v215Checks = [
   ['지도 탭: 공통 다크 헤더', mapSource215.indexOf('<AppHeader badge="지도"') > 0],
   ['지도 탭: 헤더가 지도·오버레이보다 위(겹침 없음)', mapSource215.indexOf('<AppHeader badge="지도"') < mapSource215.indexOf('<View style={styles.mapArea}>') && mapSource215.indexOf('<View style={styles.mapArea}>') < mapSource215.indexOf('styles.topOverlay')],
   ['지도 탭: 오버레이는 헤더 아래 mapArea 안', /mapArea: \{[\s\S]{0,80}?flex: 1/.test(mapSource215)],
-  ['저장 탭: 공통 헤더 + 기존 ✕ 유지', pasteSource215.indexOf('<AppHeader badge="저장"') > 0 && pasteSource215.indexOf('onPressClose={onClose}') > 0],
+  // v2.18 — 저장 탭 헤더는 🔍 장소 검색과 같은 OverlayHeader(✕ 포함)로 통일
+  ['저장 탭: OverlayHeader(저장) + 기존 ✕ 유지', /<OverlayHeader[\s\S]{0,260}?onClose=\{onClose\}/.test(pasteSource215) && pasteSource215.indexOf('testID="paste-header"') > 0],
   ['저장 탭: 옛 인라인 헤더 스타일 제거', pasteSource215.indexOf('styles.header}') < 0 && pasteSource215.indexOf('brandBadgeText') < 0],
   ['내 정보 탭: 공통 헤더 + 옛 큰 타이틀 제거', profileSource215.indexOf('<AppHeader badge="내 정보"') > 0 && profileSource215.indexOf('styles.title}>내 정보') < 0],
   ['세 탭 모두 같은 headerProps 를 받음', (appSource215.match(/header=\{headerProps\}/g) || []).length === 3, (appSource215.match(/header=\{headerProps\}/g) || []).length],
@@ -1436,7 +1453,7 @@ const v216Checks = [
   ['지도 탭: 분류 칩 한 줄만 (방문 칩 2번째 줄 없음)', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') < 0],
   // ③ 🔍 검색 레이어 팝업
   ['검색 팝업: 저장 화면과 같은 전체 레이어(absoluteFill)', /overlay: \{[\s\S]{0,80}?StyleSheet\.absoluteFillObject/.test(searchOverlaySource216) && searchOverlaySource216.indexOf('colors.charcoal') > 0],
-  ['검색 팝업: 헤더 `🔍 장소 검색` + ✕', overlayHtml216.indexOf('장소 검색') > 0 && overlayHtml216.indexOf('검색어 지우기') < 0 && searchOverlaySource216.indexOf('testID="search-overlay-close"') > 0],
+  ['검색 팝업: 헤더 `🔍 장소 검색` + ✕', overlayHtml216.indexOf('장소 검색') > 0 && overlayHtml216.indexOf('검색어 지우기') < 0 && searchOverlaySource216.indexOf('closeTestID="search-overlay-close"') > 0],
   ['검색 팝업: 검색 인풋 + ✕ 지우기', searchOverlaySource216.indexOf('testID="search-overlay-input"') > 0 && searchOverlaySource216.indexOf('testID="search-overlay-clear"') > 0],
   ['검색 팝업: 추천 장소 · 인기 검색 장소 섹션', overlayHtml216.indexOf('추천 장소') > 0 && overlayHtml216.indexOf(POPULAR_PLACES_TITLE) > 0],
   ['검색 팝업: 추천 = 내 위치에서 가까운 저장 장소(가까운 순)', recNear216.kind === 'near' && recNear216.items[0].pin.id === 's-1' && recNear216.items.length === Math.min(RECOMMEND_MAX, PIN_216.length), recNear216.items.map((i) => i.pin.id).join(',')],
@@ -1462,9 +1479,10 @@ const v216Checks = [
   ['메뉴: 비로그인 = [로그인 / 계정 연결]', menuHtml216.indexOf('로그인 / 계정 연결') > 0 && menuSource216.indexOf('testID="menu-account-card"') > 0],
   ['메뉴: 로그인 = 이메일 + 동기화 상태', menuSignedHtml216.indexOf('andy@example.com') > 0 && menuSignedHtml216.indexOf('클라우드 동기화 켜짐') > 0 && menuSignedHtml216.indexOf('개 저장됨') > 0],
   ['메뉴: 분류 관리 · 지도 공유 바로가기', menuHtml216.indexOf('분류 관리') > 0 && menuHtml216.indexOf('지도 공유') > 0 && appSource215.indexOf('onOpenCategories={openCategories}') > 0 && appSource215.indexOf('onShareMap={shareMyMapFromMenu}') > 0],
-  ['메뉴: 분류 관리 → 내 정보 탭 분류 카드로', appSource215.indexOf('setCategoriesFocus(') > 0 && profileSource215.indexOf('categoriesYRef') > 0 && profileSource215.indexOf('categoriesFocus') > 0],
+  // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
+  ['메뉴: 분류 관리 → 내 정보 탭 분류 서브 페이지', appSource215.indexOf('setCategoriesFocus(') > 0 && profileSource215.indexOf("setSub('categories')") > 0 && profileSource215.indexOf('categoriesFocus') > 0],
   ['메뉴: 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && menuSource216.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.17.1 표기', menuHtml216.indexOf('릴스핀 v2.17.1') > 0 && APP_VERSION_LABEL === '릴스핀 v2.17.1', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.18.0 표기', menuHtml216.indexOf('릴스핀 v2.18.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.18.0', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1550,9 +1568,11 @@ const v217Checks = [
   // ③ 오른쪽 스택에서 지도 공유 제거
   ['지도: 오른쪽 스택에 지도 공유 버튼 없음', mapSource217.indexOf('지도 공유</Text>') < 0],
   ['지도 화면(접힘): 지도 공유 글자 없음(메뉴 안으로 이동)', mapHtml217.indexOf('지도공유') < 0],
-  ['지도: 오른쪽 스택은 목록 보기 · 내 위치 FAB 두 칸', mapSource217.indexOf('목록 보기</Text>') > 0 && mapSource217.indexOf("'주변 ' + NEARBY_RADIUS_M + 'm'") < 0 && mapSource217.indexOf('accessibilityLabel="내 위치 찾기"') > 0],
+  // v2.18 — 목록 보기는 상단 분류 칩 줄 **맨 앞 아이콘 버튼**(FilterChips)으로, 오른쪽 스택은 내 위치 FAB 하나
+  ['지도: 오른쪽 스택은 내 위치 FAB 하나', mapSource217.indexOf('목록 보기</Text>') < 0 && mapSource217.indexOf("'주변 ' + NEARBY_RADIUS_M + 'm'") < 0 && mapSource217.indexOf('accessibilityLabel="내 위치 찾기"') > 0 && mapSource217.indexOf('onToggleView={toggleView}') > 0],
   // ④ 왼쪽 하단 펼침 메뉴
-  ['지도 도구: 왼쪽 끝 12 · 아래 끝 16', /col: \{[\s\S]{0,140}?left: 12,[\s\S]{0,40}?bottom: 16/.test(toolsSource217)],
+  // v2.18 — 플로팅 탭바(theme.tabBar.controlsBottom = 80) 위로 올라갔습니다.
+  ['지도 도구: 왼쪽 끝 12 · 아래 끝 tabBar.controlsBottom', /col: \{[\s\S]{0,200}?left: 12,[\s\S]{0,80}?bottom: tabBar\.controlsBottom/.test(toolsSource217)],
   ['지도 도구: 세로 column(요약 · 카드 · 버튼이 겹치지 않음)', /col: \{[\s\S]{0,180}?alignItems: 'flex-start',[\s\S]{0,40}?gap: 8/.test(toolsSource217)],
   ['지도 화면(접힘): 토글 버튼 + 개수 요약만', mapHtml217.indexOf('map-tools-toggle') > 0 && mapHtml217.indexOf('핀표시중') > 0],
   ['지도 화면(접힘): 펼친 카드는 그리지 않음(빈 곳 탭 방지)', mapHtml217.indexOf('map-tools-menu') < 0 && toolsOffHtml217.indexOf('map-tools-menu') < 0],
@@ -1576,7 +1596,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.17.1', APP_VERSION_LABEL === '릴스핀 v2.17.1' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.17.1') > 0],
+  ['버전: 메뉴·프로필 모두 v2.18.0', APP_VERSION_LABEL === '릴스핀 v2.18.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.18.0") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1646,9 +1666,10 @@ const v2171Checks = [
   ['도구 메뉴: 카드에 가본 곳만 보기 → 주변 500m → 지도 공유하기 순서', toolsNearbyHtml2171.indexOf('가본곳만보기') < toolsNearbyHtml2171.indexOf('주변500m보기') && toolsNearbyHtml2171.indexOf('주변500m보기') < toolsNearbyHtml2171.indexOf('지도공유하기')],
   ['도구 메뉴: 주변 500m 행은 기존 toggleNearby 를 그대로(메뉴 먼저 접기)', /onPressNearby=\{\(\) => \{[\s\S]{0,180}?setToolsOpen\(false\);[\s\S]{0,80}?toggleNearby\(\);/.test(mapSource2171)],
   ['도구 메뉴: 반경 500m 안 개수를 행에 표시', toolsNearbyHtml2171.indexOf('반경500m안3곳') > 0],
-  ['지도: 오른쪽 스택에서 주변 500m 를 뺐음', mapSource2171.indexOf('testID="view-toggle-map"') > 0 && mapSource2171.indexOf("'주변 ' + NEARBY_RADIUS_M + 'm'") < 0 && toolsSource2171.indexOf('map-tools-nearby') > 0],
+  ['지도: 오른쪽 스택에서 주변 500m 를 뺐음', mapSource2171.indexOf("'주변 ' + NEARBY_RADIUS_M + 'm'") < 0 && toolsSource2171.indexOf('map-tools-nearby') > 0],
   ['지도(접힘): 화면에 주변 500m 글자가 없음(메뉴 안)', mapHtml217.indexOf('주변500m') < 0],
-  ['지도: 오른쪽 스택 높이는 두 칸(목록 보기 + FAB)', /const actionStackHeight = controlSize \+ fabSize \+ colGap;/.test(themeSource2171)],
+  // v2.18 — 오른쪽 스택은 내 위치 FAB 한 칸 (목록 보기는 상단 칩 줄로 이동)
+  ['지도: 오른쪽 스택 높이는 FAB 한 칸', /const actionStackHeight = fabSize;/.test(themeSource2171)],
   // ③ 가본 곳만 보기 — 필터 의미는 그대로, 켜면 지도가 가본 곳으로 따라감
   ['가본 곳만 보기: 켜면 방문 핀만 거르고 지도를 가본 곳에 맞춤', /const toggleVisitedOnly = useCallback\(\(\) => \{[\s\S]{0,2600}?filterByVisit\(baseFiltered, VISIT_DONE\)/.test(mapSource2171) && /toggleVisitedOnly[\s\S]{0,3000}?setFit\(coords\)/.test(mapSource2171)],
   ['가본 곳만 보기: 켤 때/끌 때 문구로 상태를 알림', mapSource2171.indexOf("showToast('가본 곳만 보는 중 · '") > 0 && mapSource2171.indexOf('전체 핀 ') > 0],
@@ -1656,9 +1677,65 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.17.1', APP_VERSION_LABEL === '릴스핀 v2.17.1'],
+  ['버전: v2.18.0', APP_VERSION_LABEL === '릴스핀 v2.18.0'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.18: 플로팅 하단바 · 내정보 서브페이지 · 저장 헤더 · 지도 흰 칩 ───────────
+const tabBarSource218 = fs.readFileSync(path.join(process.cwd(), 'src/components/TabBar.js'), 'utf8');
+const filterChipsSource218 = fs.readFileSync(path.join(process.cwd(), 'src/components/FilterChips.js'), 'utf8');
+const overlayHeaderSource218b = fs.readFileSync(path.join(process.cwd(), 'src/components/OverlayHeader.js'), 'utf8');
+const profileSource218 = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const mapSource218 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const webMapSource218 = fs.readFileSync(path.join(process.cwd(), 'src/components/RealMapView.web.js'), 'utf8');
+const pasteSource218 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const appSource218 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+const tabBarHtml218 = renderToString(<TabBar active="paste" onChange={noop} />);
+const radiusHtml218 = renderToString(
+  <ProfileScreen initialSub="radius" name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} />
+);
+const aboutHtml218 = renderToString(
+  <ProfileScreen initialSub="about" name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} />
+);
+const profileHtml218 = renderToString(
+  <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} />
+);
+
+const v218Checks = [
+  // ① 플로팅 탭바 — 바닥에서 뜬 둥근 알약
+  ['v2.18 탭바: 알약(999) + 반투명 흰색 + 웹 blur(12px)', /bar: \{[\s\S]{0,600}?borderRadius: 999,[\s\S]{0,600}?backgroundColor: 'rgba\(255,255,255,0\.92\)'/.test(tabBarSource218) && tabBarSource218.indexOf("backdropFilter: 'blur(12px)'") > 0],
+  ['v2.18 탭바: 화면 바닥에서 떠 있음(position absolute + bottom)', /wrap: \{[\s\S]{0,200}?position: 'absolute'[\s\S]{0,120}?bottom: tabBar\.bottom/.test(tabBarSource218)],
+  ['v2.18 탭바: 선택 탭은 연한 코랄 알약', tabBarSource218.indexOf("backgroundColor: 'rgba(255, 90, 54, 0.12)'") > 0 && tabBarSource218.indexOf('styles.itemOn') > 0],
+  ['v2.18 탭바: 지도 · 저장 · 내 정보 세 탭', ['지도', '저장', '내 정보'].every((t) => tabBarSource218.indexOf("label: '" + t + "'") > 0) && tabBarHtml218.indexOf('tab-paste') > 0],
+  ['v2.18 탭바: 값은 theme.tabBar 한 곳 (높이 58 · 뜬 간격 12)', tabBar.height === 58 && tabBar.bottom === 12 && tabBar.floatTop === 70 && tabBar.controlsBottom === 80],
+  ['v2.18 탭바: 앱이 화면 최상위 레이어에 그림', appSource218.indexOf('<TabBar active={tab} onChange={setTab} />') > 0 && appSource218.indexOf('tabBar.controlsBottom + 16') > 0],
+  // ② 지도 — 흰 반투명 분류 칩 + 맨 앞 목록 아이콘 버튼 + 탭바와 안 겹침
+  ['v2.18 지도: 분류 칩이 흰색 반투명(rgba(255,255,255,0.90)) + 어두운 글씨', filterChipsSource218.indexOf("backgroundColor: 'rgba(255,255,255,0.90)'") > 0 && /text: \{[\s\S]{0,120}?color: '#1C1C1E'/.test(filterChipsSource218)],
+  ['v2.18 지도: 목록 아이콘 버튼이 분류 맨 앞', /<View style=\{styles\.row\}>[\s\S]{0,400}?testID="map-list-toggle"[\s\S]{0,900}?<ScrollView/.test(filterChipsSource218) && filterChipsSource218.indexOf('map-list-toggle') > 0],
+  ['v2.18 지도: MapScreen 이 목록 전환을 칩 줄에 넘김', mapSource218.indexOf('onToggleView={toggleView}') > 0 && mapSource218.indexOf('목록 보기</Text>') < 0],
+  ['v2.18 지도: 왼쪽 하단 도구·오른쪽 버튼이 탭바 위로(tabBar/floatLift)', mapSource218.indexOf('bottom: tabBar.controlsBottom') < 0 ? (fs.readFileSync(path.join(process.cwd(), 'src/components/MapToolsMenu.js'), 'utf8').indexOf('bottom: tabBar.controlsBottom') > 0) : true],
+  ['v2.18 지도: +/− 박스·내 위치도 탭바 위로 (mapControls.zoomBottom = 26 + floatTop)', mapControls.floatLift === tabBar.floatTop && mapControls.zoomBottom === 26 + tabBar.floatTop && mapControls.actionStackHeight === mapControls.fabSize],
+  ['v2.18 지도: NAVER 로고를 탭바 위로 올리는 처리', webMapSource218.indexOf('export function liftNaverLogo') > 0 && webMapSource218.indexOf('liftNaverLogo(node, tabBar.floatTop + 6)') > 0 && webMapSource218.indexOf('export function liftLeafletBottom') > 0],
+  // ③ 저장 — 검색과 같은 헤더 · 탭 이름 · 원탭/붙여넣기 제거
+  ['v2.18 저장: OverlayHeader 한 컴포넌트를 검색·저장이 함께 씀', pasteSource218.indexOf('<OverlayHeader') > 0 && searchOverlaySource216.indexOf('<OverlayHeader') > 0 && overlayHeaderSource218b.indexOf('colors.charcoal') > 0],
+  ['v2.18 저장: 헤더는 저장 + ✕ (풀페이지 유지)', pasteSource218.indexOf('testID="paste-header"') > 0 && /<OverlayHeader[\s\S]{0,300}?closeTestID="paste-header-close"/.test(pasteSource218)],
+  ['v2.18 저장: 첫 탭 이름 `릴스·쇼츠로 찾기`', pasteSource218.indexOf("label: '릴스·쇼츠로 찾기'") > 0 && pasteCode.indexOf("label: '릴스 링크'") < 0],
+  ['v2.18 저장: 원탭 테스트·클립보드 버튼 제거', pasteCode.indexOf('원탭 테스트') < 0 && pasteCode.indexOf('클립보드에서 붙여넣기') < 0 && pasteCode.indexOf('clipboard-outline') < 0],
+  // ④ 내 정보 — 상단 통합 계정 카드 + 설정 3행 + 서브 페이지
+  ['v2.18 내 정보: 통합 계정 카드(프로필 + 계정·클라우드 동기화)', profileHtml218.indexOf('profile-account-card') > 0 && profileHtml218.indexOf('계정 · 클라우드 동기화') > 0 && profileHtml218.indexOf('account-card-body') > 0],
+  ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
+  ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
+  ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.18.0') > 0],
+  ['v2.18 내 정보: ☰ 메뉴의 분류 관리도 같은 서브 페이지', profileSource218.indexOf("setSub('categories')") > 0 && profileSource218.indexOf("useState(() => (SUB_PAGES[initialSub] ? initialSub : null))") > 0],
+];
+for (const [label, ok, extra] of v218Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -1696,6 +1773,7 @@ const total =
   v216Checks.length +
   v217Checks.length +
   v2171Checks.length +
+  v218Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

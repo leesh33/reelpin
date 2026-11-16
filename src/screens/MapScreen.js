@@ -683,7 +683,15 @@ export default function MapScreen({
           {/* v2.17 — 2번째 줄(전체 / ○ 미방문 / ✓ 가봤어요) 은 없어졌습니다.
               방문 필터는 왼쪽 하단 펼침 메뉴의 `가본 곳만 보기` Y/N 하나로 → 지도가 한 줄 더 넓어졌습니다. */}
           <View style={styles.chipWrap}>
-            <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
+            {/* v2.18 — 흰색 반투명 분류 칩 + **맨 앞 목록 아이콘 버튼**
+                (오른쪽 하단 주황 `목록 보기` 는 없어졌습니다) */}
+            <FilterChips
+              value={filter}
+              onChange={setFilter}
+              counts={counts}
+              categories={categories}
+              onToggleView={toggleView}
+            />
           </View>
           {previewPins.length > 0 && (
             <View style={styles.sharedBanner}>
@@ -871,20 +879,11 @@ export default function MapScreen({
           </View>
         )}
 
-        {/* 목록 보기 · 내 위치 버튼 (v2.17: `지도 공유` → 왼쪽 하단 펌찄 메뉴,
-            v2.17.1: `주변 500m` 도 같은 왼쪽 하단 메뉴로 이동) */}
+        {/* 오른쪽 하단 — v2.18: `목록 보기` 는 **상단 분류 칩 줄 맨 앞 아이콘 버튼**으로
+            올라가고, 여기에는 파란 `내 위치` FAB 하나만 남았습니다.
+            (v2.17: `지도 공유` → 왼쪽 하단 메뉴, v2.17.1: `주변 500m` → 같은 메뉴) */}
         {view === 'map' && !selectedPin && (
           <View style={styles.actionCol}>
-            <Pressable
-              style={[styles.nearbyBtn, styles.viewToggleBtn]}
-              onPress={toggleView}
-              accessibilityRole="button"
-              accessibilityLabel="목록 보기로 전환"
-              testID="view-toggle-map"
-            >
-              <Ionicons name="list-outline" size={14} color={colors.white} />
-              <Text style={styles.nearbyBtnText}>목록 보기</Text>
-            </Pressable>
             <Pressable
               style={[styles.fab, myCoords && styles.fabLive]}
               onPress={() => locateFromUser()}
@@ -1054,6 +1053,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
+  // v2.18 — 핀 목록 보기는 상단 칩 줄의 흰 아이콘 버튼(FilterChips)이 맡습니다.
+  //          남은 오른쪽 버튼(내 위치 FAB)만 플로팅 탭바 위로 올립니다.
   viewToggleBtn: {
     backgroundColor: colors.coral,
     borderColor: 'rgba(255,255,255,0.30)',

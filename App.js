@@ -62,7 +62,7 @@ import {
   signUpWithEmail,
   upsertCloudPins,
 } from './src/services/cloudSync';
-import { colors, typography } from './src/theme';
+import { colors, tabBar, typography } from './src/theme';
 
 const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 
@@ -921,11 +921,13 @@ export default function App() {
           </View>
         </View>
 
+        {/* v2.18 — 플로팅 알약 탭바: 화면 바닥에 붙지 않고 살짝 떠서 지도·목록 위에 그려집니다.
+            (그래서 화면 높이를 차지하지 않고, 지도 오른쪽·왼쪽 하단 컨트롤은 theme.tabBar 만큼 위로 올라갑니다) */}
         <TabBar active={tab} onChange={setTab} />
         <Toast
           message={toast ? toast.message : null}
           tone={toast ? toast.tone : 'dark'}
-          bottomOffset={tab === 'map' && selectedPinId ? 440 : 96}
+          bottomOffset={tab === 'map' && selectedPinId ? 440 : tabBar.controlsBottom + 16}
           placement={tab === 'map' && selectedPinId ? 'top' : 'bottom'}
         />
         {/* v2.15 — 🔔 알림 모음 (헤더 오른쪽 아이콘) · 열려 있을 때만 그립니다 */}

@@ -38,6 +38,7 @@ import {
   popularPlaceQuery,
 } from '../data/popularPlaces';
 import { overlaySearchResults, popularPlaceRows, recommendPlaces } from '../utils/searchOverlay';
+import OverlayHeader from './OverlayHeader';
 
 export const SEARCH_PLACEHOLDER = '가게명 · 동네 · 메뉴 · 메모';
 
@@ -88,28 +89,20 @@ export default function SearchOverlayModal({
 
   return (
     <View style={styles.overlay} testID="search-overlay">
-      {/* 다크 차콜 헤더 — 저장 화면과 같은 규칙 */}
-      <View style={styles.header}>
-        <View style={styles.headIcon}>
-          <Ionicons name="search" size={16} color={colors.white} />
-        </View>
-        <View style={styles.headText}>
-          <Text style={styles.title}>장소 검색</Text>
-          <Text style={styles.sub} numberOfLines={1}>
-            {savedCount ? '내 핀 ' + savedCount + '곳에서 찾기 · ' + SEARCH_PLACEHOLDER : '아직 저장한 핀이 없어요'}
-          </Text>
-        </View>
-        <Pressable
-          style={styles.closeBtn}
-          onPress={onClose}
-          hitSlop={8}
-          accessibilityRole="button"
-          accessibilityLabel={closeLabel}
-          testID="search-overlay-close"
-        >
-          <Ionicons name="close" size={18} color={colors.white} />
-        </Pressable>
-      </View>
+      {/* v2.18 — 저장 화면과 **같은** 헤더 컴포넌트(OverlayHeader)를 씁니다. */}
+      <OverlayHeader
+        icon="search"
+        title="장소 검색"
+        sub={
+          savedCount
+            ? '내 핀 ' + savedCount + '곳에서 찾기 · ' + SEARCH_PLACEHOLDER
+            : '아직 저장한 핀이 없어요'
+        }
+        onClose={onClose}
+        closeLabel={closeLabel}
+        testID="search-overlay-header"
+        closeTestID="search-overlay-close"
+      />
 
       <ScrollView
         style={styles.body}

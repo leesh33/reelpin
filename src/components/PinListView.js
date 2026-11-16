@@ -17,7 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import FilterChips from './FilterChips';
 import VisitFilterChips from './VisitFilterChips';
 import PinSearchBar from './PinSearchBar';
-import { colors, cardShadow, radius, typography } from '../theme';
+import { colors, cardShadow, radius, tabBar, typography } from '../theme';
 import {
   categoryTextColor,
   categoryTint,
@@ -66,7 +66,6 @@ export default function PinListView({
             onChange={onChangeFilter}
             counts={counts}
             categories={categories}
-            onDark={false}
           />
         </View>
         {/* v2.10 — ✅ 방문 상태 필터 (전체 · 미방문 · 가봤어요) */}
@@ -293,7 +292,8 @@ const styles = StyleSheet.create({
   scrollBody: {
     paddingHorizontal: 12,
     paddingTop: 10,
-    paddingBottom: 28,
+    // v2.18 — 플로팅 탭바(floatTop 70px) 아래로 마지막 카드가 가리지 않게 여유를 둡니다.
+    paddingBottom: 28 + tabBar.floatTop,
     gap: 8,
   },
   row: {

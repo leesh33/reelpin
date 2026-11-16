@@ -13,7 +13,7 @@ import {
   isDefaultCategory,
   pinsInCategory,
 } from '../utils/categories';
-import { cardShadow, colors, radius, typography } from '../theme';
+import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 
 const RADIUS_OPTIONS = [
   { value: 300, label: '300m', hint: '골목 단위' },
@@ -48,6 +48,7 @@ function AccountCard({
   onSignOut,
   onSyncNow,
   onToast,
+  embedded = false,
 }) {
   const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
@@ -94,9 +95,10 @@ function AccountCard({
   };
 
   return (
-    <View style={styles.card}>
+    // v2.18 — 통합 계정 카드 안에 들어갈 때(embedded)는 테두리·그림자 없이 내용만 그립니다.
+    <View style={embedded ? styles.cardBare : styles.card} testID={embedded ? 'account-card-body' : 'account-card'}>
       <View style={styles.cardHead}>
-        <Text style={styles.cardTitle}>계정 · 클라우드 동기화</Text>
+        <Text style={embedded ? styles.cardSubTitle : styles.cardTitle}>계정 · 클라우드 동기화</Text>
         <View style={[styles.syncChip, signedIn && styles.syncChipOn]}>
           <Ionicons
             name={signedIn ? 'cloud-done' : 'cloud-offline-outline'}
@@ -273,6 +275,8 @@ function CategoryManager({
   onRenameCategory,
   onRemoveCategory,
   onToast,
+  // v2.18 — 서브 페이지에서는 화면 제목(`분류 관리`)이 이미 있어 카드 제목을 감춥니다.
+  hideTitle = false,
 }) {
   const [newName, setNewName] = useState('');
   const [addError, setAddError] = useState('');
@@ -326,8 +330,8 @@ function CategoryManager({
 
   return (
     <View style={styles.card}>
-      <View style={styles.cardHead}>
-        <Text style={styles.cardTitle}>분류 관리</Text>
+      <View style={[styles.cardHead, hideTitle && styles.cardHeadEnd]}>
+        {hideTitle ? null : <Text style={styles.cardTitle}>분류 관리</Text>}
         <View style={styles.catCountChip}>
           <Text style={styles.catCountChipText}>{list.length}개</Text>
         </View>
@@ -470,6 +474,106 @@ function CategoryManager({
   );
 }
 
+
+// ── v2.18 — 내 정보 화면의 설정 목록·서브 페이지 ────────────────────────────
+//   상훈 님 요청: "분류관리는 별도의 페이지로 / 지오펜스 알림 반경 설정도 별도의 페이지로 /
+//                 앱버전 번들ID 영역도 별도의 페이지로 들어가서 설정할 수 있게 해줘"
+const SUB_PAGES = {
+  categories: { title: '분류 관리', icon: 'pricetags-outline' },
+  radius: { title: '지오펜스 알림 반경', icon: 'navigate-circle-outline' },
+  about: { title: '앱 정보', icon: 'information-circle-outline' },
+};
+
+export const APP_INFO_VERSION = '릴스핀 v2.18.0';
+export const APP_INFO_BUNDLE = 'com.odol.reelpin';
+
+/** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
+function SettingsRow({ icon, title, sub, onPress, testID }) {
+  return (
+    <Pressable
+      style={({ pressed }) => [styles.settingRow, pressed && styles.settingRowPressed]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      testID={testID}
+    >
+      <View style={styles.settingIcon}>
+        <Ionicons name={icon} size={17} color={colors.coralDark} />
+      </View>
+      <View style={styles.settingText}>
+        <Text style={styles.settingTitle} numberOfLines={1}>
+          {title}
+        </Text>
+        <Text style={styles.settingSub} numberOfLines={1}>
+          {sub}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+    </Pressable>
+  );
+}
+
+/** 지오펜스 알림 반경 — 서브 페이지 본문 (기존 세그먼트 그대로) */
+function RadiusSetting({ radiusMeters, onChangeRadius }) {
+  return (
+    <View style={styles.card} testID="radius-setting">
+      <Text style={styles.cardTitle}>알림 반경</Text>
+      <Text style={styles.cardHint}>
+        저장한 곳 반경 {radiusMeters >= 1000 ? '1km' : radiusMeters + 'm'} 안에 들어가면 알려드려요.
+      </Text>
+      <View style={styles.segment}>
+        {RADIUS_OPTIONS.map((opt) => {
+          const on = radiusMeters === opt.value;
+          return (
+            <Pressable
+              key={opt.value}
+              style={[styles.segmentItem, on && styles.segmentItemOn]}
+              onPress={() => onChangeRadius(opt.value)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              testID={'radius-option-' + opt.value}
+            >
+              <Text style={[styles.segmentLabel, on && styles.segmentLabelOn]}>{opt.label}</Text>
+              <Text style={[styles.segmentHint, on && styles.segmentHintOn]}>{opt.hint}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.noticeRow}>
+        <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+        <Text style={styles.noticeText}>
+          iOS는 앱당 감시 가능한 구역이 20개라, 가까운 핀 20개만 등록하고 회전합니다.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** 앱 정보 — 서브 페이지 본문 (버전 · 번들 ID · 데이터 저장 위치) */
+function AppInfoCard({ cloudUser }) {
+  const cloud = !!(cloudUser && (cloudUser.email || cloudUser.id));
+  return (
+    <View style={styles.infoCard} testID="app-info-card">
+      <View style={styles.infoRow}>
+        <Text style={styles.infoKey}>앱 버전</Text>
+        <Text style={styles.infoValue}>{APP_INFO_VERSION}</Text>
+      </View>
+      <View style={styles.infoDivider} />
+      <View style={styles.infoRow}>
+        <Text style={styles.infoKey}>번들 ID</Text>
+        <Text style={styles.infoValue}>{APP_INFO_BUNDLE}</Text>
+      </View>
+      <View style={styles.infoDivider} />
+      <View style={styles.infoRow}>
+        <Text style={styles.infoKey}>데이터 저장</Text>
+        <Text style={styles.infoValue}>
+          {cloud ? '기기 + 클라우드(Supabase)' : '기기 내부 (AsyncStorage)'}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function ProfileScreen({
   name,
   handle,
@@ -499,8 +603,13 @@ export default function ProfileScreen({
   header,
   accountFocus,
   categoriesFocus,
+  // v2.18 — 서브 페이지를 바로 열어 두는 시작값 (검사·딥링크용. 기본 null)
+  initialSub = null,
 }) {
   const [copied, setCopied] = useState(false);
+  // v2.18 — 설정 서브 페이지: null | 'categories' | 'radius' | 'about'
+  const [sub, setSub] = useState(() => (SUB_PAGES[initialSub] ? initialSub : null));
+  const closeSub = () => setSub(null);
   const count = pins.length;
   /**
    * v2.15 — 헤더의 👤(로그인/계정) 아이콘을 누르면 '내 정보' 탭의 계정 카드로 바로 내려갑니다.
@@ -509,8 +618,7 @@ export default function ProfileScreen({
   const scrollRef = useRef(null);
   const accountYRef = useRef(0);
   const accountSeenRef = useRef(0);
-  // v2.16 — ☰ 메뉴의 [분류 관리] 로 바로 내려오기 위한 분류 카드 위치/요청
-  const categoriesYRef = useRef(0);
+  // v2.16 — ☰ 메뉴의 [분류 관리] 요청 → v2.18 부터는 분류 관리 **서브 페이지**를 엽니다.
   const categoriesSeenRef = useRef(0);
   const scrollToY = (y, offset = 8) => {
     const node = scrollRef.current;
@@ -528,8 +636,8 @@ export default function ProfileScreen({
   useEffect(() => {
     if (!categoriesFocus || categoriesSeenRef.current === categoriesFocus) return undefined;
     categoriesSeenRef.current = categoriesFocus;
-    const timer = setTimeout(() => scrollToY(categoriesYRef.current), 140);
-    return () => clearTimeout(timer);
+    setSub('categories');
+    return undefined;
   }, [categoriesFocus]);
   useEffect(() => {
     if (!accountFocus || accountSeenRef.current === accountFocus) return undefined;
@@ -577,28 +685,83 @@ export default function ProfileScreen({
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* 프로필 카드 */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{name ? name.slice(0, 1) : '나'}</Text>
+        {/* ── v2.18 통합 계정 카드 ────────────────────────────────────────
+            상훈 님 요청: "상단에 이름 영역과 맨 하단에 클라우드 동기화 & 로그아웃 영역을
+                          합쳐서 맨 상단으로 올려줘"
+            → 이름·플랜(프로필) + 계정·클라우드 동기화(로그인/로그아웃)를 한 카드로. */}
+        <View
+          style={styles.card}
+          testID="profile-account-card"
+          onLayout={(e) => {
+            accountYRef.current = (e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0) || 0;
+          }}
+        >
+          <View style={styles.profileRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{name ? name.slice(0, 1) : '나'}</Text>
+            </View>
+            <View style={styles.profileText}>
+              <Text style={styles.profileName}>{name || '사용자'}</Text>
+              <Text style={styles.profileHandle}>@{handle} · {isPro ? '프로 플랜' : '무료 플랜'}</Text>
+            </View>
+            <View style={[styles.planChip, isPro && styles.planChipPro]}>
+              <Ionicons
+                name={isPro ? 'sparkles' : 'leaf-outline'}
+                size={12}
+                color={isPro ? colors.white : colors.textSub}
+              />
+              <Text style={[styles.planChipText, isPro && styles.planChipTextPro]}>
+                {isPro ? 'PRO' : 'FREE'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.profileText}>
-            <Text style={styles.profileName}>{name || '사용자'}</Text>
-            <Text style={styles.profileHandle}>@{handle} · {isPro ? '프로 플랜' : '무료 플랜'}</Text>
-          </View>
-          <View style={[styles.planChip, isPro && styles.planChipPro]}>
-            <Ionicons
-              name={isPro ? 'sparkles' : 'leaf-outline'}
-              size={12}
-              color={isPro ? colors.white : colors.textSub}
-            />
-            <Text style={[styles.planChipText, isPro && styles.planChipTextPro]}>
-              {isPro ? 'PRO' : 'FREE'}
-            </Text>
-          </View>
+
+          <View style={styles.cardDivider} />
+
+          <AccountCard
+            embedded
+            cloudConfigured={cloudConfigured}
+            cloudUser={cloudUser}
+            cloudPinCount={cloudPinCount}
+            cloudBusy={cloudBusy}
+            cloudSyncing={cloudSyncing}
+            cloudMessage={cloudMessage}
+            onSignIn={onSignIn}
+            onSignUp={onSignUp}
+            onMagicLink={onMagicLink}
+            onOAuth={onOAuth}
+            onSignOut={onSignOut}
+            onSyncNow={onSyncNow}
+            onToast={onToast}
+          />
         </View>
 
-        {/* 계정 · 클라우드 동기화 (v2.1) — v2.1.3 에서 '내 정보' 맨 아래로 이동 */}
+        {/* ── v2.18 설정 목록 3행 — 각각 별도 서브 페이지로 들어갑니다 ────── */}
+        <View style={styles.card} testID="profile-settings-rows">
+          <SettingsRow
+            icon="pricetags-outline"
+            title="분류 관리"
+            sub={allCategories(categories).length + '개 분류 · 만들기 · 이름 바꾸기 · 지우기'}
+            onPress={() => setSub('categories')}
+            testID="profile-row-categories"
+          />
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="navigate-circle-outline"
+            title="지오펜스 알림 반경"
+            sub={'지금 반경 ' + (radiusMeters >= 1000 ? '1km' : radiusMeters + 'm') + ' · 저장한 곳에 가까워지면 알림'}
+            onPress={() => setSub('radius')}
+            testID="profile-row-radius"
+          />
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="information-circle-outline"
+            title="앱 정보"
+            sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
+            onPress={() => setSub('about')}
+            testID="profile-row-about"
+          />
+        </View>
 
         {/* 저장한 핀 카운터 — v2.10: 개수 한도 없이 'N곳 저장'과 방문 현황만 깔끔하게 */}
         <View style={styles.card}>
@@ -624,23 +787,6 @@ export default function ProfileScreen({
           </Text>
         </View>
 
-        {/* v2.2 — 분류 관리 (만들기 · 이름 바꾸기 · 지우기) */}
-        <View
-          onLayout={(e) => {
-            categoriesYRef.current =
-              (e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0) || 0;
-          }}
-        >
-          <CategoryManager
-            categories={categories}
-            pins={pins}
-            onAddCategory={onAddCategory}
-            onRenameCategory={onRenameCategory}
-            onRemoveCategory={onRemoveCategory}
-            onToast={onToast}
-          />
-        </View>
-
         {/* 지도 공유 */}
         <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
           <View style={styles.shareIcon}>
@@ -654,37 +800,6 @@ export default function ProfileScreen({
           </View>
           <Ionicons name="copy-outline" size={17} color={colors.textMuted} />
         </Pressable>
-
-        {/* 지오펜스 반경 */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>지오펜스 알림 반경</Text>
-          <Text style={styles.cardHint}>
-            저장한 곳 반경 {radiusMeters >= 1000 ? '1km' : radiusMeters + 'm'} 안에 들어가면 알려드려요.
-          </Text>
-          <View style={styles.segment}>
-            {RADIUS_OPTIONS.map((opt) => {
-              const on = radiusMeters === opt.value;
-              return (
-                <Pressable
-                  key={opt.value}
-                  style={[styles.segmentItem, on && styles.segmentItemOn]}
-                  onPress={() => onChangeRadius(opt.value)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: on }}
-                >
-                  <Text style={[styles.segmentLabel, on && styles.segmentLabelOn]}>{opt.label}</Text>
-                  <Text style={[styles.segmentHint, on && styles.segmentHintOn]}>{opt.hint}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
-          <View style={styles.noticeRow}>
-            <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.noticeText}>
-              iOS는 앱당 감시 가능한 구역이 20개라, 가까운 핀 20개만 등록하고 회전합니다.
-            </Text>
-          </View>
-        </View>
 
         {/* 프로 안내 */}
         <View style={styles.proCard}>
@@ -714,52 +829,52 @@ export default function ProfileScreen({
           </Pressable>
         </View>
 
-        {/* 앱 정보 */}
-        <View style={styles.infoCard}>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.17.1</Text>
-          </View>
-          <View style={styles.infoDivider} />
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>번들 ID</Text>
-            <Text style={styles.infoValue}>com.odol.reelpin</Text>
-          </View>
-          <View style={styles.infoDivider} />
-          <View style={styles.infoRow}>
-            <Text style={styles.infoKey}>데이터 저장</Text>
-            <Text style={styles.infoValue}>
-              {cloudUser && (cloudUser.email || cloudUser.id) ? '기기 + 클라우드(Supabase)' : '기기 내부 (AsyncStorage)'}
-            </Text>
-          </View>
-        </View>
-
-        {/* 계정 · 클라우드 동기화 (v2.1) — 자주 쓰는 설정이 먼저 보이도록 맨 아래에 둡니다.
-            v2.15 — 헤더의 👤 아이콘을 누르면 이 카드로 바로 내려갑니다(onLayout 으로 위치를 기억). */}
-        <View
-          onLayout={(e) => {
-            accountYRef.current = (e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0) || 0;
-          }}
-        >
-          <AccountCard
-            cloudConfigured={cloudConfigured}
-            cloudUser={cloudUser}
-            cloudPinCount={cloudPinCount}
-            cloudBusy={cloudBusy}
-            cloudSyncing={cloudSyncing}
-            cloudMessage={cloudMessage}
-            onSignIn={onSignIn}
-            onSignUp={onSignUp}
-            onMagicLink={onMagicLink}
-            onOAuth={onOAuth}
-            onSignOut={onSignOut}
-            onSyncNow={onSyncNow}
-            onToast={onToast}
-          />
-        </View>
-
         <Text style={styles.footer}>기획 이상훈 · 개발 오돌</Text>
       </ScrollView>
+
+      {/* ── v2.18 서브 페이지 (분류 관리 · 지오펜스 반경 · 앱 정보) ──────────
+          행을 누르면 화면을 덮는 별도 페이지가 열리고, 위 `‹ 뒤로` 로 돌아옵니다. */}
+      {sub ? (
+        <View style={styles.subLayer} testID={'profile-sub-' + sub}>
+          <View style={styles.subHeader}>
+            <Pressable
+              style={styles.subBack}
+              onPress={closeSub}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="뒤로"
+              testID="profile-sub-back"
+            >
+              <Ionicons name="chevron-back" size={18} color={colors.text} />
+              <Text style={styles.subBackText}>뒤로</Text>
+            </Pressable>
+            <Text style={styles.subTitle} numberOfLines={1}>
+              {SUB_PAGES[sub].title}
+            </Text>
+            <View style={styles.subRight} />
+          </View>
+          <ScrollView
+            contentContainerStyle={styles.subContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {sub === 'categories' ? (
+              <CategoryManager
+                hideTitle
+                categories={categories}
+                pins={pins}
+                onAddCategory={onAddCategory}
+                onRenameCategory={onRenameCategory}
+                onRemoveCategory={onRemoveCategory}
+                onToast={onToast}
+              />
+            ) : null}
+            {sub === 'radius' ? (
+              <RadiusSetting radiusMeters={radiusMeters} onChangeRadius={onChangeRadius} />
+            ) : null}
+            {sub === 'about' ? <AppInfoCard cloudUser={cloudUser} /> : null}
+          </ScrollView>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -781,7 +896,112 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     // v2.15 — 다크 헤더 바로 아래에 첫 카드가 붙어 보이지 않게 살짝 띄웁니다(저장 화면과 같은 규칙).
     paddingTop: 12,
-    paddingBottom: 32,
+    // v2.18 — 플로팅 탭바(70px) 아래로 마지막 카드가 가리지 않게 여유를 둡니다.
+    paddingBottom: 32 + tabBar.floatTop,
+    gap: 12,
+  },
+  // ── v2.18 통합 계정 카드 ────────────────────────────────
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  cardBare: {
+    // 계정 카드가 통 합 카드 안에 들어갈 때 — 테두리·그림자 없이 내용만
+    gap: 10,
+  },
+  cardSubTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.textSub,
+    letterSpacing: -0.1,
+  },
+  cardDivider: {
+    height: 1,
+    backgroundColor: colors.lineSoft,
+    marginVertical: 2,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: colors.lineSoft,
+    marginLeft: 42,
+  },
+  // ── v2.18 설정 목록 행 ──────────────────────────────────
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+  },
+  settingRowPressed: {
+    opacity: 0.6,
+  },
+  settingIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: colors.coralSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingText: {
+    flex: 1,
+    minWidth: 0,
+  },
+  settingTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.2,
+  },
+  settingSub: {
+    ...typography.tiny,
+    fontSize: 10.5,
+    marginTop: 2,
+  },
+  // ── v2.18 서브 페이지 ───────────────────────────────────
+  subLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.bg,
+    zIndex: 30,
+    elevation: 30,
+  },
+  subHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    backgroundColor: colors.card,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
+  },
+  subBack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    minWidth: 68,
+  },
+  subBackText: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  subTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.2,
+  },
+  subRight: {
+    minWidth: 68,
+  },
+  subContent: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    // v2.18 — 플로팅 탭바가 서브 페이지 위에도 떠 있으므로 그만큼 아래를 비웁니다.
+    paddingBottom: 32 + tabBar.floatTop,
     gap: 12,
   },
   profileCard: {
@@ -849,6 +1069,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  cardHeadEnd: {
+    justifyContent: 'flex-end',
   },
   cardTitle: { ...typography.h3 },
   linkText: {

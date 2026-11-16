@@ -9,11 +9,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import {
   DIRECT_PRESETS,
-  PRESETS,
   extractFromImage,
   extractPlaces,
   isSupportedUrl,
@@ -23,13 +21,13 @@ import {
   searchPlacesDirect,
   splitSharedText,
 } from '../services/extractor';
-import AppHeader from '../components/AppHeader';
+import OverlayHeader from '../components/OverlayHeader';
 import ProviderBadges from '../components/ProviderBadge';
 import ExtractedTitleNote from '../components/ExtractedTitleNote';
 import CategoryPicker from '../components/CategoryPicker';
 import { buildPin } from '../utils/pins';
 import { DEFAULT_CATEGORIES, getCategoryColor, mapLegacyCategory } from '../utils/categories';
-import { cardShadow, colors, radius, typography } from '../theme';
+import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 
 const EMOJI_BY_CATEGORY = {
   베이커리: '🥐',
@@ -56,7 +54,9 @@ export default function PasteScreen({
   onClose,
   onToast,
   initialMode = 'link',
-  header,
+  // v2.18 — 헤더가 OverlayHeader 로 바뀌면서 상단 아이콘(🔍🔔☰) 묶음은 쓰지 않습니다.
+  //          (다른 탭에서 그대로 쓸 수 있게 prop 은 받아 두되 그리지 않습니다)
+  header = null,
   request = null,
 }) {
   // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
@@ -115,52 +115,23 @@ export default function PasteScreen({
   const isSearch = mode === 'search';
   const isPhoto = mode === 'photo';
   const stageLabels = photoBusy || isPhoto ? PHOTO_STAGES : isSearch ? SEARCH_STAGES : LINK_STAGES;
-  // 웹에서는 3탭(릴스·사진·가게명), 네이티브에서는 2탭(릴스·가게명) — 좁은 390px 폭에 맞춘 짧은 라벨
+  // v2.18 — 첫 탭 이름을 `릴스·쇼츠로 찾기` 로 (상훈 님 요청)
+  // 웹에서는 3탭(릴스·쇼츠·사진·가게명), 네이티브에서는 2탭(릴스·쇼츠·가게명)
+  // 390px 한 줄에 긴 이름이 들어가도록 3탭일 때는 아이콘을 빼고 글자만 씁니다.
   const tabs = canUsePhoto
     ? [
-        { key: 'link', label: '릴스 링크', icon: 'link-outline' },
+        { key: 'link', label: '릴스·쇼츠로 찾기', icon: 'link-outline' },
         { key: 'photo', label: '사진으로 찾기', icon: 'image-outline' },
         { key: 'search', label: '가게명 찾기', icon: 'search' },
       ]
     : [
-        { key: 'link', label: '릴스 링크', icon: 'link-outline' },
+        { key: 'link', label: '릴스·쇼츠로 찾기', icon: 'link-outline' },
         { key: 'search', label: '가게명으로 찾기', icon: 'search' },
       ];
 
-  /**
-   * v2.1.1 — 클립보드는 **사용자가 [클립보드에서 붙여넣기] 를 눌렀을 때만** 읽습니다.
-   *
-   *   · 예전에는 이 탭이 열릴 때마다(`active`) 자동으로 `navigator.clipboard.readText()` 를 불렀는데,
-   *     아이폰 사파리에서는 탭을 누를 때마다 iOS 의 `[붙여넣기 | 🚫]` 시스템 팝업이 떠서
-   *     '저장' 탭에 들어갈 때마다 한 번씩 붙여넣기 허용을 물어보는 상황이었습니다.
-   *   · 지금은 자동 읽기 코드가 없습니다. 입력창에 직접 붙여넣거나(길게 눌러 붙여넣기),
-   *     아래 [클립보드에서 붙여넣기] 버튼을 누를 때만 읽습니다 — 사용자가 누른 동작이라
-   *     iOS 도 허용 창을 띄우지 않거나, 띄우더라도 사용자가 방금 요청한 동작으로 이해합니다.
-   */
-  const readClipboard = useCallback(async () => {
-    try {
-      const text = await Clipboard.getStringAsync();
-      // v1.2: 공유 시트에서 복사한 건 "문구 + 링크" 덩어리입니다. 그 안에서 링크만 골라 씁니다.
-      const shared = splitSharedText(text || '');
-      if (shared.url && isSupportedUrl(shared.url)) {
-        return shared.url;
-      }
-    } catch (e) {
-      // 웹 브라우저에서는 권한이 없으면 읽기가 막힙니다 — 조용히 넘어갑니다.
-    }
-    return null;
-  }, []);
-
-  const applyPaste = async () => {
-    const text = await readClipboard();
-    if (text) {
-      setUrl(text);
-      setError('');
-      onToast('복사한 링크를 붙여넣었어요');
-    } else {
-      onToast('클립보드에 릴스·쇼츠 링크가 없어요');
-    }
-  };
+  // v2.18 — [클립보드에서 붙여넣기] 버튼을 없애면서 자동 클립보드 읽기도 함께 걷어냈습니다.
+  //          (상훈 님 요청 · 아이폰 사파리의 붙여넣기 허용 팝업도 더 뜨지 않습니다)
+  //          붙여넣기는 입력창을 길게 눌러 하는 iOS 기본 동작을 그대로 씁니다.
 
   /**
    * 모드를 바꾸면 이전 결과는 지웁니다. (링크 결과를 검색 결과처럼 저장하는 실수 방지)
@@ -218,10 +189,10 @@ export default function PasteScreen({
 
     const stageTimer = startProgress();
 
-    const preset = PRESETS.find((p) => p.url === shared.url);
     try {
       const result = await extractPlaces(value, {
-        caption: preset ? preset.caption : '',
+        // v2.18 — 샘플(원탭 테스트) 링크를 지우면서 프리셋 캡션 대입도 함께 걷어냈습니다.
+        caption: '',
         // 1차(제목·설명글·지도)로 실매장을 못 찾았을 때 Gemini 분석으로 넘어가면 진행 문구를 바꿉니다.
         onStage: (s) => setStage(s),
       });
@@ -395,12 +366,6 @@ export default function PasteScreen({
     if (nextQuery.length >= 2) runSearch(nextQuery);
   };
 
-  const usePreset = (preset) => {
-    setUrl(preset.url);
-    setError('');
-    runExtract(preset.url);
-  };
-
   const selectedCandidates = candidates.filter((c) => selectedIds.indexOf(c.id) >= 0);
   const heroCandidate = selectedCandidates[0] || null;
   /**
@@ -482,9 +447,21 @@ export default function PasteScreen({
 
   return (
     <View style={styles.root}>
-      {/* 헤더 — v2.15: 세 탭이 같은 공통 다크 차콜(#1C1C1E) 헤더(AppHeader)를 씁니다.
-          저장 탭은 여기에만 ✕(지도로 돌아가기)가 함께 붙습니다. */}
-      <AppHeader badge="저장" onPressClose={onClose} closeLabel="닫기" {...header} />
+      {/* 헤더 — v2.18: 저장 화면은 🔍 장소 검색(SearchOverlayModal)과 **같은 다크 차콜 헤더**를 씁니다.
+          (OverlayHeader 한 컴포넌트 → 색·높이·✕ 버튼이 어긋날 수 없습니다. 풀페이지 모달 형태는 그대로.) */}
+      <OverlayHeader
+        icon="add"
+        title="저장"
+        sub={
+          canUsePhoto
+            ? '릴스·쇼츠 링크 · 사진 · 가게명으로 찾아 내 지도에 꽂기'
+            : '릴스·쇼츠 링크 · 가게명으로 찾아 내 지도에 꽂기'
+        }
+        onClose={onClose}
+        closeLabel="닫기"
+        testID="paste-header"
+        closeTestID="paste-header-close"
+      />
 
       <ScrollView
         ref={scrollRef}
@@ -507,7 +484,7 @@ export default function PasteScreen({
                 accessibilityLabel={m.label + ' 탭'}
                 testID={'paste-tab-' + m.key}
               >
-                <Ionicons name={m.icon} size={13} color={on ? colors.coralDark : colors.textSub} />
+                {tabs.length > 2 ? null : <Ionicons name={m.icon} size={13} color={on ? colors.coralDark : colors.textSub} />}
                 <Text
                   style={[styles.modeText, tabs.length > 2 && styles.modeTextTight, on && styles.modeTextOn]}
                   numberOfLines={1}
@@ -627,22 +604,9 @@ export default function PasteScreen({
                 onSubmitEditing={() => runExtract()}
                 accessibilityLabel="릴스 링크 입력"
               />
-              <Pressable style={styles.inputIconBtn} onPress={applyPaste} hitSlop={8} accessibilityLabel="붙여넣기">
-                <Ionicons name="clipboard-outline" size={18} color={colors.coral} />
-              </Pressable>
             </View>
-            <View style={styles.linkActionRow}>
-              {/* v2.1.1 — 클립보드는 사용자가 이 버튼을 눌렀을 때만 읽습니다. */}
-              <Pressable
-                style={styles.pasteBtn}
-                onPress={applyPaste}
-                accessibilityRole="button"
-                accessibilityLabel="클립보드에서 붙여넣기"
-              >
-                <Ionicons name="clipboard-outline" size={15} color={colors.coralDark} />
-                <Text style={styles.pasteBtnText}>클립보드에서 붙여넣기</Text>
-              </Pressable>
-            </View>
+            {/* v2.18 — `클립보드에서 붙여넣기` 버튼과 입력창 안의 클립보드 아이콘을 없앴습니다
+                (상훈 님 요청). 붙여넣기는 아이폰 키보드의 길게 눌러 붙여넣기로 합니다. */}
             <Text style={styles.helper}>
               공유할 때 복사된 문구를 통째로 붙여넣어도 돼요. (예: “성수동 소금빵 맛집 베통
               https://...”) 유튜브는 제목을, 네이버 블로그는 페이지 제목을 읽어 가게를 찾아요.
@@ -679,29 +643,22 @@ export default function PasteScreen({
           </View>
         )}
 
-        {/* 원탭 테스트 프리셋 (사진 탭에는 필요 없어 숨깁니다) */}
-        {!isPhoto && (
+        {/* v2.18 — `원탭 테스트`(샘플 링크) 영역은 지웠습니다.
+            가게명 탭의 `이렇게 찾아보세요` 추천 검색어만 남깁니다. */}
+        {isSearch && (
           <>
             <View style={styles.presetHead}>
-              <Text style={styles.sectionTitle}>{isSearch ? '이렇게 찾아보세요' : '원탭 테스트'}</Text>
-              <Text style={styles.sectionHint}>{isSearch ? '한 번 눌러 바로 검색' : '링크 없이 바로 눌러 보세요'}</Text>
+              <Text style={styles.sectionTitle}>이렇게 찾아보세요</Text>
+              <Text style={styles.sectionHint}>한 번 눌러 바로 검색</Text>
             </View>
             <View style={styles.presetRow}>
-              {isSearch
-                ? DIRECT_PRESETS.map((q) => (
-                    <Pressable key={q} style={styles.presetChip} onPress={() => runSearch(q)}>
-                      <Text style={styles.presetText} numberOfLines={1}>
-                        {q}
-                      </Text>
-                    </Pressable>
-                  ))
-                : PRESETS.map((p) => (
-                    <Pressable key={p.url} style={styles.presetChip} onPress={() => usePreset(p)}>
-                      <Text style={styles.presetText} numberOfLines={1}>
-                        {p.label}
-                      </Text>
-                    </Pressable>
-                  ))}
+              {DIRECT_PRESETS.map((q) => (
+                <Pressable key={q} style={styles.presetChip} onPress={() => runSearch(q)}>
+                  <Text style={styles.presetText} numberOfLines={1}>
+                    {q}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
           </>
         )}
@@ -950,7 +907,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     // 다크 헤더 바로 아래에서 첫 항목이 붙어 보이지 않게 살짝 띄웁니다.
     paddingTop: 12,
-    paddingBottom: 36,
+    // v2.18 — 플로팅 탭바(70px) 아래로 마지막 안내·저장 버튼이 가리지 않게 여유를 둡니다.
+    paddingBottom: 36 + tabBar.floatTop,
   },
   modeRow: {
     flexDirection: 'row',
@@ -986,28 +944,6 @@ const styles = StyleSheet.create({
   modeTextTight: {
     fontSize: 11.5,
     letterSpacing: -0.2,
-  },
-  // v2.1.1 — 명시적으로 누를 때만 클립보드를 읽는 버튼
-  pasteBtn: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 9,
-    backgroundColor: colors.coralSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
-  },
-  pasteBtnText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: colors.coralDark,
-  },
-  // v2.14 — [클립보드에서 붙여넣기] 는 릴스 링크 탭의 단독 버튼입니다.
-  linkActionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   // v2.14 — 📸 사진으로 찾기 탭: 점선 업로드 카드 (카드를 눌러도 사진 고르기가 열립니다)
   photoDrop: {

@@ -31,7 +31,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, typography } from '../theme';
+import { colors, radius, tabBar, typography } from '../theme';
 
 /** 카드가 펼쳐지는 애니메이션 길이(ms) */
 export const TOOLS_ANIM_MS = 150;
@@ -197,10 +197,11 @@ export default function MapToolsMenu({
 
 const styles = StyleSheet.create({
   // 아래 끝을 고정한 세로 스택 — 요약 알약 → (펼친 카드) → 토글 버튼
+  // v2.18 — 플로팅 탭바가 화면 아래를 덮으므로, 그 위로 올려 겹치지 않게 합니다.
   col: {
     position: 'absolute',
     left: 12,
-    bottom: 16,
+    bottom: tabBar.controlsBottom,
     alignItems: 'flex-start',
     gap: 8,
   },

@@ -37,7 +37,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, mapControls, radius, typography } from '../theme';
+import { colors, mapControls, radius, tabBar, typography } from '../theme';
 import { getCategoryColor, hexToRgba } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
 import { SEARCH_FOCUS_ZOOM, SEARCH_RESULT_PADDING } from '../utils/searchNav';
@@ -307,6 +307,55 @@ export function clusterSignature(groups) {
   return (Array.isArray(groups) ? groups : [])
     .map((group) => group.key + '@' + Math.round(group.lat * 10000) + ',' + Math.round(group.lng * 10000))
     .join(';');
+}
+
+/**
+ * v2.18 — 네이버 지도가 스스로 그리는 `NAVER` 로고를 플로팅 탭바 위로 올립니다.
+ *
+ *   로고는 지도 컨테이너 안에 `<div style="position:absolute; bottom:0; right:0">` 로
+ *   들어오기 때문에(지도 API 소유 DOM) 우리 RN 스타일로는 옮길 수 없습니다.
+ *   그래서 지도 DOM 안에서 로고를 찾아 그 감싸는 absolute 박스의 `bottom` 만 바꿉니다.
+ *   → 지도는 그대로 화면 끝까지 차고, 로고만 탭바 위로 살짝 뜨는 결이 됩니다.
+ *
+ *   px … 로고 아래에 둘 여백 (지도 컨테이너 바닥 기준)
+ */
+export function liftNaverLogo(node, px) {
+  const lift = Number(px) || 0;
+  if (!node || typeof node.querySelectorAll !== 'function') return false;
+  let moved = false;
+  const logos = node.querySelectorAll('img[alt="NAVER"]');
+  for (let i = 0; i < logos.length; i += 1) {
+    let el = logos[i];
+    for (let depth = 0; depth < 6 && el && el !== node; depth += 1) {
+      el = el.parentElement;
+      if (!el || el === node) break;
+      const inline = el.style;
+      if (inline && inline.position === 'absolute') {
+        inline.bottom = lift + 'px';
+        moved = true;
+        break;
+      }
+    }
+  }
+  return moved;
+}
+
+/**
+ * v2.18 — Leaflet 폴백 지도의 아래쪽 저작자 표시(bottomleft)도 탭바 위로 올립니다.
+ * (Leaflet 은 `.leaflet-bottom { bottom: 0 }` 컨테이너에 컨트롤을 그립니다)
+ */
+export function liftLeafletBottom(node, px) {
+  const lift = Number(px) || 0;
+  if (!node || !node.ownerDocument || typeof node.appendChild !== 'function') return false;
+  if (node.querySelector('style[data-reelpin-lift]')) return true;
+  const doc = node.ownerDocument;
+  const style = doc.createElement('style');
+  style.setAttribute('data-reelpin-lift', String(lift));
+  style.textContent =
+    '.leaflet-bottom{bottom:' + lift + 'px !important;}' +
+    '.leaflet-control-attribution{margin-bottom:0 !important;}';
+  node.appendChild(style);
+  return true;
 }
 
 // ── 네이버 지도 로더 (브라우저에서만) ─────────────────────────
@@ -633,10 +682,15 @@ function NaverMap({
           try {
             map.setSize(new nv.Size(next.w, next.h));
           } catch (e) {}
+          // v2.18 — 크기가 바뀔 때마다 로고를 플로팅 탭바 위로 다시 올립니다.
+          liftNaverLogo(node, tabBar.floatTop + 6);
         };
 
         // RNW 레이아웃이 늦게 잡히는 경우가 있어 한 번 더 크기를 알려 줍니다.
         setTimeout(applySize, 80);
+        // v2.18 — 로고 DOM 은 지도가 그려진 뒤에 들어오므로 한 번 더 잡아 줍니다.
+        setTimeout(applySize, 600);
+        liftNaverLogo(node, tabBar.floatTop + 6);
         if (typeof ResizeObserver === 'function') {
           resizeObserver = new ResizeObserver(applySize);
           resizeObserver.observe(node);
@@ -1069,6 +1123,8 @@ function LeafletMap({
         if (typeof L.control.attribution === 'function') {
           map.attributionControl.setPosition('bottomleft');
         }
+        // v2.18 — 아래쪽 저작자 표시도 플로팅 탭바 위로
+        liftLeafletBottom(node, tabBar.floatTop + 6);
 
         mapRef.current = map;
 
@@ -1524,9 +1580,10 @@ const styles = StyleSheet.create({
   },
   zoomCol: {
     position: 'absolute',
-    // '주변 500m · 지도 공유 · 내 위치'와 같은 오른쪽 끝선 (theme.mapControls)
+    // `내 위치`와 같은 오른쪽 끝선 (theme.mapControls)
     right: mapControls.rightInset,
-    // 지도 아래 끝의 NAVER 로고와 겹치지 않게 띄웁니다.
+    // v2.18 — 지도 아래 끝의 NAVER 로고·플로팅 탭바와 겹치지 않게 띄웁니다
+    //          (mapControls.zoomBottom 에 탭바 높이가 이미 더해져 있습니다).
     bottom: mapControls.zoomBottom,
     borderRadius: 10,
     overflow: 'hidden',
@@ -1549,7 +1606,8 @@ const styles = StyleSheet.create({
     left: 12,
     // v2.17 — 지도 왼쪽 하단에 도구 버튼(44) + 개수 알약(≈31) + 간격(8)이 자리 잡아,
     //         예전 bottom:56 이면 알약과 겹쳤습니다(MapToolsMenu). 그 위로 올립니다.
-    bottom: 108,
+    // v2.18 — 플로팅 탭바(floatTop 70)만큼 더 올립니다.
+    bottom: 108 + tabBar.floatTop,
     maxWidth: '74%',
   },
   noticePill: {

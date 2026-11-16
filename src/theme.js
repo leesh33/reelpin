@@ -70,6 +70,32 @@ export const spacing = {
 };
 
 /*
+ * v2.18 — 플로팅 하단 탭바 (TabBar.js)
+ *
+ * 상훈 님 요청: "하단 바 형태를 첨부한 이미지처럼 플로팅 디자인으로 바꿀 수 있니?"
+ *   · 화면 바닥에 붙은 직사각형 탭바 대신 **바닥에서 살짝 떠 있는 둥근 알약**
+ *   · 그 알약이 지도 위 왼쪽 하단 도구(🎛)·개수 알약, 오른쪽 하단
+ *     `내 위치`·`+ / -`·`NAVER` 로고를 **덮지 않도록** 아래 값만큼 위로 올립니다.
+ *
+ *   floatTop  = height + bottom ...... 탭바가 화면 아래에서 차지하는 높이 (70)
+ *   controlsBottom = floatTop + gap ... 지도 버튼들이 서는 바닥 높이 (80)
+ */
+export const tabBar = (() => {
+  const height = 58;
+  const bottom = 12; // 화면 바닥에서 뜬 간격
+  const side = 16; // 좌우 여백
+  const gap = 10; // 탭바 위 다른 버튼·카드와의 최소 간격
+  return {
+    height,
+    bottom,
+    side,
+    gap,
+    floatTop: height + bottom,
+    controlsBottom: height + bottom + gap,
+  };
+})();
+
+/*
  * 지도 우측 하단 컨트롤 정렬값 — 한 곳에서 관리합니다.
  *   · '+ / −' 확대·축소 박스(RealMapView.web.js 의 zoomCol)
  *   · '내 위치(파란 FAB) · 목록 보기' 세로 스택(MapScreen.actionCol)
@@ -82,17 +108,22 @@ export const spacing = {
  * v2.17 — `지도 공유` 를 이 스택에서 빼고 지도 **왼쪽 하단 펌찄 메뉴**(MapToolsMenu)로 옮겼습니다.
  * v2.17.1 — `주변 500m` 도 같은 왼쪽 하단 메뉴로 옮겨, 오른쪽 스택은
  *   **`목록 보기` + `내 위치 FAB`** 두 칸만 남았습니다 (actionStackHeight = 두 칸 + 간격 1개).
+ * v2.18 — `목록 보기` 는 지도 상단 분류 칩 줄의 **맨 앞 아이콘 버튼**으로 올라가 오른쪽 스택은
+ *   **`내 위치 FAB` 한 칸**만 남았습니다. 그리고 플로팅 탭바가 지도 아래 끝을 덮으므로,
+ *   모든 지도 컨트롤을 `tabBar.floatTop` 만큼 **통째로 위로** 올립니다.
  */
 export const mapControls = (() => {
   const rightInset = 12; // 세 컨트롤 공통 오른쪽 여백
-  const controlSize = 34; // '목록 보기' 높이 = '+ / −' 버튼 크기
+  const controlSize = 34; // '+ / −' 버튼 크기
   const fabSize = 46; // 파란 '내 위치' FAB
   const colGap = 8; // 세로 스택 간격
-  const zoomBottom = 26; // +/− 박스 아래 끝 — NAVER 로고 위로 12px 이상 띄움
+  // v2.18 — 플로팅 탭바(70) + 로고를 덮지 않기 위한 6px
+  const floatLift = tabBar.floatTop;
+  const zoomBottom = 26 + floatLift; // +/− 박스 아래 끝 — 탭바·NAVER 로고 위로 띄움
   const zoomBoxHeight = controlSize * 2 + 3; // 위·아래 테두리 1 + 구분선 1
   const stackGap = 9; // +/− 박스와 파란 FAB 사이 간격
-  // v2.17.1 — 목록 보기 + FAB + 칸 사이 간격 1개
-  const actionStackHeight = controlSize + fabSize + colGap;
+  // v2.18 — 내 위치 FAB 한 칸
+  const actionStackHeight = fabSize;
   const actionBottom = zoomBottom + zoomBoxHeight + stackGap;
   const panelBottom = actionBottom + actionStackHeight + colGap;
   return {
@@ -100,6 +131,7 @@ export const mapControls = (() => {
     controlSize,
     fabSize,
     colGap,
+    floatLift,
     zoomBottom,
     zoomBoxHeight,
     stackGap,
