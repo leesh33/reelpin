@@ -12,7 +12,7 @@ import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
 import MapScreen from './src/screens/MapScreen';
 import PasteScreen from './src/screens/PasteScreen';
-import ProfileScreen from './src/screens/ProfileScreen';
+import CollectionsScreen from './src/screens/CollectionsScreen';
 import TabBar from './src/components/TabBar';
 import Toast from './src/components/Toast';
 // v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
@@ -24,10 +24,12 @@ import { buildAlertFeed } from './src/utils/alertFeed';
 import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
   loadCategories,
+  loadCollections,
   loadPins,
   loadPro,
   loadRadius,
   saveCategories,
+  saveCollections,
   savePins,
   savePro,
   saveRadius,
@@ -47,6 +49,14 @@ import {
   sameCategory,
 } from './src/utils/categories';
 import { clearShareFromLocation, readShareFromLocation, buildShareUrl, canNativeShare, nativeShare, shareMessage } from './src/utils/shareMap';
+import {
+  createCollection,
+  normalizeCollections,
+  pruneCollections,
+  removeCollection,
+  toggleCollectionPin,
+  updateCollection,
+} from './src/utils/collections';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
 import {
   OAUTH_PROVIDERS,
@@ -78,6 +88,12 @@ export default function App() {
   const [categoryChange, setCategoryChange] = useState(null);
   const categoryChangeId = useRef(0);
   const categories = useMemo(() => allCategories(customCategories), [customCategories]);
+  // v2.19 — 테마·코스별 핀 묶음 '컬렉션' · 지도에 이 컬렉션만 보여 주는 필터
+  //   collectionFilterId … 지금 지도에 걸려 있는 컬렉션 id (null 이면 전체)
+  //   collectionFilter   … 지도가 쓰는 { id, name, emoji, pinIds } — 핀이 지워지면 자동으로 바뀝니다
+  const [collections, setCollections] = useState([]);
+  const [collectionFilterId, setCollectionFilterId] = useState(null);
+  const collectionsRef = useRef([]);
   // v2.0 — `?share=…` 링크로 들어온 '공유받은 맛집 지도' (아직 내 지도에 넣기 전 미리보기)
   const [sharedPins, setSharedPins] = useState([]);
   const [toast, setToast] = useState(null);
@@ -91,7 +107,6 @@ export default function App() {
   const [alertLocating, setAlertLocating] = useState(false);
   const [alertError, setAlertError] = useState('');
   const [pinFocus, setPinFocus] = useState(null);
-  const [accountFocus, setAccountFocus] = useState(0);
   const pinFocusId = useRef(0);
 
   // ── v2.16 · 헤더 🔍 검색 레이어 팝업 · ☰ 메뉴 시트 ──────────────────
@@ -101,7 +116,6 @@ export default function App() {
   //                  ({ id, mode:'search', query }) — PasteScreen 이 id 가 바뀔 때만 적용
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [categoriesFocus, setCategoriesFocus] = useState(0);
   const [pasteRequest, setPasteRequest] = useState(null);
   const pasteRequestId = useRef(0);
 
@@ -121,11 +135,12 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [storedPins, storedRadius, storedPro, storedCategories] = await Promise.all([
+      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections] = await Promise.all([
         loadPins(),
         loadRadius(),
         loadPro(),
         loadCategories(),
+        loadCollections(),
       ]);
       if (cancelled) return;
       // v1.0에서 저장된 핀에 없던 필드(placeUrl·providers)를 채워 넣습니다.
@@ -133,6 +148,7 @@ export default function App() {
       setRadius(storedRadius);
       setIsPro(storedPro);
       setCustomCategories(normalizeCustomCategories(storedCategories));
+      setCollections(normalizeCollections(storedCollections));
       setReady(true);
     })();
     return () => {
@@ -156,6 +172,23 @@ export default function App() {
   useEffect(() => {
     if (ready) saveCategories(customCategories);
   }, [customCategories, ready]);
+
+  // v2.19 — 컬렉션을 기기에 저장하고, 핀이 지워지면 컬렉션에서도 그 id 를 정리합니다.
+  useEffect(() => {
+    if (ready) saveCollections(collections);
+  }, [collections, ready]);
+
+  useEffect(() => {
+    if (ready) collectionsRef.current = collections;
+  }, [collections, ready]);
+
+  useEffect(() => {
+    if (!ready) return;
+    setCollections((prev) => {
+      const result = pruneCollections(prev, pins);
+      return result.changed ? result.collections : prev;
+    });
+  }, [pins, ready]);
 
   /**
    * v2.2 — 핀이 쓰고 있는 분류 이름은 목록에 반드시 있어야 지도 필터 칩이 사라지지 않습니다.
@@ -669,6 +702,99 @@ export default function App() {
     [showToast]
   );
 
+  // ── v2.19 · 컬렉션 (테마·코스별로 묶고, 그 묶음만 지도에서 보기·공유) ─────────
+  /** 새 컬렉션 — 성공하면 { ok, item } 을 돌려줘 화면이 상세로 들어갈 수 있게 합니다. */
+  const handleCreateCollection = useCallback(
+    (draft) => {
+      const result = createCollection(collectionsRef.current, draft);
+      if (!result.ok) return result;
+      collectionsRef.current = result.collections;
+      setCollections(result.collections);
+      showToast('컬렉션을 만들었어요 · ' + result.item.name, 'pro');
+      return result;
+    },
+    [showToast]
+  );
+
+  const handleUpdateCollection = useCallback(
+    (id, patch) => {
+      const result = updateCollection(collectionsRef.current, id, patch);
+      if (!result.ok) return result;
+      collectionsRef.current = result.collections;
+      setCollections(result.collections);
+      showToast('컬렉션을 수정했어요 · ' + result.item.name);
+      return result;
+    },
+    [showToast]
+  );
+
+  const handleDeleteCollection = useCallback(
+    (id) => {
+      const target = (collectionsRef.current || []).find((c) => c.id === id);
+      const result = removeCollection(collectionsRef.current, id);
+      if (!result.ok) return result;
+      collectionsRef.current = result.collections;
+      setCollections(result.collections);
+      if (collectionFilterId === id) setCollectionFilterId(null);
+      showToast('컬렉션을 지웠어요' + (target ? ' · ' + target.name : '') + ' · 핀은 지도에 그대로 있어요');
+      return result;
+    },
+    [collectionFilterId, showToast]
+  );
+
+  const handleToggleCollectionPin = useCallback(
+    (collectionId, pinId) => {
+      const result = toggleCollectionPin(collectionsRef.current, collectionId, pinId);
+      if (!result.ok) return result;
+      collectionsRef.current = result.collections;
+      setCollections(result.collections);
+      const target = result.collections.find((c) => c.id === collectionId);
+      showToast(
+        (result.added ? '컬렉션에 담았어요' : '컬렉션에서 뺐어요') +
+          (target ? ' · ' + target.name + ' ' + target.pinIds.length + '곳' : '')
+      );
+      return result;
+    },
+    [showToast]
+  );
+
+  /** 컬렉션 [지도에서 보기] — 지도 탭으로 옮기고 그 컬렉션의 핀만 보입니다. */
+  const showCollectionOnMap = useCallback(
+    (collection) => {
+      if (!collection || !collection.id) return;
+      setSelectedPinId(null);
+      setCollectionFilterId(collection.id);
+      setMenuOpen(false);
+      setAlertOpen(false);
+      setSearchOpen(false);
+      setTab('map');
+      const count = (collection.pinIds || []).length;
+      showToast(
+        count
+          ? collection.emoji + ' ' + collection.name + '만 보는 중 · ' + count + '곳'
+          : collection.name + '에는 아직 담긴 핀이 없어요'
+      );
+    },
+    [showToast]
+  );
+
+  const clearCollectionFilter = useCallback(() => {
+    setCollectionFilterId(null);
+  }, []);
+
+  /** 지도가 쓰는 컬렉션 필터 — 컬렉션이 지워지거나 핀이 빠지면 바로 반영됩니다. */
+  const collectionFilter = useMemo(() => {
+    if (!collectionFilterId) return null;
+    const target = (collections || []).find((c) => c.id === collectionFilterId);
+    if (!target) return null;
+    return {
+      id: target.id,
+      name: target.name,
+      emoji: target.emoji,
+      pinIds: Array.isArray(target.pinIds) ? target.pinIds : [],
+    };
+  }, [collectionFilterId, collections]);
+
   const handleStartPro = useCallback(() => {
     if (isPro) {
       showToast('이미 프로 플랜을 쓰고 있어요');
@@ -717,6 +843,17 @@ export default function App() {
   }, []);
 
   const closeAlerts = useCallback(() => setAlertOpen(false), []);
+
+  /** 핀 하나를 지도에서 열기 (알림 모음 · 🔍 검색 · 컬렉션 공통) */
+  const openPinOnMap = useCallback((pin) => {
+    if (!pin || !pin.id) return;
+    setAlertOpen(false);
+    setSearchOpen(false);
+    setMenuOpen(false);
+    setTab('map');
+    pinFocusId.current += 1;
+    setPinFocus({ id: pin.id, key: pinFocusId.current });
+  }, []);
 
   /** 알림 모음에서 장소 선택 → 지도 탭으로 이동 + 그 핀으로 지도 이동 + 상세 시트 */
   const openPinFromAlerts = useCallback((pin) => {
@@ -774,7 +911,7 @@ export default function App() {
     setTab('paste');
   }, []);
 
-  /** ☰ 메뉴의 [지도 공유] — 내 정보 탭과 같은 동작(공유 시트 또는 링크 복사) */
+  /** ☰ 메뉴의 [내 지도 공유] — 시트 안 통합 계정 카드 바로 아래 공유 카드가 부릅니다. */
   const shareMyMapFromMenu = useCallback(async () => {
     setMenuOpen(false);
     if (!pins.length) {
@@ -799,26 +936,7 @@ export default function App() {
     }
   }, [pins, showToast]);
 
-  /** 헤더의 👤 — 로그인 상태를 보여 주고, 누르면 내 정보 탭의 계정 카드로 내려갑니다. */
-  const openAccount = useCallback(() => {
-    setAlertOpen(false);
-    setSearchOpen(false);
-    setMenuOpen(false);
-    setTab('profile');
-    setAccountFocus((n) => n + 1);
-  }, []);
-
-  /** ☰ 메뉴의 [분류 관리] → 내 정보 탭의 분류 관리 카드로 */
-  const openCategories = useCallback(() => {
-    setMenuOpen(false);
-    setTab('profile');
-    setCategoriesFocus((n) => n + 1);
-  }, []);
-
   const signedIn = Boolean(cloudUser && (cloudUser.email || cloudUser.id));
-  const accountInitial =
-    (cloudUser && cloudUser.email ? cloudUser.email.trim().charAt(0).toUpperCase() : '') || '나';
-
   /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 — v2.16 `🔍 · 🔔 · ☰` */
   const headerProps = useMemo(
     () => ({
@@ -872,6 +990,8 @@ export default function App() {
               sharedPins={sharedPins}
               onAddSharedPins={handleAddSharedPins}
               onDismissShared={handleDismissShared}
+              collectionFilter={collectionFilter}
+              onClearCollectionFilter={clearCollectionFilter}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
@@ -887,36 +1007,19 @@ export default function App() {
               onToast={showToast}
             />
           </View>
-          <View style={[styles.screen, tab !== 'profile' && styles.hidden]}>
-            <ProfileScreen
-              name="이상훈"
-              handle="odol"
-              header={headerProps}
-              accountFocus={accountFocus}
-              categoriesFocus={categoriesFocus}
+          <View style={[styles.screen, tab !== 'collections' && styles.hidden]}>
+            <CollectionsScreen
               pins={pins}
-              categories={categories}
-              onAddCategory={handleAddCategory}
-              onRenameCategory={handleRenameCategory}
-              onRemoveCategory={handleRemoveCategory}
-              radiusMeters={radius}
-              onChangeRadius={handleChangeRadius}
-              isPro={isPro}
-              onStartPro={handleStartPro}
+              collections={collections}
+              header={headerProps}
+              onCreateCollection={handleCreateCollection}
+              onUpdateCollection={handleUpdateCollection}
+              onDeleteCollection={handleDeleteCollection}
+              onToggleCollectionPin={handleToggleCollectionPin}
+              onShowCollectionOnMap={showCollectionOnMap}
+              onOpenPin={openPinOnMap}
               onGoPaste={() => setTab('paste')}
               onToast={showToast}
-              cloudConfigured={cloudConfigured}
-              cloudUser={cloudUser}
-              cloudPinCount={cloudPinCount}
-              cloudBusy={cloudBusy}
-              cloudSyncing={cloudSyncing}
-              cloudMessage={cloudMessage}
-              onSignIn={handleSignIn}
-              onSignUp={handleSignUp}
-              onMagicLink={handleMagicLink}
-              onOAuth={handleOAuth}
-              onSignOut={handleSignOut}
-              onSyncNow={handleSyncNow}
             />
           </View>
         </View>
@@ -953,20 +1056,38 @@ export default function App() {
           onOpenPin={openPinFromSearch}
           onGoPasteSearch={goPasteSearch}
         />
-        {/* v2.16 — ☰ 메뉴 시트 (계정·동기화 · 분류 관리 · 지도 공유 · 저장 요약 · 버전) */}
+        {/* v2.16 — ☰ 메뉴 시트 = v2.19 에서 「내 정보」와 머지 (계정·동기화 · 설정 3행 · 저장 요약 · 지도 공유 · 버전) */}
         <MenuDrawerModal
           visible={menuOpen}
           onClose={closeMenu}
           pins={pins}
-          signedIn={signedIn}
-          accountEmail={cloudUser && cloudUser.email ? cloudUser.email : ''}
-          accountInitial={accountInitial}
+          name="이상훈"
+          handle="odol"
+          categories={categories}
           cloudConfigured={cloudConfigured}
+          cloudUser={cloudUser}
           cloudPinCount={cloudPinCount}
+          cloudBusy={cloudBusy}
           cloudSyncing={cloudSyncing}
           cloudMessage={cloudMessage}
-          onOpenAccount={openAccount}
-          onOpenCategories={openCategories}
+          radiusMeters={radius}
+          isPro={isPro}
+          onSignIn={handleSignIn}
+          onSignUp={handleSignUp}
+          onMagicLink={handleMagicLink}
+          onOAuth={handleOAuth}
+          onSignOut={handleSignOut}
+          onSyncNow={handleSyncNow}
+          onAddCategory={handleAddCategory}
+          onRenameCategory={handleRenameCategory}
+          onRemoveCategory={handleRemoveCategory}
+          onChangeRadius={handleChangeRadius}
+          onStartPro={handleStartPro}
+          onGoPaste={() => {
+            setMenuOpen(false);
+            setTab('paste');
+          }}
+          onToast={showToast}
           onShareMap={shareMyMapFromMenu}
         />
       </View>

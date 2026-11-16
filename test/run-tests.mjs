@@ -12,6 +12,7 @@
  *   npm run test:search   … 내 핀 검색 · 목록 정렬 · 픽셀 클러스터링 테스트만 (v2.5)
  *   npm run test:nav      … 검색 결과 따른 지도 이동 · 결과 목록 테스트만 (v2.6)
  *   npm run test:visit    … ✅ 가봤어요 · 📝 한줄 메모 · 🔓 10개 한도 해제 테스트만 (v2.10)
+ *   npm run test:collections … 📂 컬렉션 만들기·담기·공유·정리 테스트만 (v2.19)
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -147,6 +148,16 @@ if (!only || only === 'visit') {
     out: 'visit-memo-test.bundle.mjs',
     format: 'esm',
     alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+  });
+}
+
+if (!only || only === 'collections') {
+  // v2.19 — 📂 컬렉션: 만들기·이름 검사·핀 담기/빼기·핀 삭제 시 정리·공유 문구·지도 필터
+  failed += await runSuite({
+    name: '컬렉션 만들기·담기·공유 테스트',
+    entry: 'collections-test.mjs',
+    out: 'collections-test.bundle.mjs',
+    format: 'esm',
   });
 }
 

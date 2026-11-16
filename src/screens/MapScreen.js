@@ -82,6 +82,9 @@ export default function MapScreen({
   onMyCoords,
   focusPin,
   alertCoords,
+  // v2.19 — 컬렉션만 보기: { id, name, emoji, pinIds } · null 이면 전체
+  collectionFilter = null,
+  onClearCollectionFilter,
 }) {
   /**
    * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
@@ -117,6 +120,13 @@ export default function MapScreen({
   const searchActiveRef = useRef(false);
   const navKeyRef = useRef('');
 
+  // v2.19 — 컬렉션만 보기: 지금 걸린 컬렉션과 그 핀 id 집합 (아래 필터·효과가 함께 씁니다)
+  const collectionActive = Boolean(collectionFilter && collectionFilter.id);
+  const collectionIdSet = useMemo(
+    () => new Set(collectionActive ? collectionFilter.pinIds || [] : []),
+    [collectionActive, collectionFilter]
+  );
+
   /**
    * v2.2 — 분류를 이름 바꾸거나 지우면 지도 필터도 함께 정리합니다.
    *   · 이름을 바꿈 → 그 분류를 보고 있었다면 새 이름을 계속 봅니다
@@ -136,6 +146,33 @@ export default function MapScreen({
       return current;
     });
   }, [categories, lastCategoryChange]);
+
+  /**
+   * v2.19 — 컬렉션 [지도에서 보기] 로 들어오면:
+   *   · 분류·방문·검색 필터를 '전체'로 되돌리고
+   *   · 지도를 그 컬렉션의 핀들에 바로 맞춥니다(한눈에 들어오게)
+   * 같은 컬렉션에 머무는 동안(핀을 담고 빼는 중)에는 다시 움직이지 않습니다.
+   */
+  const collectionKeyRef = useRef(null);
+  useEffect(() => {
+    const key = collectionActive ? collectionFilter.id : '';
+    if (collectionKeyRef.current === key) return;
+    collectionKeyRef.current = key;
+    if (!collectionActive) return;
+    setFilter('전체');
+    setVisitFilter(VISIT_ALL);
+    setQuery('');
+    setView('map');
+    setNearbyOpen(false);
+    const coords = mapCoordsOf((pins || []).filter((p) => p && collectionIdSet.has(String(p.id))));
+    if (coords.length >= 2) {
+      setFit(coords);
+      setFitKey((k) => k + 1);
+    } else if (coords.length === 1) {
+      setFocus({ lat: coords[0].lat, lng: coords[0].lng });
+      setFocusKey((k) => k + 1);
+    }
+  }, [collectionActive, collectionFilter, collectionIdSet, pins]);
 
   // ── v1.5 실제 위치 ────────────────────────────────────────
   const [myCoords, setMyCoords] = useState(null);
@@ -174,9 +211,14 @@ export default function MapScreen({
     if (typeof toastRef.current === 'function') toastRef.current(message);
   }, []);
 
-  // 분류 필터 **AND** 검색어 — 지도에 꽂히는 핀과 목록이 같은 목록을 씁니다.
+  //분류 필터 **AND** 검색어 — 지도에 꽂히는 핀과 목록이 같은 목록을 씁니다.
   // v2.10 — 그 위에 ✅ 방문 상태까지 AND. 칩 숫자는 방문 필터를 빼고 세야 맞습니다.
-  const baseFiltered = useMemo(() => filterAndSearchPins(pins, { filter, query }), [pins, filter, query]);
+  // v2.19 — 컬렉션을 보고 있으면 그 컬렉션에 담긴 핀만 남깁니다(상단 📂칩).
+  const baseFiltered = useMemo(() => {
+    const list = filterAndSearchPins(pins, { filter, query });
+    if (!collectionActive) return list;
+    return list.filter((p) => p && collectionIdSet.has(String(p.id)));
+  }, [pins, filter, query, collectionActive, collectionIdSet]);
   const visitCounts = useMemo(() => countByVisit(baseFiltered), [baseFiltered]);
   const filtered = useMemo(() => filterByVisit(baseFiltered, visitFilter), [baseFiltered, visitFilter]);
   // v2.0 — 공유받은 지도는 '미리보기'로 지도에 함께 띄우고, 상세 시트는 읽기 전용으로 엽니다.
@@ -693,6 +735,28 @@ export default function MapScreen({
               onToggleView={toggleView}
             />
           </View>
+          {/* v2.19 — 컬렉션만 보기 중이면 분류 칩 아래에 `📂 컬렉션명 N곳 ×` 해제 칩 */}
+          {collectionActive && (
+            <View style={styles.collectionChipWrap} pointerEvents="box-none">
+              <View style={styles.collectionChip} testID="map-collection-chip">
+                <Text style={styles.collectionChipEmoji}>{collectionFilter.emoji || '📂'}</Text>
+                <Text style={styles.collectionChipText} numberOfLines={1}>
+                  {collectionFilter.name}
+                </Text>
+                <Text style={styles.collectionChipCount}>{(collectionFilter.pinIds || []).length + '곳'}</Text>
+                <Pressable
+                  style={styles.collectionChipClose}
+                  onPress={() => (typeof onClearCollectionFilter === 'function' ? onClearCollectionFilter() : null)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="컬렉션 필터 해제"
+                  testID="map-collection-chip-clear"
+                >
+                  <Ionicons name="close" size={13} color={colors.white} />
+                </Pressable>
+              </View>
+            </View>
+          )}
           {previewPins.length > 0 && (
             <View style={styles.sharedBanner}>
               <View style={styles.sharedIcon}>
@@ -1043,6 +1107,51 @@ const styles = StyleSheet.create({
   chipWrap: {
     // v2.16 — 헤더 바로 아래(오버레이 top:8)에 붙는 필터 칩 바
     marginTop: 0,
+  },
+  // v2.19 — 컬렉션만 보기 칩 (분류 칩 줄 바로 아래 · 다크 필) — × 로 해제
+  collectionChipWrap: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingTop: 6,
+  },
+  collectionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    maxWidth: '100%',
+    paddingLeft: 11,
+    paddingRight: 7,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.charcoal,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  collectionChipEmoji: {
+    fontSize: 12,
+  },
+  collectionChipText: {
+    maxWidth: 180,
+    color: colors.white,
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: -0.2,
+  },
+  collectionChipCount: {
+    color: '#C9D3E4',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  collectionChipClose: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // v2.17 — 펌찄 메뉴가 열렸을 때 지도(메뉴 밖)를 누르면 접기 위한 투명 막.
   //          지도·네이버 로고를 덮지만, 이 막 위에 왼쪽 하단 도구·오른쪽 버튼 스택이 그려집니다.

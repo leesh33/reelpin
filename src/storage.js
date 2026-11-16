@@ -1,11 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SEED_PINS } from './data/seedPins';
+import { normalizeCollections } from './utils/collections';
 
 const PINS_KEY = 'reelpin.pins.v1';
 const RADIUS_KEY = 'reelpin.radius.v1';
 const PRO_KEY = 'reelpin.pro.v1';
 // v2.2 — 사용자가 만든 커스텀 분류 이름 목록 (기본 3개는 여기에 저장하지 않습니다)
 const CATEGORIES_KEY = 'reelpin.categories.v1';
+// v2.19 — 테마·코스별 핀 묶음 '컬렉션' (웹은 localStorage, 앱은 AsyncStorage — 같은 코드)
+const COLLECTIONS_KEY = 'reelpin.collections.v1';
 
 /** 저장된 핀 목록을 읽습니다. 처음 실행이면 샘플 4개로 시작합니다. */
 export async function loadPins() {
@@ -88,6 +91,31 @@ export async function saveCategories(categories) {
       (name) => typeof name === 'string' && name.trim()
     );
     await AsyncStorage.setItem(CATEGORIES_KEY, JSON.stringify(list));
+  } catch (e) {
+    // 저장 실패는 조용히 무시하고 화면 상태를 유지합니다.
+  }
+}
+
+/**
+ * v2.19 — 컬렉션 목록을 읽습니다.
+ *   · 처음 실행·저장값 없음 → 빈 목록(샘플을 만들지 않습니다 — 상훈 님이 직접 만드는 것이 자연스러움)
+ *   · 깨진 값 → normalizeCollections 가 이름 없는 항목을 조용히 걸러 냅니다
+ */
+export async function loadCollections() {
+  try {
+    const raw = await AsyncStorage.getItem(COLLECTIONS_KEY);
+    if (raw == null) return [];
+    const parsed = JSON.parse(raw);
+    return normalizeCollections(parsed);
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function saveCollections(collections) {
+  try {
+    const list = normalizeCollections(collections);
+    await AsyncStorage.setItem(COLLECTIONS_KEY, JSON.stringify(list));
   } catch (e) {
     // 저장 실패는 조용히 무시하고 화면 상태를 유지합니다.
   }

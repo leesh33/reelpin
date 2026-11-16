@@ -1,77 +1,82 @@
 /**
- * src/components/MenuDrawerModal.js — v2.16
+ * src/components/MenuDrawerModal.js — v2.19.0 ☰ 메뉴 = 「내 정보」 통합 시트
  * ─────────────────────────────────────────────────────────────
- * ☰ (짝대기 3개) → 메뉴 시트.
+ * 상훈 님 요청:
+ *   "내정보는 헤더 우측 상단의 짝대기 3개와 머지함."
  *
- * 상훈 님 요청: "우측 상단에는 돋보기 버튼 알림 짝대기 3개 … 기존 우측의 👤 로그인 알약/아바타는
- *               ☰ 메뉴 안으로 깔끔하게 통합" — 그래서 헤더 오른쪽은 `🔍 · 🔔 · ☰` 세 아이콘만 남고,
- *               계정(로그인/동기화)은 이 메뉴 맨 위 카드로 옮겼습니다.
+ * v2.16 의 ☰ 메뉴(계정 카드 · 분류 관리 · 지도 공유 · 저장 요약)와
+ * v2.18 의 「내 정보」 탭(통합 계정·동기화 카드 · 설정 3행 · 서브 페이지 · 프로 안내)을
+ * **하나의 시트**로 합쳤습니다. 하단 탭에서 `내 정보` 는 없어졌습니다.
  *
- *   · 맨 위 : 계정 카드 — 비로그인 `[로그인 / 계정 연결]` → 내 정보 탭 계정 카드로
- *                            로그인   이메일 · 클라우드 동기화 상태(켜짐/N개)
- *   · 바로가기 : 분류 관리(내 정보) · 지도 공유
- *   · 요약     : 저장된 핀 N곳 · 가본 곳 M곳
- *   · 맨 아래 : 릴스핀 v2.18.0
+ *   · 머리  : 다크 차콜 바 — ☰ 아이콘 + `내 정보` / `계정 · 동기화 · 설정` + ✕
+ *             서브 페이지에 들어가면 같은 자리가 `‹ 뒤로` + 서브 제목으로 바뀝니다
+ *   · 본문  : ProfileScreen(panel) — 통합 계정·클라우드 동기화 카드,
+ *             설정 3행(`분류 관리` · `지오펜스 알림 반경` · `앱 정보`) → 서브 페이지,
+ *             저장 요약(N / 가본 곳 / 안 가본 곳), 내 지도 공유, 프로 안내
+ *   · 발끝  : 릴스핀 v2.19.0
  *
- * 알림 모음(AlertInbox)과 같은 다크 차콜 헤더 + 흰 본문 시트 규칙을 씁니다.
+ * 서브 페이지는 **시트 안에서** 열리고 `‹ 뒤로` 로 원래 목록으로 돌아옵니다.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, sheetShadow, typography } from '../theme';
+import ProfileScreen, {
+  APP_INFO_VERSION,
+  AppInfoCard,
+  CategoryManager,
+  RadiusSetting,
+  SUB_PAGES,
+} from '../screens/ProfileScreen';
+import { colors, radius, sheetShadow } from '../theme';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.18.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.19.0';
+
+/** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
+export const MENU_SUB_KEYS = ['categories', 'radius', 'about'];
 
 export default function MenuDrawerModal({
   visible,
   onClose,
   pins = [],
-  signedIn = false,
-  accountEmail = '',
-  accountInitial = '',
+  name = '이상훈',
+  handle = 'odol',
+  categories = [],
   cloudConfigured = false,
   cloudPinCount = 0,
   cloudSyncing = false,
   cloudMessage = '',
-  onOpenAccount,
-  onOpenCategories,
+  cloudUser = null,
+  cloudBusy = false,
+  radiusMeters = 300,
+  isPro = false,
+  onSignIn,
+  onSignUp,
+  onMagicLink,
+  onOAuth,
+  onSignOut,
+  onSyncNow,
+  onAddCategory,
+  onRenameCategory,
+  onRemoveCategory,
+  onChangeRadius,
+  onStartPro,
+  onGoPaste,
+  onToast,
   onShareMap,
+  // 검사·딥링크용 — 열자마자 서브 페이지를 보여 줍니다(기본 null)
+  initialSub = null,
 }) {
+  // null | 'categories' | 'radius' | 'about'
+  const [sub, setSub] = useState(() => (SUB_PAGES[initialSub] ? initialSub : null));
+
+  // 시트를 닫으면 다음에 열 때는 항상 목록(내 정보)부터 보여 줍니다.
+  useEffect(() => {
+    if (!visible) setSub(null);
+  }, [visible]);
+
   if (!visible) return null;
 
-  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
-  const savedCount = list.length;
-  const visitedCount = list.filter((pin) => pin.visited === true).length;
-  const todoCount = Math.max(0, savedCount - visitedCount);
-  const initial = accountInitial || (accountEmail ? accountEmail.trim().charAt(0).toUpperCase() : '') || '나';
-  const syncText = cloudSyncing
-    ? '클라우드와 맞추는 중…'
-    : cloudMessage
-    ? cloudMessage
-    : signedIn
-    ? '클라우드 동기화 켜짐 · ' + (cloudPinCount || savedCount) + '개 저장됨'
-    : cloudConfigured
-    ? '로그인하면 다른 기기와도 같은 지도'
-    : '지금은 기기 안에만 저장돼요';
-
-  const rows = [
-    {
-      key: 'categories',
-      icon: 'pricetags-outline',
-      label: '분류 관리',
-      sub: '분류 만들기 · 이름 바꾸기 · 지우기',
-      onPress: onOpenCategories,
-      testID: 'menu-categories',
-    },
-    {
-      key: 'share',
-      icon: 'share-social-outline',
-      label: '지도 공유',
-      sub: savedCount ? savedCount + '곳을 담은 링크 하나로 건네주기' : '공유할 핀이 아직 없어요',
-      onPress: onShareMap,
-      testID: 'menu-share',
-    },
-  ];
+  const subPage = sub && SUB_PAGES[sub] ? SUB_PAGES[sub] : null;
 
   return (
     <View style={styles.overlay} testID="menu-drawer-overlay">
@@ -83,15 +88,33 @@ export default function MenuDrawerModal({
       />
       <View style={styles.sheet} testID="menu-drawer">
         <View style={styles.sheetHead}>
-          <View style={styles.headIcon}>
-            <Ionicons name="menu" size={16} color={colors.white} />
-          </View>
+          {subPage ? (
+            <Pressable
+              style={styles.backBtn}
+              onPress={() => setSub(null)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="뒤로"
+              testID="menu-sub-back"
+            >
+              <Ionicons name="chevron-back" size={18} color={colors.white} />
+              <Text style={styles.backText}>뒤로</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.headIcon}>
+              <Ionicons name="menu" size={16} color={colors.white} />
+            </View>
+          )}
+
           <View style={styles.headText}>
-            <Text style={styles.title}>메뉴</Text>
+            <Text style={styles.title} numberOfLines={1} testID="menu-title">
+              {subPage ? subPage.title : '내 정보'}
+            </Text>
             <Text style={styles.sub} numberOfLines={1}>
-              릴스핀 · 저장한 릴스 맛집 지도
+              {subPage ? '☰ 메뉴 · ' + (sub === 'categories' ? '분류 만들기 · 이름 바꾸기 · 지우기' : sub === 'radius' ? '저장한 곳에 가까워지면 알려드려요' : '버전 · 번들 ID · 데이터 저장') : '계정 · 동기화 · 설정'}
             </Text>
           </View>
+
           <Pressable
             style={styles.closeBtn}
             onPress={onClose}
@@ -104,103 +127,85 @@ export default function MenuDrawerModal({
           </Pressable>
         </View>
 
-        <ScrollView
-          style={styles.body}
-          contentContainerStyle={styles.bodyContent}
-          showsVerticalScrollIndicator={false}
-          testID="menu-drawer-scroll"
-        >
-          {/* 계정 / 동기화 상태 카드 */}
-          {signedIn ? (
-            <View style={styles.accountCard} testID="menu-account-card">
-              <View style={[styles.avatar, styles.avatarOn]}>
-                <Text style={styles.avatarText}>{initial}</Text>
-              </View>
-              <View style={styles.accountText}>
-                <Text style={styles.accountEmail} numberOfLines={1}>
-                  {accountEmail || '로그인됨'}
-                </Text>
-                <Text style={styles.accountSub} numberOfLines={2}>
-                  {syncText}
-                </Text>
-              </View>
-              <Pressable
-                style={styles.accountBtn}
-                onPress={onOpenAccount}
-                accessibilityRole="button"
-                accessibilityLabel="계정 설정 · 내 정보로 이동"
-                testID="menu-account-open"
-              >
-                <Text style={styles.accountBtnText}>설정</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              style={styles.accountCard}
-              onPress={onOpenAccount}
-              accessibilityRole="button"
-              accessibilityLabel="로그인 / 계정 연결"
-              testID="menu-account-card"
-            >
-              <View style={styles.avatar}>
-                <Ionicons name="person-outline" size={16} color={colors.textSub} />
-              </View>
-              <View style={styles.accountText}>
-                <Text style={styles.accountEmail}>로그인 / 계정 연결</Text>
-                <Text style={styles.accountSub} numberOfLines={2}>
-                  {syncText}
-                </Text>
-              </View>
-              <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
-            </Pressable>
-          )}
+        {sub === 'categories' ? (
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.subBody}
+            showsVerticalScrollIndicator={false}
+            testID="menu-sub-categories"
+          >
+            <CategoryManager
+              hideTitle
+              categories={categories}
+              pins={pins}
+              onAddCategory={onAddCategory}
+              onRenameCategory={onRenameCategory}
+              onRemoveCategory={onRemoveCategory}
+              onToast={onToast}
+            />
+          </ScrollView>
+        ) : null}
 
-          {/* 바로가기 */}
-          <View style={styles.rowGroup}>
-            {rows.map((row, index) => (
-              <Pressable
-                key={row.key}
-                style={[styles.row, index === 0 && styles.rowFirst]}
-                onPress={row.onPress}
-                accessibilityRole="button"
-                accessibilityLabel={row.label}
-                testID={row.testID}
-              >
-                <View style={styles.rowIcon}>
-                  <Ionicons name={row.icon} size={15} color={colors.coralDark} />
-                </View>
-                <View style={styles.rowText}>
-                  <Text style={styles.rowLabel}>{row.label}</Text>
-                  <Text style={styles.rowSub} numberOfLines={1}>
-                    {row.sub}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
-              </Pressable>
-            ))}
-          </View>
+        {sub === 'radius' ? (
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.subBody}
+            showsVerticalScrollIndicator={false}
+            testID="menu-sub-radius"
+          >
+            <RadiusSetting radiusMeters={radiusMeters} onChangeRadius={onChangeRadius} />
+          </ScrollView>
+        ) : null}
 
-          {/* 저장 요약 */}
-          <View style={styles.summary} testID="menu-summary">
-            <View style={styles.summaryCell}>
-              <Text style={styles.summaryValue}>{savedCount}</Text>
-              <Text style={styles.summaryLabel}>저장된 핀</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryCell}>
-              <Text style={[styles.summaryValue, styles.summaryVisited]}>{visitedCount}</Text>
-              <Text style={styles.summaryLabel}>가본 곳</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryCell}>
-              <Text style={styles.summaryValue}>{todoCount}</Text>
-              <Text style={styles.summaryLabel}>안 가본 곳</Text>
-            </View>
+        {sub === 'about' ? (
+          <ScrollView
+            style={styles.body}
+            contentContainerStyle={styles.subBody}
+            showsVerticalScrollIndicator={false}
+            testID="menu-sub-about"
+          >
+            <AppInfoCard cloudUser={cloudUser} />
+          </ScrollView>
+        ) : null}
+
+        {!subPage ? (
+          <View style={styles.body} testID="menu-profile-body">
+            <ProfileScreen
+              panel
+              name={name}
+              handle={handle}
+              pins={pins}
+              categories={categories}
+              onAddCategory={onAddCategory}
+              onRenameCategory={onRenameCategory}
+              onRemoveCategory={onRemoveCategory}
+              radiusMeters={radiusMeters}
+              onChangeRadius={onChangeRadius}
+              isPro={isPro}
+              onStartPro={onStartPro}
+              onGoPaste={onGoPaste}
+              onToast={onToast}
+              cloudConfigured={cloudConfigured}
+              cloudUser={cloudUser}
+              cloudPinCount={cloudPinCount}
+              cloudBusy={cloudBusy}
+              cloudSyncing={cloudSyncing}
+              cloudMessage={cloudMessage}
+              onSignIn={onSignIn}
+              onSignUp={onSignUp}
+              onMagicLink={onMagicLink}
+              onOAuth={onOAuth}
+              onSignOut={onSignOut}
+              onSyncNow={onSyncNow}
+              onOpenSub={setSub}
+              onShareMap={onShareMap}
+            />
           </View>
-        </ScrollView>
+        ) : null}
 
         <Text style={styles.version} testID="menu-version">
           {APP_VERSION_LABEL}
+          {APP_INFO_VERSION === APP_VERSION_LABEL ? '' : ' · ' + APP_INFO_VERSION}
         </Text>
       </View>
     </View>
@@ -218,11 +223,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15,23,42,0.55)',
   },
   sheet: {
+    height: '86%',
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
-    maxHeight: '82%',
-    paddingBottom: 16,
+    overflow: 'hidden',
     ...sheetShadow,
   },
   sheetHead: {
@@ -230,8 +235,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 9,
     backgroundColor: colors.charcoal,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 13,
@@ -243,6 +246,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.coral,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  backBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 1,
+    minWidth: 56,
+    marginLeft: -4,
+  },
+  backText: {
+    color: colors.white,
+    fontSize: 13.5,
+    fontWeight: '800',
   },
   headText: {
     flex: 1,
@@ -269,148 +284,21 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   body: {
-    flexGrow: 0,
+    flex: 1,
   },
-  bodyContent: {
+  subBody: {
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 6,
-  },
-  accountCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: radius.lg,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  avatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarOn: {
-    backgroundColor: colors.coral,
-    borderColor: colors.coral,
-  },
-  avatarText: {
-    color: colors.white,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  accountText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  accountEmail: {
-    ...typography.body,
-    fontSize: 13.5,
-    fontWeight: '800',
-  },
-  accountSub: {
-    ...typography.tiny,
-    fontSize: 10.5,
-    lineHeight: 14,
-    marginTop: 2,
-  },
-  accountBtn: {
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: colors.charcoal,
-  },
-  accountBtnText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  rowGroup: {
-    marginTop: 12,
-    borderRadius: radius.lg,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.line,
-    overflow: 'hidden',
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.lineSoft,
-  },
-  rowFirst: {
-    borderTopWidth: 0,
-  },
-  rowIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
-    backgroundColor: colors.coralSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rowText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  rowLabel: {
-    ...typography.body,
-    fontSize: 13.5,
-    fontWeight: '800',
-  },
-  rowSub: {
-    ...typography.tiny,
-    fontSize: 10.5,
-    marginTop: 1,
-  },
-  summary: {
-    marginTop: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderRadius: radius.lg,
-    backgroundColor: colors.bg,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  summaryCell: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 2,
-  },
-  summaryDivider: {
-    width: 1,
-    height: 26,
-    backgroundColor: colors.line,
-  },
-  summaryValue: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.text,
-    letterSpacing: -0.4,
-  },
-  summaryVisited: {
-    color: colors.visit,
-  },
-  summaryLabel: {
-    ...typography.tiny,
-    fontSize: 10,
+    paddingBottom: 28,
   },
   version: {
-    ...typography.tiny,
     fontSize: 10,
+    fontWeight: '600',
+    color: colors.textMuted,
     textAlign: 'center',
-    paddingTop: 8,
+    paddingVertical: 8,
+    backgroundColor: colors.card,
+    borderTopWidth: 1,
+    borderTopColor: colors.lineSoft,
   },
 });

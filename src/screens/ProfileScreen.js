@@ -3,7 +3,6 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
-import AppHeader from '../components/AppHeader';
 import { OAUTH_PROVIDERS } from '../services/cloudSync';
 import { SUPABASE_SETUP_HINT } from '../services/supabase';
 import {
@@ -268,7 +267,7 @@ function AccountCard({
  *   · 커스텀 분류는 [수정] → 이름 입력 → [저장] / [삭제] → 한 번 더 확인 → 핀을 맛집으로 옮김
  *   · 이름 검사·핀 일괄 반영은 상위(App)의 핸들러가 하고, 여기서는 돌려받은 안내를 그대로 보여 줍니다
  */
-function CategoryManager({
+export function CategoryManager({
   categories,
   pins,
   onAddCategory,
@@ -478,17 +477,17 @@ function CategoryManager({
 // ── v2.18 — 내 정보 화면의 설정 목록·서브 페이지 ────────────────────────────
 //   상훈 님 요청: "분류관리는 별도의 페이지로 / 지오펜스 알림 반경 설정도 별도의 페이지로 /
 //                 앱버전 번들ID 영역도 별도의 페이지로 들어가서 설정할 수 있게 해줘"
-const SUB_PAGES = {
+export const SUB_PAGES = {
   categories: { title: '분류 관리', icon: 'pricetags-outline' },
   radius: { title: '지오펜스 알림 반경', icon: 'navigate-circle-outline' },
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.18.0';
+export const APP_INFO_VERSION = '릴스핀 v2.19.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
-function SettingsRow({ icon, title, sub, onPress, testID }) {
+export function SettingsRow({ icon, title, sub, onPress, testID }) {
   return (
     <Pressable
       style={({ pressed }) => [styles.settingRow, pressed && styles.settingRowPressed]}
@@ -514,7 +513,7 @@ function SettingsRow({ icon, title, sub, onPress, testID }) {
 }
 
 /** 지오펜스 알림 반경 — 서브 페이지 본문 (기존 세그먼트 그대로) */
-function RadiusSetting({ radiusMeters, onChangeRadius }) {
+export function RadiusSetting({ radiusMeters, onChangeRadius }) {
   return (
     <View style={styles.card} testID="radius-setting">
       <Text style={styles.cardTitle}>알림 반경</Text>
@@ -550,7 +549,7 @@ function RadiusSetting({ radiusMeters, onChangeRadius }) {
 }
 
 /** 앱 정보 — 서브 페이지 본문 (버전 · 번들 ID · 데이터 저장 위치) */
-function AppInfoCard({ cloudUser }) {
+export function AppInfoCard({ cloudUser }) {
   const cloud = !!(cloudUser && (cloudUser.email || cloudUser.id));
   return (
     <View style={styles.infoCard} testID="app-info-card">
@@ -605,11 +604,26 @@ export default function ProfileScreen({
   categoriesFocus,
   // v2.18 — 서브 페이지를 바로 열어 두는 시작값 (검사·딥링크용. 기본 null)
   initialSub = null,
+  // ── v2.19 — 「내 정보」 탭이 없어지고 헤더 ☰ 메뉴 시트에 머지되었습니다 ──
+  //   panel     : ☰ 시트 본문으로 들어갈 때 true — 자체 상단 헤더 없이 내용만
+  //   onOpenSub : 설정 3행을 누를 때 상위(☰ 시트)가 서브 페이지를 열도록 알립니다
+  //               (없으면 예전처럼 이 컴포넌트 안에서 서브 페이지를 엽니다)
+  panel = false,
+  onOpenSub = null,
+  onShareMap = null,
 }) {
   const [copied, setCopied] = useState(false);
   // v2.18 — 설정 서브 페이지: null | 'categories' | 'radius' | 'about'
   const [sub, setSub] = useState(() => (SUB_PAGES[initialSub] ? initialSub : null));
   const closeSub = () => setSub(null);
+  /** 설정 행 → 서브 페이지. ☰ 시트 안(panel)에서는 시트가 대신 열어 줍니다. */
+  const openSub = (key) => {
+    if (typeof onOpenSub === 'function') {
+      onOpenSub(key);
+      return;
+    }
+    setSub(key);
+  };
   const count = pins.length;
   /**
    * v2.15 — 헤더의 👤(로그인/계정) 아이콘을 누르면 '내 정보' 탭의 계정 카드로 바로 내려갑니다.
@@ -653,6 +667,11 @@ export default function ProfileScreen({
       onToast('공유할 핀이 아직 없어요');
       return;
     }
+    // ☰ 시트가 공유를 직접 처리할 때는 그쪽으로 넘깁니다(같은 동작).
+    if (typeof onShareMap === 'function') {
+      onShareMap();
+      return;
+    }
     // v2.0 — 핀을 압축·Base64URL 로 담은 `?share=` 링크 (서버 DB 없이 동작)
     const url = buildShareUrl(pins);
     const text = shareMessage(pins);
@@ -675,15 +694,12 @@ export default function ProfileScreen({
   };
 
   return (
-    <View style={styles.root}>
-      {/* v2.15 — 다른 탭과 같은 공통 다크 헤더. 예전의 큰 '내 정보' 타이틀 줄은
-          헤더 뱃지(`내 정보`)와 겹치지 않게 없앴습니다. */}
-      <AppHeader badge="내 정보" {...header} />
-
+    <View style={[styles.root, panel && styles.rootPanel]} testID={panel ? 'profile-panel' : 'profile-screen'}>
       <ScrollView
         ref={scrollRef}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, panel && styles.contentPanel]}
         showsVerticalScrollIndicator={false}
+        testID="profile-scroll"
       >
         {/* ── v2.18 통합 계정 카드 ────────────────────────────────────────
             상훈 님 요청: "상단에 이름 영역과 맨 하단에 클라우드 동기화 & 로그아웃 영역을
@@ -742,7 +758,7 @@ export default function ProfileScreen({
             icon="pricetags-outline"
             title="분류 관리"
             sub={allCategories(categories).length + '개 분류 · 만들기 · 이름 바꾸기 · 지우기'}
-            onPress={() => setSub('categories')}
+            onPress={() => openSub('categories')}
             testID="profile-row-categories"
           />
           <View style={styles.rowDivider} />
@@ -750,7 +766,7 @@ export default function ProfileScreen({
             icon="navigate-circle-outline"
             title="지오펜스 알림 반경"
             sub={'지금 반경 ' + (radiusMeters >= 1000 ? '1km' : radiusMeters + 'm') + ' · 저장한 곳에 가까워지면 알림'}
-            onPress={() => setSub('radius')}
+            onPress={() => openSub('radius')}
             testID="profile-row-radius"
           />
           <View style={styles.rowDivider} />
@@ -758,37 +774,39 @@ export default function ProfileScreen({
             icon="information-circle-outline"
             title="앱 정보"
             sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
-            onPress={() => setSub('about')}
+            onPress={() => openSub('about')}
             testID="profile-row-about"
           />
         </View>
 
-        {/* 저장한 핀 카운터 — v2.10: 개수 한도 없이 'N곳 저장'과 방문 현황만 깔끔하게 */}
-        <View style={styles.card}>
+        {/* ── v2.19 저장 요약 — 예전 ☰ 메뉴의 요약을 이 카드로 가져왔습니다 ───── */}
+        <View style={styles.card} testID="profile-summary">
           <View style={styles.cardHead}>
             <Text style={styles.cardTitle}>저장한 장소</Text>
-            <Pressable onPress={onGoPaste} hitSlop={8}>
+            <Pressable onPress={onGoPaste} hitSlop={8} accessibilityRole="button" accessibilityLabel="핀 추가">
               <Text style={styles.linkText}>+ 핀 추가</Text>
             </Pressable>
           </View>
-          <View style={styles.counterRow}>
-            <Text style={styles.counterValue}>{count}</Text>
-            <Text style={styles.counterLimit}>곳</Text>
-            <View style={styles.visitPill}>
-              <Ionicons name="checkmark-circle" size={12} color={colors.visit} />
-              <Text style={styles.visitPillText}>{'가봤어요 ' + visitedCount}</Text>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryCell}>
+              <Text style={styles.summaryValue}>{count}</Text>
+              <Text style={styles.summaryLabel}>저장된 핀</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryCell}>
+              <Text style={[styles.summaryValue, { color: colors.visit }]}>{visitedCount}</Text>
+              <Text style={styles.summaryLabel}>가본 곳</Text>
+            </View>
+            <View style={styles.summaryDivider} />
+            <View style={styles.summaryCell}>
+              <Text style={styles.summaryValue}>{Math.max(0, count - visitedCount)}</Text>
+              <Text style={styles.summaryLabel}>안 가본 곳</Text>
             </View>
           </View>
-          <Text style={styles.cardHint}>
-            {'개수 제한 없이 저장할 수 있어요. ' +
-              (visitedCount > 0
-                ? '가본 곳 ' + visitedCount + '곳 · 안 가본 곳 ' + (count - visitedCount) + '곳'
-                : '다녀온 곳은 상세에서 [가봤어요]를 눌러 표시해 두세요.')}
-          </Text>
         </View>
 
         {/* 지도 공유 */}
-        <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
+        <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button" testID="menu-share">
           <View style={styles.shareIcon}>
             <Ionicons name={copied ? 'checkmark' : 'share-social'} size={18} color={colors.coral} />
           </View>
@@ -833,8 +851,9 @@ export default function ProfileScreen({
       </ScrollView>
 
       {/* ── v2.18 서브 페이지 (분류 관리 · 지오펜스 반경 · 앱 정보) ──────────
-          행을 누르면 화면을 덮는 별도 페이지가 열리고, 위 `‹ 뒤로` 로 돌아옵니다. */}
-      {sub ? (
+          v2.19 — ☰ 시트 안(panel)에서는 시트의 헤더가 서브 페이지 제목·뒤로를 맡습니다.
+          (그래서 panel 일 때는 여기서 그리지 않습니다) */}
+      {sub && !panel ? (
         <View style={styles.subLayer} testID={'profile-sub-' + sub}>
           <View style={styles.subHeader}>
             <Pressable
@@ -881,6 +900,27 @@ export default function ProfileScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  // v2.19 — ☰ 시트 본문 모드: 틀은 시트가 잡고, 여기는 내용만.
+  rootPanel: { backgroundColor: colors.card },
+  contentPanel: {
+    backgroundColor: colors.bg,
+    paddingBottom: 28,
+  },
+  // v2.19 — 저장 요약 (예전 ☰ 메뉴의 요약 카드)
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  summaryCell: { flex: 1, alignItems: 'center', gap: 2 },
+  summaryDivider: { width: 1, height: 26, backgroundColor: colors.line },
+  summaryValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.4,
+  },
+  summaryLabel: { ...typography.tiny, fontSize: 10 },
   headerBadge: {
     backgroundColor: colors.coralSoft,
     paddingHorizontal: 9,
