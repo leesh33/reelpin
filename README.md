@@ -1,9 +1,10 @@
-# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.20.0
+# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.20.1
 
 > **브랜드 표기** **릴스핀 · Reelspin** 으로 통일 (앱 로고·문서·패키지 설명). `reelpin.vercel.app`·`reelpin://`·`com.odol.reelpin`·`reelpin.*` 저장 키 같은 **기술 식별자는 그대로** 둡니다 (로그인·데이터 유지).
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · **Supabase(로그인·클라우드 동기화)** · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v2.20.1 (2026-11-17)** **✅ 핀 위 초록 체크 배지 제거 · 로그아웃은 `게스트` · Apple 로그인 `준비 중`** — 상훈 님 요청 세 가지를 그대로 반영했습니다. **①** 지도에서 `가봤어요` 핀의 **동그라미 오른쪽 위 초록 원형 `✓` 배지**를 없애고, **아래 가게 이름 라벨의 초록 글씨 · 초록 테두리 · `✓ `** 만 남겼습니다(웹 네이버지도·Leaflet·네이티브 도식 지도 모두). **②** 로그아웃 상태인데 「내 정보」 상단에 `이상훈 / @odol` 이 뜨던 문제 — 원인은 `App.js`·`MenuDrawerModal.js` 가 `cloudUser` 가 없을 때도 기본값 `'이상훈'`·`'odol'` 을 넘기던 것이었습니다. 이제 이름의 출처는 **로그인한 계정 하나**뿐이라 로그아웃이면 **`게스트` + `로그인하면 핀이 클라우드에 동기화돼요`**(사람 아이콘 아바타, 플랜 칩 숨김), 로그인하면 **실제 계정 이름·이메일 앞자리 핸들**이 뜹니다. **③** 카카오 로그인은 연동이 끝나 정상 동작하지만 **Apple 로그인은 유료 Apple Developer 계정(연 129,000원) 전까지 보류** — Apple 버튼은 **흐리게 + `준비 중`** 으로 바뀌고, 누르면 Supabase 오류 페이지로 넘어가지 않고 **`Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.`** 안내만 뜹니다(카카오·구글은 그대로).
 > **v2.20.0 (2026-11-17)** **🕒 영업 중·브레이크타임·휴무일 · 📝 AI 한줄 메모 자동 채우기** — 상훈 님 요청 `"1번 2번 좋은거같네 한번 해봐줄래!?"` 그대로 두 가지를 넣었습니다. **①** 저장한 가게의 **지금 영업 상태**를 실제 데이터로 계산해 핀 상세 시트에는 **`🟢 영업 중` · `🟠 브레이크타임 (17:00까지)` · `🔴 오늘 휴무` · `⚪ 영업 종료`** 배지 + `오늘 11:30~21:30 · 브레이크 15:30~17:00 · 라스트오더 21:00` 요약을, 반경 500m 알림 배너에는 작은 상태 뱃지(`영업 중`/`브레이크타임`/`오늘 휴무`)를 띄워 **헛걸음을 막습니다**. 데이터는 새 서버 함수 **`/api/kakao-place`**(카카오맵 장소 패널 — 카카오로 찾은 핀 대부분) · **`/api/naver-place`**(네이버 플레이스 상세 — 네이버 링크로 저장한 핀)가 **요일별 영업시간·브레이크·라스트오더·정기휴무**를 실제로 읽어 옵니다. 영업시간이 확인되지 않은 가게는 **절대 추측해 지어내지 않고** `⚪ 영업시간 미확인` 한 줄만 둡니다. **②** 릴스·쇼츠·사진을 추출해 후보가 뜨면 **한줄 메모를 자동으로 채웁니다** — Gemini 응답에 `추천 메뉴 · 주차 · 아기/웨이팅` 항목을 추가하고(`api/gemini.js`), 설명글에 `추천 메뉴:` `주차 불가` `아기의자` 같은 표식이 있으면 그것도 초안으로 뽑아(`utils/memoDraft.js`) 예: **`추천: 소금빵 · 주차 불가 · 아기의자 있음`** 을 미리 채워 두고, 그대로 `[저장]`만 눌러도 되고 한 글자 고쳐도 됩니다(확인되지 않은 항목은 빼고 만들지 않습니다)
 > **v2.19.3 (2026-11-17)** **지도 좌우 하단 버튼 하단 정렬** — 상훈 님 지적대로 왼쪽 `🎛️`(지도 도구) 원형 버튼이 오른쪽 `내 위치` 파란 FAB 보다 **16px 더 내려와** 좌우가 비대칭이었습니다. 왼쪽은 `tabBar.controlsBottom`(76) · **44px**, 오른쪽은 `mapControls.actionBottom`(92) · **46px** 로 서로 다른 값을 쓰고 있었기 때문입니다. 이제 `theme.mapControls` 의 **한 값(`toolsToggleBottom` = `actionBottom`) · 한 크기(`toolsToggleSize` = `fabSize` 46)** 을 둘 다 쓰므로, 390×844 에서 두 원형 버튼의 `top` **706.0** · `bottom` **752.0** 이 **차이 0.00px** 로 정확히 한 줄에 놓입니다. `N / N 핀 표시 중` 알약과 펼친 카드도 8px 간격으로 버튼 위로 함께 올라가 겹침 0, 플로팅 하단바 위 26px·NAVER 로고와의 간격도 그대로입니다.
 > **v2.19.2 (2026-11-17)** **상세 헤더 = 분류 색 · `‹` 만 남긴 뒤로 · 지도 버튼 자리 교체** — 장소 상세 시트의 헤더 배경을 고정 주황에서 **그 핀의 분류 색**(`getCategoryColor`: 맛집 코랄 `#FF5A36` · 카페 민트 `#14B8A6` · 가볼곳 블루 `#3B82F6` · 커스텀 분류도 각 색)으로 바꿔, 지도 핀·필터 칩·분류 배지와 **한 화면에서 같은 색**이 되게 했습니다. 시트 안에서 분류를 바꾸면 헤더 색도 즉시 따라 바뀌고(흰 이름 + 얇은 그림자 · 반투명 흰 원 `✕` 유지), 시트 본문 끝 여백을 플로팅 하단바 높이만큼(`tabBar.floatTop + 10`) 확보해 맨 아래 `네이버지도 / 카카오맵 열기` 가 하단 알약에 가리지 않습니다. 레이어 팝업(내 정보 · 돋보기 · 알림 모음 · 목록 보기) 서브 페이지의 뒤로 버튼은 한글 `뒤로` 를 지우고 **`‹` 하나**만(읽어 주는 이름 `aria-label="뒤로"` 는 유지), 마지막으로 지도 오른쪽 아래 스택을 뒤집어 **위 = `+ / −` · 아래 = `내 위치`** 로 바꿨습니다(오른쪽 끝선 378px · 겹침 0 · 하단바 위 26px).
@@ -156,7 +157,8 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
    - `public.pins` 테이블 + **RLS**(`auth.uid() = user_id`) + `updated_at` 트리거 + 인덱스가 한 번에 만들어집니다. 여러 번 실행해도 안전합니다.
 3. **Authentication → Providers**
    - **Email**: 그대로 사용(비밀번호 로그인 + 매직링크). 'Confirm email' 을 켜 두면 가입 후 메일함에서 링크를 눌러야 로그인됩니다.
-   - **카카오 / 구글 / Apple**: 각 콘솔에서 OAuth 앱을 만들고 Client ID·Secret 을 넣어 켜면 앱의 소셜 버튼이 동작합니다. (안 켜져 있으면 버튼을 눌렀을 때 '아직 서버에서 켜지지 않았어요' 안내가 뜨고, 앱은 그대로 쓸 수 있습니다)
+   - **카카오 / 구글**: 각 콘솔에서 OAuth 앱을 만들고 Client ID·Secret 을 넣어 켜면 앱의 소셜 버튼이 동작합니다. (안 켜져 있으면 버튼을 눌렀을 때 '아직 서버에서 켜지지 않았어요' 안내가 뜨고, 앱은 그대로 쓸 수 있습니다)
+   - **Apple**: v2.20.1 기준 **준비 중**입니다 — 유료 Apple Developer 계정(연 129,000원)이 필요해 앱의 Apple 버튼은 `준비 중` 으로 잠겨 있고, 켜더라도 `OAUTH_PROVIDERS` 의 `pending: true` 를 지워야 동작합니다 (카카오·구글은 그대로)
    - **Authentication → URL Configuration → Redirect URLs** 에 `https://reelpin.vercel.app/` 와 앱용 `reelpin://auth-callback` 을 추가 (매직링크·소셜 로그인이 돌아올 주소)
 4. **Vercel → Project → Settings → Environment Variables**
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (접미 없는 이름 — `/api/auth-config` 가 읽어 웹 앱에 전달합니다)
@@ -166,6 +168,66 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 > **보안**: `anon` key 는 공개 값이고, 실제 문은 **RLS**가 지킵니다(내 핀만 읽고/쓰고/지움).
 > 앱과 `/api/auth-config` 는 **service_role 키를 쓰지 않습니다.**
+
+## v2.20.1에서 달라진 점 (2026-11-17) — ✅ 핀 체크 배지 제거 · 게스트 프로필 · Apple 로그인 준비 중
+
+상훈 님이 아이폰으로 v2.20.0 을 쓰시고 주신 세 가지입니다.
+
+> "가본 곳 Y일 경우, 초록색 체크 핀은 없애고 텍스트만 지금처럼 초록색으로 표시되도록 남겨두는게 좋을 것 같아"
+> "그리고 로그아웃 했는데 어떻게 상단에 이상훈이라고 뜨는지 모르겠어"
+> (추가 지시) 카카오 로그인은 연동 완료 · Apple 로그인은 유료 Apple Developer 계정 전까지 보류
+
+### 1. ✅ 가봤어요 핀 — 초록 원형 체크 배지만 제거, 초록 라벨은 그대로
+
+| | 이전 (v2.20.0) | 지금 (v2.20.1) |
+|---|---|---|
+| 핀 동그라미 (웹) | 오른쪽 위에 **초록 원형 `✓` 배지** (12×12, 흰 테두리) | **배지 없음** — 분류 색 동그라미만 |
+| 핀 동그라미 (네이티브 MapCanvas) | 핀 머리 위 **초록 `✓` 배지** | **배지 없음** |
+| 아래 이름 라벨 | `✓ 가게이름` + 초록 글씨(`#0A7D4E`) + 초록 테두리 | **그대로** (요청대로 유지) |
+| `가봤어요` 필터 · 목록 `✓ 방문완료` · 상세 시트 체크박스 | — | **그대로** |
+
+- `src/components/RealMapView.web.js` — 마커 HTML 에서 `pinVisitedBadgeHtml()` 호출과 함수 자체를 삭제(죽은 코드 0). `pinLabelHtml()` 의 `(visited ? '✓ ' : '')` · `colors.visitDark` 글씨 · `hexToRgba(colors.visit, 0.7)` 테두리는 유지.
+- `src/components/MapCanvas.js` — `styles.visitBadge`/`visitBadgeText` 와 배지 View 삭제, 라벨의 `(pin.visited === true ? '✓ ' : '')` 유지.
+
+### 2. 👤 로그아웃 상태 = `게스트` (이름의 출처는 로그인한 계정 하나)
+
+- 원인: `App.js` 가 `<MenuDrawerModal name="이상훈" handle="odol" />` 로 **고정값**을 넘겼고, `MenuDrawerModal` 기본값도 `name = '이상훈'`, `handle = 'odol'` 이었습니다. `ProfileScreen` 은 받은 값을 그대로 그려서 `cloudUser === null`(로그아웃)에도 이름이 찍혔습니다.
+- 새 `src/utils/profileIdentity.js` — `profileIdentity(cloudUser)` 하나로 정리합니다.
+  - 로그인 전: `displayName '게스트'` · `subline '로그인하면 핀이 클라우드에 동기화돼요'` · 이름/핸들 `''`
+  - 로그인 후: `user_metadata.full_name` → `name` → `nickname` → 이메일 앞자리 순으로 이름, 핸들은 `preferred_username`/`nickname` → 이메일 앞자리. **확인되지 않은 값은 지어내지 않습니다.**
+- `App.js` — `adoptCloudSession` 이 `user_metadata` 도 보관하고, `profile = profileIdentity(cloudUser)` 를 `MenuDrawerModal` 에 넘깁니다(하드코딩 제거).
+- `MenuDrawerModal.js` — 기본값 `''` 로 바꾸고, 넘겨받은 값이 없으면 `cloudUser` 에서 만듭니다.
+- `ProfileScreen.js` — 이름이 없으면 **회색 아바타 + 사람 아이콘 · `게스트` · 로그인 안내 두 줄** (플랜 칩은 숨겨 안내 문장이 잘리지 않게), 이름이 있으면 **코랄 아바타 + 이니셜 + `@핸들 · 무료/프로 플랜`**. 하단 제작 크레딧(`기획 이상훈 · 개발 오돌`)은 그대로입니다.
+
+### 3. 🍎 Apple 로그인 = `준비 중` (카카오·구글은 정상)
+
+- `src/services/cloudSync.js` — `OAUTH_PROVIDERS` 의 apple 에 **`pending: true`**, `OAUTH_PENDING_MESSAGE`, `oauthProviderReady(id)` 추가. `signInWithOAuth('apple')` 은 **Supabase 를 부르지 않고** `{ ok:false, error:'provider-pending', message:OAUTH_PENDING_MESSAGE }` 를 돌려줍니다(오류 페이지로 넘어갈 경로 0).
+- `src/screens/ProfileScreen.js` — Apple 버튼은 **opacity 0.45 + `준비 중` 꼬리표**, 버튼 아래 `Apple 로그인은 준비 중이에요 · 카카오나 구글로 로그인해 주세요` 한 줄. 누르면 안내 토스트가 뜨고 페이지 이동은 없습니다.
+- `App.js` — `handleOAuth` 도 같은 가드로 한 번 더 막습니다(`cloudMessage` + 토스트).
+- `src/components/Toast.js` — 검증용 `testID="toast"`.
+
+### 4. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `86bcf82`)
+
+`reelpin-verify-v2.20.1/check-390x844.mjs` 로 **로컬 dist → 라이브** 두 번 실측(둘 다 **VERIFY_OK**, 이슈 0). 라이브는 네이버 지도(정식 키)로, 로컬은 도메인 미등록이라 Leaflet 폴백으로 그려졌고 **두 경로 모두 같은 `pinIconHtml`** 을 씁니다.
+
+| 화면 | 실측 결과 |
+|---|---|
+| A) 가봤어요 핀 2곳 (검단 이니야·당하 순대국) | 초록 원형 체크 배지 **0개** · 라벨 `✓ 검단 이니야` `✓ 당하 순대국` 글씨 `rgb(10, 125, 78)` |
+| B) 로그아웃 「내 정보」 상단 | **`게스트`** · `로그인하면 핀이 클라우드에 동기화돼요` (254×17px, 말줄임 0) · `이상훈`·`@odol` 없음 |
+| D) 소셜 로그인 | `Apple 준비 중`(opacity 0.45) · 카카오·구글 그대로 · Apple 눌러도 **URL 그대로** + 토스트 `Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.` |
+| C) ☰ 시트 | `릴스핀 v2.20.1` |
+
+- 스크린샷: `reelpin-verify-v2.20.1/A1-visited-pin-no-badge-390x844.png` · `B1-guest-profile-390x844.png` · `D1-apple-pending-390x844.png` · `C1-menu-version-390x844.png`
+
+### 5. 📁 바뀐 파일
+
+- 새 파일: `src/utils/profileIdentity.js` · `reelpin-verify-v2.20.1/check-390x844.mjs`
+- 고친 파일: `src/components/RealMapView.web.js` · `src/components/MapCanvas.js` · `src/components/MenuDrawerModal.js` · `src/components/Toast.js` · `src/screens/ProfileScreen.js` · `src/services/cloudSync.js` · `App.js` · `test/ssr-smoke.jsx` · `test/visit-memo-test.mjs` · `test/collections-test.mjs` · `package.json` · `app.json`
+
+### 6. ✅ 검증
+
+- `npm test` — **ALL_TESTS_OK** (v2.20.1 검사 18건 신설 — 배지 0 · 라벨 초록 유지 · 게스트/로그인 프로필 · Apple 준비 중 · 스모크 **629/629**)
+- `npm run export:web` — **에러 0건**
 
 ## v2.20.0에서 달라진 점 (2026-11-17) — 🕒 영업 중·브레이크타임·휴무일 & 📝 AI 한줄 메모 자동 채우기
 
