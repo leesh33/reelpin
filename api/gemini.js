@@ -18,17 +18,25 @@
  *   3. 실패 응답에 **키·업스트림 본문을 담지 않습니다.** (로그에도 키를 찍지 않음)
  *   4. 키는 쿼리스트링이 아니라 `x-goog-api-key` 헤더로 보냅니다. (프록시 로그·Referer 에 남지 않게)
  *   5. CORS 헤더를 열지 않아 우리 사이트에서만 호출됩니다.
- *   6. Gemini 영상 분석은 10초를 넘기는 경우가 흔합니다 — 타임아웃 22초 + `maxDuration` 60초.
+ *   6. Gemini 영상 분석은 모델에 따라 오래 걸립니다 — 기본 `gemini-3.5-flash-lite` 는 실측 4초대,
+ *      무거운 모델은 24~50초+. 타임아웃 55초 + `maxDuration` 60초 안에서만 기다립니다.
  */
 const { fetchWithTimeout, sendJson, warn } = require('../server/http.js');
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models/';
-const DEFAULT_MODEL = 'gemini-3.8-flash';
-/** 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. */
-const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+const DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+/**
+ * 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. (앞의 기본 모델과 중복은 modelCandidates 가 제거)
+ *   실측(2026-11-16, 같은 키·같은 영상):
+ *     · gemini-3.5-flash-lite → 약 4초 (`_Yc2CwHTKtY` → 영화장 / LPLE_SH2b9U → 착한부대찌개)
+ *     · gemini-3.8-flash      → 영상에 따라 24~50초+ (55초 타임아웃으로 실패한 적 있음)
+ *   → 속도를 위해 lite 를 기본으로 두고, lite 가 없을 때만 무거운 모델로 내려갑니다.
+ */
+const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
 /**
  * 한 번의 영상 분석 응답 타임아웃.
- *   실측: 같은 영상·같은 요청이 24초 ~ 50초+ 로 흔들립니다(무료 등급 대기열 영향으로 보임).
+ *   실측: 기본 `gemini-3.5-flash-lite` 는 약 4초 — 이 상한에 거의 닿지 않습니다.
+ *        (무거운 폴백 모델은 24초 ~ 50초+ 로 흔들립니다 — 무료 등급 대기열 영향으로 보임)
  *   → 55초까지 기다리고, 넘기면 앱은 조용히 기존 폴백으로 이어집니다.
  */
 const GEMINI_TIMEOUT_MS = 55000;
@@ -269,6 +277,16 @@ async function callGemini({ apiKey, model, body, timeoutMs }) {
   return { ok: Boolean(res.ok), status: Number(res.status) || 0, json, message };
 }
 
+/**
+ * 모델별로 '생각(thinking)' 옵션을 끄는 순서.
+ *   · lite 계열: thinkingConfig 없이도 4초대에 답합니다 — **옵션 없이(off) 먼저** 시도해 가장 빠른 길로 갑니다.
+ *   · 그 밖(3.8-flash 등): 생각 토큰이 지연의 큰 몫이라 thinkingLevel LOW → thinkingBudget 0 순서로 줄여 봅니다.
+ *   · 모델이 옵션 이름을 모르면 400 이 오고, 그때 다음 모드로 넘어갑니다(아래 modelLoop).
+ */
+function thinkingModesFor(model) {
+  return /lite/i.test(String(model || '')) ? ['off', 'level', 'budget'] : ['level', 'budget', 'off'];
+}
+
 /** 시도할 모델 목록 — GEMINI_MODEL 이 있으면 그것부터, 그 뒤 기본 모델·구형 모델 */
 function modelCandidates() {
   const preferred = String(process.env.GEMINI_MODEL || '').trim();
@@ -307,14 +325,13 @@ module.exports = async function handler(req, res) {
   // 모델이 폐기·미제공(404/400)이면 다음 모델로 내려갑니다. 그 밖의 실패(429·5xx)는 바로 끝냅니다.
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const models = modelCandidates();
-  const THINKING_MODES = ['level', 'budget', 'off'];
   let attempt = { ok: false, status: 0, json: null };
   let usedModel = models[0];
-  let usedThinking = THINKING_MODES[0];
+  let usedThinking = thinkingModesFor(models[0])[0];
   // 모델(404/400) × 생각 옵션(400) 을 바꿔 가며 시도합니다. 그 밖의 실패(429·5xx)는 바로 끝냅니다.
   modelLoop: for (const model of models) {
     usedModel = model;
-    for (const thinking of THINKING_MODES) {
+    for (const thinking of thinkingModesFor(model)) {
       const left = deadline - Date.now();
       if (left < 4000) break modelLoop;
       usedThinking = thinking;
@@ -383,6 +400,7 @@ module.exports.normalizeYouTubeUrl = normalizeYouTubeUrl;
 module.exports.parseJsonLoose = parseJsonLoose;
 module.exports.coerceAnalysis = coerceAnalysis;
 module.exports.modelCandidates = modelCandidates;
+module.exports.thinkingModesFor = thinkingModesFor;
 module.exports.GEMINI_TIMEOUT_MS = GEMINI_TIMEOUT_MS;
 module.exports.TOTAL_BUDGET_MS = TOTAL_BUDGET_MS;
 module.exports.DEFAULT_MODEL = DEFAULT_MODEL;

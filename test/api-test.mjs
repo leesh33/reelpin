@@ -327,8 +327,8 @@ r = await callGemini({ url: 'https://youtu.be/LPLE_SH2b9U?t=12', title: '제주 
 const gReq = calls[0] || { url: '', init: {} };
 const gBody = JSON.parse(gReq.init.body || '{}');
 check(
-  'gemini: 업스트림 엔드포인트(v1beta · gemini-3.8-flash)',
-  gReq.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent',
+  'gemini: 업스트림 엔드포인트(v1beta · gemini-3.5-flash-lite)',
+  gReq.url === 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
   gReq.url
 );
 check(
@@ -357,8 +357,8 @@ check(
   String(gBody.contents[0].parts[1].text).slice(0, 160)
 );
 check(
-  'gemini: 첫 시도는 생각 끄기(thinkingLevel LOW · Gemini 3 규격)',
-  gBody.generationConfig.thinkingConfig.thinkingLevel === 'LOW' && !gBody.generationConfig.thinkingConfig.thinkingBudget,
+  'gemini: 첫 시도는 thinkingConfig 없이(lite 는 생각 없이 4초대)',
+  !gBody.generationConfig.thinkingConfig,
   JSON.stringify(gBody.generationConfig.thinkingConfig)
 );
 check(
@@ -367,7 +367,8 @@ check(
   JSON.stringify(r.body)
 );
 check('gemini: places 배열 유지', r.body.places.length === 1 && r.body.places[0].name === '엄마손횟집', JSON.stringify(r.body.places));
-check('gemini: 모델·출처 표시', r.body.model === 'gemini-3.8-flash' && r.body.source === 'gemini', JSON.stringify([r.body.model, r.body.source]));
+check('gemini: 모델·출처 표시', r.body.model === 'gemini-3.5-flash-lite' && r.body.source === 'gemini', JSON.stringify([r.body.model, r.body.source]));
+check('gemini: 생각 옵션 표시(생략)', r.body.thinking === 'off', String(r.body.thinking));
 check('gemini: 걸린 시간(elapsedMs) 함께 반환', typeof r.body.elapsedMs === 'number' && r.body.elapsedMs >= 0, String(r.body.elapsedMs));
 check('gemini: 응답에 키 없음', !leaksSecret(r.raw), r.raw.slice(0, 100));
 
@@ -401,8 +402,8 @@ r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 const retryBody = JSON.parse((calls[1] || { init: {} }).init.body || '{}');
 check('gemini: 400 이면 생각 옵션을 바꿔 한 번 더 시도', calls.length === 2 && r.body.storeName === '엄마손횟집', calls.length + ' | ' + r.body.storeName);
 check(
-  'gemini: 2번째 시도는 thinkingBudget 0 (2.5 규격)',
-  (retryBody.generationConfig || {}).thinkingConfig && retryBody.generationConfig.thinkingConfig.thinkingBudget === 0,
+  'gemini: 2번째 시도는 thinkingLevel LOW (생각 줄이기 · Gemini 3 규격)',
+  (retryBody.generationConfig || {}).thinkingConfig && retryBody.generationConfig.thinkingConfig.thinkingLevel === 'LOW',
   JSON.stringify(retryBody.generationConfig && retryBody.generationConfig.thinkingConfig)
 );
 
@@ -419,7 +420,7 @@ const modes = calls.map((c) => {
   const gc = (JSON.parse(c.init.body || '{}').generationConfig || {});
   return gc.thinkingConfig ? (gc.thinkingConfig.thinkingLevel ? 'level' : 'budget') : 'off';
 });
-check('gemini: 400 이면 level → budget → off 순서로 시도', calls.length === 3 && JSON.stringify(modes) === JSON.stringify(['level', 'budget', 'off']), JSON.stringify(modes));
+check('gemini: 400 이면 off → level → budget 순서로 시도', calls.length === 3 && JSON.stringify(modes) === JSON.stringify(['off', 'level', 'budget']), JSON.stringify(modes));
 check('gemini: 세 번 다 400 이면 빈 결과로 끝', r.body.storeName === '' && r.body.reason === 'gemini-upstream-400', r.body.reason);
 
 // 503(모델 과부하)은 잠깐 쉬고 한 번 더 — 무료 등급에서 흔함
@@ -446,11 +447,16 @@ handler = () => {
 };
 r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 check(
-  'gemini: 모델 404 면 다음 모델(gemini-2.5-flash)로 폴백',
-  calls.length === 2 && calls[1].url.indexOf('gemini-2.5-flash') > 0 && r.body.storeName === '엄마손횟집',
+  'gemini: 모델 404 면 다음 모델(gemini-3.8-flash)로 폴백',
+  calls.length === 2 && calls[1].url.indexOf('gemini-3.8-flash') > 0 && r.body.storeName === '엄마손횟집',
   calls.map((c) => c.url).join(' | ')
 );
-check('gemini: 실제 쓴 모델을 응답에 표시', r.body.model === 'gemini-2.5-flash', r.body.model);
+check('gemini: 실제 쓴 모델을 응답에 표시', r.body.model === 'gemini-3.8-flash', r.body.model);
+check(
+  'gemini: 3.8-flash 폴백은 thinkingLevel LOW 로 시작',
+  JSON.parse((calls[1] || { init: {} }).init.body || '{}').generationConfig.thinkingConfig.thinkingLevel === 'LOW',
+  JSON.stringify((JSON.parse((calls[1] || { init: {} }).init.body || '{}').generationConfig || {}).thinkingConfig)
+);
 
 // 쿼타·서버 오류(429·500)는 모델을 바꿔도 같으므로 한 번에 끝냄
 calls = [];
@@ -459,6 +465,34 @@ r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 check('gemini: 429 는 모델 폴백 없이 빈 결과', calls.length === 1 && r.body.reason === 'gemini-upstream-429', calls.length + ' | ' + r.body.reason);
 check('gemini: 응답 타임아웃 25초 이상', geminiHandler.GEMINI_TIMEOUT_MS >= 25000, String(geminiHandler.GEMINI_TIMEOUT_MS));
 check('gemini: 전체 예산이 maxDuration(60초) 안', geminiHandler.TOTAL_BUDGET_MS <= 59000, String(geminiHandler.TOTAL_BUDGET_MS));
+check('gemini: 기본 모델은 gemini-3.5-flash-lite', geminiHandler.DEFAULT_MODEL === 'gemini-3.5-flash-lite', geminiHandler.DEFAULT_MODEL);
+delete process.env.GEMINI_MODEL;
+check(
+  'gemini: 모델 후보 순서(lite 우선 → 3.8 → 3.1-lite → 2.5, 중복 없음)',
+  JSON.stringify(geminiHandler.modelCandidates()) ===
+    JSON.stringify(['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash']),
+  JSON.stringify(geminiHandler.modelCandidates())
+);
+process.env.GEMINI_MODEL = 'gemini-3.5-flash-lite';
+check(
+  'gemini: GEMINI_MODEL 이 기본 모델과 같아도 중복 없음',
+  JSON.stringify(geminiHandler.modelCandidates()) ===
+    JSON.stringify(['gemini-3.5-flash-lite', 'gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash']),
+  JSON.stringify(geminiHandler.modelCandidates())
+);
+process.env.GEMINI_MODEL = 'gemini-3.8-flash';
+check(
+  'gemini: GEMINI_MODEL 을 주면 그것이 1순위',
+  geminiHandler.modelCandidates()[0] === 'gemini-3.8-flash' && geminiHandler.modelCandidates()[1] === 'gemini-3.5-flash-lite',
+  JSON.stringify(geminiHandler.modelCandidates())
+);
+delete process.env.GEMINI_MODEL;
+check(
+  'gemini: lite 는 thinkingConfig 없이 먼저, 그 밖은 LOW 로 먼저',
+  JSON.stringify(geminiHandler.thinkingModesFor('gemini-3.5-flash-lite')) === JSON.stringify(['off', 'level', 'budget']) &&
+    JSON.stringify(geminiHandler.thinkingModesFor('gemini-3.8-flash')) === JSON.stringify(['level', 'budget', 'off']),
+  JSON.stringify([geminiHandler.thinkingModesFor('gemini-3.5-flash-lite'), geminiHandler.thinkingModesFor('gemini-3.8-flash')])
+);
 check(
   'gemini normalize: shorts·embed·watch·youtu.be',
   geminiHandler.normalizeYouTubeUrl('https://www.youtube.com/shorts/LPLE_SH2b9U') === 'https://www.youtube.com/watch?v=LPLE_SH2b9U' &&
