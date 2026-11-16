@@ -65,7 +65,9 @@ export const NEEDS_LOCATION_TITLE = '내 위치를 켜면 가까운 맛집과 50
 export const NEEDS_LOCATION_SUB = '지금 있는 곳 기준으로 알려드려요';
 export const NEEDS_LOCATION_ACTION = '내 위치';
 
-const USE_NATIVE_DRIVER = Platform.OS !== 'web';
+// 드래그 중에는 Animated.Value.setValue 로 직접 따라가므로, 애니메이션도 같은 JS 드라이버로 통일합니다.
+// (네이티브 드라이버와 섞으면 setValue ↔ native animation 사이에서 경고·충돌이 날 수 있습니다)
+const USE_NATIVE_DRIVER = false;
 const now = () => Date.now();
 
 export default function GeofenceBanner({
