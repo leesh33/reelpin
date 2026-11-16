@@ -156,7 +156,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 1502건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 가봤어요·메모·한도 + 화면 렌더 스모크 270/270) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 1503건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 가봤어요·메모·한도 + 화면 렌더 스모크 270/270) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -226,8 +226,8 @@ alter table public.pins add column if not exists memo    text    not null defaul
 
 ### 5. ✅ 검증
 
-- `npm run test:visit` (신규 46건): 모델 기본값·토글·메모 저장, **10 → 11 → 12번째 저장**, 메모 검색("아기의자"), 방문 필터 AND·칩 숫자, `PIN_COLUMNS`/행 변환, **구 스키마 폴백**(select 2회·upsert 2회), `schema.sql` 텍스트, 공유 코드 왕복·구 링크 호환, 화면 배선 검사.
-- `npm test` — **ALL_TESTS_OK**(1502건 · 화면 렌더 스모크 270/270), `npm run export:web` — 에러 0건.
+- `npm run test:visit` (신규 47건): 모델 기본값·토글·메모 저장, **10 → 11 → 12번째 저장**, 메모 검색("아기의자"), 방문 필터 AND·칩 숫자, `PIN_COLUMNS`/행 변환, **구 스키마 폴백**(select 2회·upsert 2회), `schema.sql` 텍스트, 공유 코드 왕복·구 링크 호환, 화면 배선 검사.
+- `npm test` — **ALL_TESTS_OK**(1503건 · 화면 렌더 스모크 270/270), `npm run export:web` — 에러 0건.
 - 라이브(390×844) 확인: 11번째 핀 저장 성공 · 상세 시트 `가봤어요` 체크 + 메모 입력 · 목록/지도 `✓`·메모 미리보기.
 
 ## v2.9에서 달라진 점 (2026-11-16) — 🎬 유튜브는 Gemini 가 영상을 직접 보고 가게를 찾습니다
