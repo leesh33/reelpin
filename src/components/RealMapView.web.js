@@ -1385,6 +1385,9 @@ export default function RealMapView({
   initialZoom = 13,
   categories,
   onStatus,
+  // v2.17 — 왼쪽 하단 도구 메뉴가 펼쳐져 있을 때는 지도 안내 알약을 감춥니다.
+  //         (둘 다 왼쪽 아래라 펼친 카드가 안내 글자를 반쯤 가려 지저분해 보입니다)
+  hideNotice = false,
 }) {
   const controlsRef = useRef(null);
   // 인증 실패가 이미 확인된 세션이면 곧바로 폴백 지도로 시작합니다.
@@ -1485,7 +1488,7 @@ export default function RealMapView({
         </View>
       )}
 
-      {!!notice && (
+      {!!notice && !hideNotice && (
         <View style={styles.noticeWrap} pointerEvents="none">
           <View style={styles.noticePill}>
             <Ionicons name="information-circle" size={12} color={colors.white} />
@@ -1544,7 +1547,9 @@ const styles = StyleSheet.create({
   noticeWrap: {
     position: 'absolute',
     left: 12,
-    bottom: 56,
+    // v2.17 — 지도 왼쪽 하단에 도구 버튼(44) + 개수 알약(≈31) + 간격(8)이 자리 잡아,
+    //         예전 bottom:56 이면 알약과 겹쳤습니다(MapToolsMenu). 그 위로 올립니다.
+    bottom: 108,
     maxWidth: '74%',
   },
   noticePill: {

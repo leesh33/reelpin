@@ -65,6 +65,23 @@ export const NEEDS_LOCATION_TITLE = '내 위치를 켜면 가까운 맛집과 50
 export const NEEDS_LOCATION_SUB = '지금 있는 곳 기준으로 알려드려요';
 export const NEEDS_LOCATION_ACTION = '내 위치';
 
+/**
+ * v2.17 — 지도 위 상단 배너를 띄울 상태인가?
+ *
+ *   상훈 님: "가까운 저장 장소 알림 배너는 상시로 저렇게 떠 있는 건 아니지? 근처에 해당되는 핀이
+ *            있을 때만 저렇게 뜨는 거지?" → "진짜 반경 500m 안에 들어왔을 때만 뜨고 밖일 땐 지도를
+ *            안 가리게 숨길까요?" → **"응, 그렇게 해 줘"**
+ *
+ * 그래서 **반경 500m 안에 핀이 있는 'near' 일 때만** 배너를 그립니다.
+ *   · 'closest'       … 반경 밖 가장 가까운 곳 (예전엔 늘 떠 있었음) → 숨김
+ *   · 'needs-location' … 내 위치를 아직 모를 때 → 숨김 (오른쪽 아래 [내 위치] 버튼·🔔 알림 모음이 안내)
+ *   · 'empty' / 'none' … 저장한 핀이 없거나 좌표가 없을 때 → 숨김 (지도 가운데 안내 카드가 대신)
+ * 반경 밖에서도 가까운 저장 장소는 헤더 **🔔 알림 모음**에서 언제든 볼 수 있습니다.
+ */
+export function shouldShowBanner(mode) {
+  return mode === 'near';
+}
+
 // 드래그 중에는 Animated.Value.setValue 로 직접 따라가므로, 애니메이션도 같은 JS 드라이버로 통일합니다.
 // (네이티브 드라이버와 섞으면 setValue ↔ native animation 사이에서 경고·충돌이 날 수 있습니다)
 const USE_NATIVE_DRIVER = false;

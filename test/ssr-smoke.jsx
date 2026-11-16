@@ -9,9 +9,12 @@ import ProviderBadges from '../src/components/ProviderBadge';
 import ExtractedTitleNote from '../src/components/ExtractedTitleNote';
 import GeofenceBanner, {
   DISMISS_SWIPE_DISTANCE,
+  shouldShowBanner,
   swipeDismissDecision,
 } from '../src/components/GeofenceBanner';
 import FilterChips from '../src/components/FilterChips';
+// v2.17 — 지도 왼쪽 하단 펌찄 메뉴(가본 곳만 보기 · 지도 공유하기)
+import MapToolsMenu, { TOOLS_ANIM_MS, TOOLS_TOGGLE_SIZE, toolsSummary } from '../src/components/MapToolsMenu';
 import CategoryPicker from '../src/components/CategoryPicker';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 import PinSearchBar from '../src/components/PinSearchBar';
@@ -69,6 +72,8 @@ import path from 'node:path';
 import { injectPwaHead, PWA_REQUIRED_MARKERS, PWA_APP_TITLE } from '../scripts/patch-web-html.mjs';
 import { colors, mapControls } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
+// v2.17 — '가본 곳만 보기' Y/N 이 쓰는 방문 필터 규칙
+import { VISIT_ALL, VISIT_DONE, filterByVisit } from '../src/utils/searchPins';
 import {
   CUSTOM_CATEGORY_COLORS,
   CUSTOM_PIN_COLORS,
@@ -190,7 +195,7 @@ const contentCases = [
   ['PasteScreen: 혼합 붙여넣기 안내', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['문구를 통째로 붙여넣어도 돼요', '유튜브는 제목을']],
   ['ExtractedTitleNote: 읽어온 제목 표기', <ExtractedTitleNote title="성수동 소금빵 맛집 베통" />, ['읽어온 제목:', '성수동 소금빵 맛집 베통']],
   ['ExtractedTitleNote: 인스타 안내 + 원탭 버튼', <ExtractedTitleNote notice="인스타는 보안상 제목을 못 읽어와요" onSearchByName={noop} />, ['인스타는 보안상 제목을 못 읽어와요', '가게명으로 찾기']],
-  ['MapScreen: 내 위치·주변 500m 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['주변 500m', '내 위치를 켜면 가까운 맛집과 500m 알림이 보여요']],
+  ['MapScreen: 목록 보기 · 주변 500m 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['주변 500m', '목록 보기']],
   ['PinDetailSheet: 내 위치에서의 실제 거리', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} distanceMeters={321.4} onClose={noop} onDelete={noop} onToast={noop} />, ['내 위치에서 321m']],
   ['GeofenceBanner: 500m 실시간 배너 문구', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name + ' · 320m'} />, ['반경 500m 앞, 저장한 맛집이 있어요', '320m']],
   ['GeofenceBanner: 반경 밖 가장 가까운 곳', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />, ['가장 가까운 저장 장소', '2.4km']],
@@ -202,9 +207,10 @@ const contentCases = [
   ['InAppPlaceModal.web: 새 창 버튼 반투명 다크 필', <InAppPlaceModalWeb pin={SEARCH_PIN} onClose={noop} onToast={noop} />, ['background-color:rgba(255,255,255,0.14)']],
   // v2.0
   ['MapScreen: 공유받은 지도 배너 + 모두 추가', <MapScreen pins={[]} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} sharedPins={SHARED_PINS} onAddSharedPins={noop} onDismissShared={noop} />, ['공유받은 맛집 지도 (2곳)', '내 지도에 모두 추가', '지도에 미리보기로 띄웠어요']],
-  ['MapScreen: 지도 공유 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['지도 공유']],
+  ['MapScreen(v2.17): 왼쪽 하단 지도 도구 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['지도 도구 펼치기', '4 / 4 핀 표시 중']],
   // v2.1.3 — 위치를 아직 모를 때의 정직한 안내 배너 (가짜 '뚝섬' 문구 금지)
-  ['MapScreen: 위치 전 안내 배너 + [내 위치] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['내 위치를 켜면 가까운 맛집과 500m 알림이 보여요', '지금 있는 곳 기준으로 알려드려요', '내 위치']],
+  // v2.17 — 위치를 모를 때의 안내 배너는 지도를 가리지 않게 **없어지고**, 상단은 분류 칩 한 줄만 남습니다.
+  ['MapScreen(v2.17): 위치 전 — 상단 분류 칩 한 줄', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['전체', '맛집', '카페']],
   ['PinDetailSheet: 전화 걸기(tel 링크)', <PinDetailSheet pin={{ ...SEARCH_PIN, phone: '0507-1375-1660' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['0507-1375-1660', '전화 걸기 0507-1375-1660', '전화']],
   ['PinDetailSheet: 주소 원탭 복사', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['서울특별시 성동구 연무장7가길 8', '주소 복사', '복사']],
   ['PinDetailSheet: naverPlaceId 있으면 상세 페이지 표기', <PinDetailSheet pin={{ ...SEARCH_PIN, naverPlaceId: '1736095566' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['네이버 플레이스 상세']],
@@ -264,7 +270,7 @@ const fakeBannerChecks = [
   ['MapScreen(위치 전): "뚝섬" 가짜 가게명 없음', noLocationHtml.indexOf('뚝섬') < 0],
   ['MapScreen(위치 전): 가짜 "지금" 배지 없음', noLocationHtml.indexOf('>지금<') < 0],
   ['MapScreen(위치 전): 칩 아래 중복 안내 제거', noLocationHtml.indexOf('내 위치를 켜면 실제 거리와 반경') < 0],
-  ['MapScreen(위치 전): 정직한 안내 배너 표시', noLocationHtml.indexOf('내 위치를 켜면 가까운 맛집과 500m 알림이 보여요') >= 0],
+  ['MapScreen(v2.17, 위치 전): 반경 밖 안내 배너 없음(지도를 가리지 않음)', noLocationHtml.indexOf('내 위치를 켜면 가까운 맛집과 500m 알림이 보여요') < 0],
 ];
 for (const [label, ok] of fakeBannerChecks) {
   if (ok) console.log('OK   ' + label);
@@ -493,7 +499,7 @@ for (const [label, ok, extra] of v211Checks) {
 const bannerSource = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceBanner.js'), 'utf8');
 const bannerCode = bannerSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const v212Checks = [
-  ['지도 우측 하단: +/− 박스가 주변 500m·지도 공유·내 위치와 같은 rightInset',
+  ['지도 우측 하단: +/− 박스가 목록 보기·주변 500m·내 위치와 같은 rightInset',
     mapSource.indexOf('right: mapControls.rightInset') > 0 && mapSource2.indexOf('right: mapControls.rightInset') > 0 && mapSource.indexOf('right: 68') < 0,
     'zoomCol/actionCol 둘 다 mapControls.rightInset'],
   ['지도 우측 하단: +/− 는 NAVER 로고 위로 충분히 띄움 (≥20px)',
@@ -623,8 +629,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.16.0', pkg.version === '2.16.0', pkg.version],
-  ['버전: app.json 2.16.0', expoConfig.version === '2.16.0', expoConfig.version],
+  ['버전: package.json 2.17.0', pkg.version === '2.17.0', pkg.version],
+  ['버전: app.json 2.17.0', expoConfig.version === '2.17.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -654,7 +660,7 @@ const v213Checks = [
   ['가짜 배너: GeofenceBanner 가 기본 "반경 … 앞" 문구를 만들지 않음',
     bannerCode.indexOf('반경 ') < 0 && bannerCode.indexOf('pin.name + ' ) < 0],
   ['가짜 배너: MapScreen 이 myCoords 없을 때 핀 이름을 배너로 넘기지 않음',
-    /if \(!myCoords\) \{\s*return \{ pin: null, empty: false, needsLocation: true, target: null \};/.test(mapCode)],
+    /if \(!myCoords\) \{\s*return \{ mode: 'needs-location', pin: null, target: null \};/.test(mapCode)],
   ['중복 안내: 칩 아래 locationHint 제거',
     mapSource2.indexOf('locationHint') < 0],
   // v2.1.3 — 계정 · 클라우드 동기화 카드는 '내 정보' 스크롤 맨 아래로
@@ -854,7 +860,7 @@ const v210Checks = [
   ['메모: 상세 시트 입력칸 + 안내 문구', sheetSource210.indexOf('pin-memo-input') > 0 && plainPinHtml.indexOf('추천 메뉴, 아기의자') > 0],
   ['메모: 저장된 메모가 상세 시트에 보임', visitedPinHtml.indexOf('아기의자 있음') > 0],
   ['메모: 목록 행에 ✓ 방문완료 배지와 1줄 미리보기', listVisitHtml.indexOf('✓방문완료') > 0 && listVisitHtml.indexOf('📝아기의자있음') > 0],
-  ['방문 필터: 지도·목록 상단 칩이 실제로 렌더', listVisitHtml.indexOf('미방문') > 0 && listVisitHtml.indexOf('가봤어요') > 0],
+  ['방문 필터: 목록 보기의 방문 칩은 그대로 렌더', listVisitHtml.indexOf('미방문') > 0 && listVisitHtml.indexOf('가봤어요') > 0],
   ['메모: 저장 화면에도 선택 입력칸', pasteSource210.indexOf('paste-memo-input') > 0 && pasteSource210.indexOf('한줄 메모') > 0],
 ];
 for (const [label, ok, extra] of v210Checks) {
@@ -964,7 +970,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.16.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.16.0') > 0],
+  ['프로필: 버전 표기 v2.17.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.17.0') > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1192,17 +1198,18 @@ const v2141Checks = [
   ['지도: dismissedBannerKey 상태', mapSource2141.indexOf('const [dismissedBannerKey, setDismissedBannerKey] = useState(') > 0],
   [
     '지도: 배너 키 = 가게 id + 모드(near/closest)',
-    /banner\.pin\.id \+ ':' \+ \(banner\.tone === 'muted' \? 'closest' : 'near'\)/.test(mapSource2141),
+    /banner\.pin\.id \+ ':' \+ \(banner\.mode === 'closest' \? 'closest' : 'near'\)/.test(mapSource2141),
   ],
-  ['지도: 닫힌 배너는 그리지 않음', mapSource2141.indexOf('const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey') > 0 && mapSource2141.indexOf('{!bannerHidden && (') > 0],
+  ['지도: 닫힌 배너는 그리지 않음 (v2.17: 반경 500m 안일 때만)', mapSource2141.indexOf('const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey') > 0 && mapSource2141.indexOf('{bannerVisible && (') > 0],
   ['지도: 배너에 onDismiss 전달', mapSource2141.indexOf('onDismiss={dismissBanner}') > 0],
   [
     '지도: [내 위치]를 새로 누르면 닫힘 기록을 지움',
     /const locateFromUser = useCallback\([\s\S]{0,200}?setDismissedBannerKey\(''\)/.test(mapSource2141),
   ],
+  // v2.17 — 반경 밖 안내 배너가 없어져 [내 위치] 자리가 FAB · 주변 500m 패널 · 오류 칩 세 곳으로 줄었습니다.
   [
-    '지도: 내 위치 버튼들이 locateFromUser 사용(3곳 이상)',
-    (mapSource2141.match(/locateFromUser\(\)/g) || []).length >= 4,
+    '지도: 내 위치 자리(오류 칩·주변 패널·FAB)가 모두 locateFromUser 사용',
+    (mapSource2141.match(/locateFromUser\(\)/g) || []).length >= 3,
   ],
   // ④ 핀 상세 시트 — 브랜드 주황 헤더
   [
@@ -1425,7 +1432,7 @@ const v216Checks = [
   ['지도 탭: 지도 위 검색창 제거(헤더 🔍 로)', mapSource216.indexOf('<PinSearchBar') < 0 && mapSource216.indexOf('styles.searchWrap') < 0],
   ['지도 탭: 필터 칩 바가 헤더 바로 아래(배너보다 위)', mapSource216.indexOf('styles.chipWrap') > 0 && mapSource216.indexOf('styles.chipWrap') < mapSource216.indexOf('<GeofenceBanner')],
   ['지도 탭: 그려진 화면에 검색 인풋 없음', mapHtml216.indexOf('pin-search-input') < 0],
-  ['지도 탭: 분류·방학 칩은 그대로', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') > 0],
+  ['지도 탭: 분류 칩 한 줄만 (방문 칩 2번째 줄 없음)', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') < 0],
   // ③ 🔍 검색 레이어 팝업
   ['검색 팝업: 저장 화면과 같은 전체 레이어(absoluteFill)', /overlay: \{[\s\S]{0,80}?StyleSheet\.absoluteFillObject/.test(searchOverlaySource216) && searchOverlaySource216.indexOf('colors.charcoal') > 0],
   ['검색 팝업: 헤더 `🔍 장소 검색` + ✕', overlayHtml216.indexOf('장소 검색') > 0 && overlayHtml216.indexOf('검색어 지우기') < 0 && searchOverlaySource216.indexOf('testID="search-overlay-close"') > 0],
@@ -1456,7 +1463,7 @@ const v216Checks = [
   ['메뉴: 분류 관리 · 지도 공유 바로가기', menuHtml216.indexOf('분류 관리') > 0 && menuHtml216.indexOf('지도 공유') > 0 && appSource215.indexOf('onOpenCategories={openCategories}') > 0 && appSource215.indexOf('onShareMap={shareMyMapFromMenu}') > 0],
   ['메뉴: 분류 관리 → 내 정보 탭 분류 카드로', appSource215.indexOf('setCategoriesFocus(') > 0 && profileSource215.indexOf('categoriesYRef') > 0 && profileSource215.indexOf('categoriesFocus') > 0],
   ['메뉴: 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && menuSource216.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.16.0 표기', menuHtml216.indexOf('릴스핀 v2.16.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.16.0', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.17.0 표기', menuHtml216.indexOf('릴스핀 v2.17.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.17.0', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1468,6 +1475,105 @@ for (const [label, ok, extra] of v216Checks) {
   else {
     failed += 1;
     console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.17: 500m 밖 알림 배너 숨김 + 지도 왼쪽 하단 펼침 메뉴(가본 곳만 보기 · 지도 공유하기) ──
+// 상훈 님 요청: "진짜 반경 500m 안에 들어왔을 때만 뜨고 밖일 땐 지도를 안 가리게 숨겨" ·
+//              "미방문/가봤어요/지도 공유는 지도 왼쪽 하단 버튼 → 펼침 (가본곳만 보기 Y/N · 지도 공유하기)"
+const mapSource217 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const toolsSource217 = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/MapToolsMenu.js'),
+  'utf8'
+);
+const mapHtml217 = stripSpaces(mapHtml216);
+const mapEmptyHtml217 = stripSpaces(
+  renderToString(
+    <MapScreen pins={[]} selectedPinId={null} onSelectPin={noop} radiusMeters={500} onGoPaste={noop} onDeletePin={noop} onToast={noop} />
+  )
+);
+const toolsOpenHtml217 = stripSpaces(
+  renderToString(
+    <MapToolsMenu
+      open
+      visitedOnly
+      visitedCount={2}
+      totalCount={5}
+      summary="가본 곳만 2 / 5"
+      onToggleOpen={noop}
+      onToggleVisited={noop}
+      onShare={noop}
+    />
+  )
+);
+const toolsOffHtml217 = stripSpaces(
+  renderToString(
+    <MapToolsMenu open={false} visitedOnly={false} visitedCount={2} totalCount={5} summary="5 / 5 핀 표시 중" />
+  )
+);
+const VISIT_SAMPLE = [
+  { id: 'b-1', name: '가본 곳', visited: true },
+  { id: 'b-2', name: '안 가본 곳', visited: false },
+  { id: 'b-3', name: '옛 핀' },
+];
+
+const v217Checks = [
+  // ① 배너는 반경 500m 안('near')에만
+  ['배너: 반경 500m 안(near)이면 보입니다', shouldShowBanner('near') === true],
+  ['배너: 반경 밖 가장 가까운 곳(closest)은 숨김', shouldShowBanner('closest') === false],
+  ['배너: 내 위치 전(needs-location)은 숨김', shouldShowBanner('needs-location') === false],
+  ['배너: 저장한 핀 없음(empty)·none 도 숨김', shouldShowBanner('empty') === false && shouldShowBanner('none') === false && shouldShowBanner() === false],
+  ['지도: banner.mode 로 배너를 가립니다', mapSource217.indexOf('shouldShowBanner(banner.mode)') > 0 && mapSource217.indexOf('{bannerVisible && (') > 0],
+  ['지도: 위치 전·반경 밖 배너를 그리지 않음', mapSource217.indexOf('needsLocation={banner.needsLocation}') < 0 && mapSource217.indexOf('empty={banner.empty}') < 0],
+  ['지도 화면(위치 전): 알림 배너 없음', mapHtml217.indexOf('geofence-banner') < 0 && mapHtml217.indexOf('반경500m앞') < 0],
+  ['지도 화면(위치 전): 반경 밖 가장 가까운 곳 배너도 없음', mapHtml217.indexOf('가장가까운저장장소') < 0],
+  ['지도 화면(핀 없음): 알림 배너 없음', mapEmptyHtml217.indexOf('geofence-banner') < 0 && mapEmptyHtml217.indexOf('아직저장한핀이없어요') < 0],
+  ['지도 화면(핀 없음): 가운데 안내 카드는 그대로', mapEmptyHtml217.indexOf('지도가비어있어요') > 0],
+  // ② 상단 2번째 줄(방문 칩) 제거 — 1줄 분류 칩만
+  ['지도: 방문 필터 칩을 더 이상 그리지 않음', mapSource217.indexOf('VisitFilterChips') < 0 && mapSource217.indexOf('styles.visitWrap') < 0],
+  ['지도 화면: 분류 칩은 그대로, 방문 칩은 없음', mapHtml217.indexOf('filter-chip-전체') > 0 && mapHtml217.indexOf('visit-chip-미방문') < 0],
+  // ③ 오른쪽 스택에서 지도 공유 제거
+  ['지도: 오른쪽 스택에 지도 공유 버튼 없음', mapSource217.indexOf('지도 공유</Text>') < 0],
+  ['지도 화면(접힘): 지도 공유 글자 없음(메뉴 안으로 이동)', mapHtml217.indexOf('지도공유') < 0],
+  ['지도: 오른쪽 스택은 목록 보기 · 주변 500m · FAB 세 칸', mapSource217.indexOf('목록 보기</Text>') > 0 && mapSource217.indexOf("'주변 ' + NEARBY_RADIUS_M + 'm'") > 0 && mapSource217.indexOf('accessibilityLabel="내 위치 찾기"') > 0],
+  // ④ 왼쪽 하단 펼침 메뉴
+  ['지도 도구: 왼쪽 끝 12 · 아래 끝 16', /col: \{[\s\S]{0,140}?left: 12,[\s\S]{0,40}?bottom: 16/.test(toolsSource217)],
+  ['지도 도구: 세로 column(요약 · 카드 · 버튼이 겹치지 않음)', /col: \{[\s\S]{0,180}?alignItems: 'flex-start',[\s\S]{0,40}?gap: 8/.test(toolsSource217)],
+  ['지도 화면(접힘): 토글 버튼 + 개수 요약만', mapHtml217.indexOf('map-tools-toggle') > 0 && mapHtml217.indexOf('핀표시중') > 0],
+  ['지도 화면(접힘): 펼친 카드는 그리지 않음(빈 곳 탭 방지)', mapHtml217.indexOf('map-tools-menu') < 0 && toolsOffHtml217.indexOf('map-tools-menu') < 0],
+  ['도구 메뉴: 가본 곳만 보기 스위치 + 가본 곳 N곳/전체 M곳', toolsOpenHtml217.indexOf('가본곳만보기') > 0 && toolsOpenHtml217.indexOf('가본곳2곳/전체5곳') > 0],
+  ['도구 메뉴: 스위치는 role=switch · 켜지면 aria-checked=true', toolsSource217.indexOf('accessibilityRole="switch"') > 0 && toolsOpenHtml217.indexOf('aria-checked="true"') > 0],
+  ['도구 메뉴: [지도 공유하기] 버튼', toolsOpenHtml217.indexOf('map-tools-share') > 0 && toolsOpenHtml217.indexOf('지도공유하기') > 0],
+  ['도구 메뉴: 켜진 상태는 토글에 가본 곳만 + 점', toolsOpenHtml217.indexOf('가본곳만') > 0 && toolsOpenHtml217.indexOf('map-tools-dot') > 0],
+  ['도구 메뉴: 요약 알약도 함께', toolsOpenHtml217.indexOf('가본곳만2/5') > 0],
+  ['지도: 토글을 다시 누르거나 지도를 누르면 접힘', mapSource217.indexOf('onToggleOpen={() => setToolsOpen((open) => !open)}') > 0 && mapSource217.indexOf('testID="map-tools-backdrop"') > 0],
+  ['지도: 열려 있을 때만 지도 먹는 막을 그림', /toolsOpen && \([\s\S]{0,320}?map-tools-backdrop/.test(mapSource217)],
+  ['지도: 왼쪽 하단 도구는 상세 시트가 열리면 숨김', /view === 'map' && !selectedPin && \(\s*\n\s*<MapToolsMenu/.test(mapSource217)],
+  // ⑤ Y/N 동작 — 지도·목록이 같은 상태를 씁니다
+  ['가본 곳만 보기: 켜면 가봤어요(visited===true) 핀만', filterByVisit(VISIT_SAMPLE, VISIT_DONE).map((p) => p.id).join(',') === 'b-1'],
+  ['가본 곳만 보기: 끄면 전체', filterByVisit(VISIT_SAMPLE, VISIT_ALL).length === 3],
+  ['가본 곳만 보기: 같은 값을 다시 누르면 전체로 토글', /const changeVisitFilter = useCallback\(\(next\) => \{[\s\S]{0,400}?current === value && value !== VISIT_ALL \? VISIT_ALL : value/.test(mapSource217)],
+  ['가본 곳만 보기: 스위치가 changeVisitFilter(VISIT_DONE) 를 부름', mapSource217.indexOf('onToggleVisited={() => changeVisitFilter(VISIT_DONE)}') > 0],
+  ['가본 곳만 보기: 켜져 있으면 토글에 가본 곳만 표시', mapSource217.indexOf('visitedOnly={visitedOnly}') > 0 && /const visitedOnly = visitFilter === VISIT_DONE/.test(mapSource217)],
+  ['요약 문구: 전체 / 가본 곳만 / 미방문', toolsSummary({ filteredCount: 5, totalCount: 5 }) === '5 / 5 핀 표시 중' && toolsSummary({ filteredCount: 2, totalCount: 5, visitFilter: VISIT_DONE }) === '가본 곳만 2 / 5' && toolsSummary({ filteredCount: 3, totalCount: 5, visitFilter: '미방문' }) === '미방문 3 / 5'],
+  // ⑥ 지도 공유 기능은 그대로
+  ['지도 공유: 도구 메뉴가 기존 shareMyMap 을 그대로 부름', mapSource217.indexOf('buildShareUrl(pins)') > 0 && /onShare=\{\(\) => \{[\s\S]{0,120}?shareMyMap\(\);/.test(mapSource217)],
+  ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
+  // ⑦ 상태·버전
+  ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
+  ['버전: 메뉴·프로필 모두 v2.17.0', APP_VERSION_LABEL === '릴스핀 v2.17.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.17.0') > 0],
+  // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
+  [
+    '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
+    mapSource217.indexOf('hideNotice={toolsOpen}') > 0 &&
+      fs.readFileSync(path.join(process.cwd(), 'src/components/RealMapView.web.js'), 'utf8').indexOf('hideNotice = false') > 0,
+  ],
+];
+for (const [label, ok, extra] of v217Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
   }
 }
 
@@ -1499,6 +1605,7 @@ const total =
   v2141Checks.length +
   v215Checks.length +
   v216Checks.length +
+  v217Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

@@ -11,7 +11,7 @@
  *                            로그인   이메일 · 클라우드 동기화 상태(켜짐/N개)
  *   · 바로가기 : 분류 관리(내 정보) · 지도 공유
  *   · 요약     : 저장된 핀 N곳 · 가본 곳 M곳
- *   · 맨 아래 : 릴스핀 v2.16.0
+ *   · 맨 아래 : 릴스핀 v2.17.0
  *
  * 알림 모음(AlertInbox)과 같은 다크 차콜 헤더 + 흰 본문 시트 규칙을 씁니다.
  */
@@ -20,7 +20,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.16.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.17.0';
 
 export default function MenuDrawerModal({
   visible,

@@ -8,9 +8,11 @@ import FilterChips from '../components/FilterChips';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 // v2.6 — 검색 결과 1곳이면 그 핀으로 지도 이동, 2곳 이상이면 검색창 아래 결과 목록
 // v2.16 — 지도 위 검색창은 상단 헤더 🔍(검색 레이어 팝업)로 올라갔습니다.
-//         지도 화면에는 분류·방문 필터 칩만 남기고, 목록 보기의 검색은 그대로 둡니다.
-import VisitFilterChips from '../components/VisitFilterChips';
+//         지도 화면에는 분류 필터 칩만 남기고, 목록 보기의 검색은 그대로 둡니다.
+// v2.17 — 지도 상단 2번째 줄(방문 필터 칩)과 오른쪽 `지도 공유` 를 없애고,
+//         **가본 곳만 보기 · 지도 공유하기** 를 왼쪽 하단 펼침 메뉴(MapToolsMenu)로 모았습니다.
 import PinListView from '../components/PinListView';
+import MapToolsMenu, { toolsSummary } from '../components/MapToolsMenu';
 import {
   DEFAULT_CATEGORIES,
   countByCategory,
@@ -18,7 +20,7 @@ import {
   nextFilterAfterRemoval,
   nextFilterAfterRename,
 } from '../utils/categories';
-import GeofenceBanner from '../components/GeofenceBanner';
+import GeofenceBanner, { shouldShowBanner } from '../components/GeofenceBanner';
 import PinDetailSheet from '../components/PinDetailSheet';
 import {
   NEARBY_RADIUS_M,
@@ -44,6 +46,7 @@ import { colors, cardShadow, mapControls, radius, typography } from '../theme';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 import {
   VISIT_ALL,
+  VISIT_DONE,
   countByVisit,
   filterAndSearchPins,
   filterByVisit,
@@ -90,7 +93,12 @@ export default function MapScreen({
   }, [onMyCoords]);
   const [filter, setFilter] = useState('전체');
   // v2.10 — ✅ 방문 상태 필터 ('전체' | '미방문' | '가봤어요')
+  // v2.17 — 지도 상단 칩이 없어지고 왼쪽 하단 메뉴의 **가본 곳만 보기 Y/N** 이 이 값을 켜고 끕니다.
+  //         (목록 보기의 방문 칩은 그대로 이 값을 씁니다 → 어느 쪽에서 바꿔도 지도·목록이 같은 상태)
   const [visitFilter, setVisitFilter] = useState(VISIT_ALL);
+  // v2.17 — 왼쪽 하단 지도 도구(가본 곳만 보기 · 지도 공유하기) 펌찌기
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const visitedOnly = visitFilter === VISIT_DONE;
 
   // ── v2.5 검색어 · 지도/목록 전환 ──────────────────────────────
   //   query … 내 핀 검색어 (가게명·지역·주소·분류·메뉴태그)
@@ -479,21 +487,22 @@ export default function MapScreen({
   }, [alertsOn, applyPosition, showToast]);
 
   // ── 배너 문구 (v2.1.3: 사실만 — 위치를 모를 때 가짜 거리·가게명을 지어내지 않음) ──
+  //   v2.17 — `mode` 를 처음으로 명시합니다. 배너는 **mode === 'near'(반경 500m 안)** 때만 그립니다.
+  //           (shouldShowBanner · GeofenceBanner)
   const banner = useMemo(() => {
     if (pins.length === 0) {
-      return { pin: null, empty: true, needsLocation: false, target: null };
+      return { mode: 'empty', pin: null, target: null };
     }
 
     if (!myCoords) {
-      return { pin: null, empty: false, needsLocation: true, target: null };
+      return { mode: 'needs-location', pin: null, target: null };
     }
 
     if (nearby.length) {
       const top = nearby[0];
       return {
+        mode: 'near',
         pin: top.pin,
-        empty: false,
-        needsLocation: false,
         title: '반경 ' + NEARBY_RADIUS_M + 'm 앞, 저장한 맛집이 있어요',
         sub: top.pin.name + ' · ' + formatDistance(top.distanceMeters),
         badge: '지금',
@@ -503,10 +512,11 @@ export default function MapScreen({
     }
 
     if (closest && closest.pin) {
+      // 반경 밖 가장 가까운 곳 — 사실은 알고 있지만 지도를 가리지 않게 **배너로는 안 보여 줍니다.**
+      // (가까운 저장 장소는 헤더 🔔 알림 모음 · 오른쪽 `주변 500m` 패널에서 그대로 볼 수 있음)
       return {
+        mode: 'closest',
         pin: closest.pin,
-        empty: false,
-        needsLocation: false,
         title: '가장 가까운 저장 장소: ' + closest.pin.name,
         sub: formatDistance(closest.distanceMeters) + ' · 반경 ' + NEARBY_RADIUS_M + 'm 밖',
         badge: '내 위치',
@@ -516,7 +526,7 @@ export default function MapScreen({
     }
 
     // 위치는 있지만 좌표 있는 핀이 하나도 없을 때 — 지어내지 않고 아무 배너도 그리지 않습니다.
-    return { pin: null, empty: false, needsLocation: false, target: null };
+    return { mode: 'none', pin: null, target: null };
   }, [myCoords, nearby, closest, pins.length]);
 
   /**
@@ -526,23 +536,21 @@ export default function MapScreen({
    * · 사용자가 [내 위치]를 새로 누르면 닫힘 기록을 지워 다시 보입니다(locateFromUser).
    */
   const bannerKey = useMemo(() => {
-    if (banner.empty) return 'empty';
-    if (banner.needsLocation) return 'needs-location';
-    if (banner.pin) return banner.pin.id + ':' + (banner.tone === 'muted' ? 'closest' : 'near');
+    if (banner.mode === 'empty') return 'empty';
+    if (banner.mode === 'needs-location') return 'needs-location';
+    if (banner.pin) return banner.pin.id + ':' + (banner.mode === 'closest' ? 'closest' : 'near');
     return '';
   }, [banner]);
 
   const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey;
+  // v2.17 — 반경 500m 안(near)일 때만 그립니다.
+  const bannerVisible = shouldShowBanner(banner.mode) && !bannerHidden;
 
   const dismissBanner = useCallback(() => {
     if (bannerKey) setDismissedBannerKey(bannerKey);
   }, [bannerKey]);
 
   const focusBannerPin = () => {
-    if (banner.needsLocation) {
-      locateFromUser();
-      return;
-    }
     if (!banner.target) {
       if (typeof onGoPaste === 'function') onGoPaste();
       return;
@@ -600,6 +608,7 @@ export default function MapScreen({
           fitKey={fitKey}
           radiusMeters={NEARBY_RADIUS_M}
           categories={categories}
+          hideNotice={toolsOpen}
         />
 
         {/* v2.5 — 📋 목록 보기: 지도 위를 덮는 카드 목록 (검색·필터·가까운 순) */}
@@ -624,21 +633,14 @@ export default function MapScreen({
           />
         )}
 
-        {/* 상단 오버레이(지도 보기): 분류·방문 필터 칩 → 실시간 배너 → (공유받은 지도 · 위치 오류) */}
+        {/* 상단 오버레이(지도 보기): 분류 필터 칩 → (공유받은 지도 · 위치 오류) */}
         {view === 'map' && (
         <View style={styles.topOverlay} pointerEvents="box-none">
-          {/* v2.16 — 헤더 바로 아래는 호갱노노처럼 **필터 칩 바 하나**만 둡니다.
-              (지도 위 검색창은 헤더 🔍 = 검색 레이어 팝업으로 올라감 → 지도가 훨씬 넓어짐) */}
+          {/* v2.16 — 헤더 바로 아래는 호갱노노처럼 **필터 칩 바 하나**만 둡니다. */}
+          {/* v2.17 — 2번째 줄(전체 / ○ 미방문 / ✓ 가봤어요) 은 없어졌습니다.
+              방문 필터는 왼쪽 하단 펼침 메뉴의 `가본 곳만 보기` Y/N 하나로 → 지도가 한 줄 더 넓어졌습니다. */}
           <View style={styles.chipWrap}>
             <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
-            {/* v2.10 — ✅ 방문 상태 필터 (지도에서도 바로 '안 가본 곳만' 볼 수 있게) */}
-            <View style={styles.visitWrap}>
-              <VisitFilterChips
-                value={visitFilter}
-                onChange={changeVisitFilter}
-                counts={visitCounts}
-              />
-            </View>
           </View>
           {previewPins.length > 0 && (
             <View style={styles.sharedBanner}>
@@ -672,18 +674,13 @@ export default function MapScreen({
               </Pressable>
             </View>
           )}
-          {!bannerHidden && (
+          {bannerVisible && (
             <GeofenceBanner
               key={bannerKey}
               pin={banner.pin}
               radiusMeters={radiusMeters}
               onPress={focusBannerPin}
-              onLocate={() => locateFromUser()}
               onDismiss={dismissBanner}
-              locating={locating && !myCoords}
-              empty={banner.empty}
-              needsLocation={banner.needsLocation}
-              hintTitle={'내 위치를 켜면 가까운 맛집과 ' + NEARBY_RADIUS_M + 'm 알림이 보여요'}
               title={banner.title}
               sub={banner.sub}
               badge={banner.badge}
@@ -702,15 +699,37 @@ export default function MapScreen({
         )}
 
         {/* 저장 개수 표시 — 상세 시트가 열리면 숨깁니다 */}
+        {/* v2.17 — 메뉴 밖(지도)을 누르면 접힙니다. 왼쪽 하단 도구·오른쪽 버튼 스택보다 아래에 그려집니다. */}
+        {view === 'map' && !selectedPin && toolsOpen && (
+          <Pressable
+            style={styles.toolsBackdrop}
+            onPress={() => setToolsOpen(false)}
+            accessibilityRole="button"
+            accessibilityLabel="지도 도구 접기"
+            testID="map-tools-backdrop"
+          />
+        )}
+
+        {/* v2.17 — 왼쪽 하단: `N / N 핀 표시 중` 요약 + [가본 곳만 보기 Y/N · 지도 공유하기] 펌찄 메뉴
+            (세로 column 이라 알약·카드·버튼이 겹치지 않습니다 — MapToolsMenu) */}
         {view === 'map' && !selectedPin && (
-          <View style={styles.countPill} pointerEvents="none">
-            <View style={styles.countDot} />
-            <Text style={styles.countText}>
-              {visitFilter === VISIT_ALL
-                ? filtered.length + ' / ' + pins.length + ' 핀 표시 중'
-                : visitFilter + ' ' + filtered.length + '곳 / ' + pins.length + '곳'}
-            </Text>
-          </View>
+          <MapToolsMenu
+            open={toolsOpen}
+            visitedOnly={visitedOnly}
+            visitedCount={visitCounts[VISIT_DONE]}
+            totalCount={pins.length}
+            summary={toolsSummary({
+              filteredCount: filtered.length,
+              totalCount: pins.length,
+              visitFilter,
+            })}
+            onToggleOpen={() => setToolsOpen((open) => !open)}
+            onToggleVisited={() => changeVisitFilter(VISIT_DONE)}
+            onShare={() => {
+              setToolsOpen(false);
+              shareMyMap();
+            }}
+          />
         )}
 
         {/* 반경 500m 주변 목록 */}
@@ -794,7 +813,7 @@ export default function MapScreen({
           </View>
         )}
 
-        {/* 내 위치 · 주변 500m · 공유 · 목록 보기 버튼 */}
+        {/* 목록 보기 · 주변 500m · 내 위치 버튼 (v2.17: `지도 공유` 는 왼쪽 하단 펌찄 메뉴로 이동) */}
         {view === 'map' && !selectedPin && (
           <View style={styles.actionCol}>
             <Pressable
@@ -816,15 +835,6 @@ export default function MapScreen({
             >
               <Ionicons name="storefront-outline" size={14} color={colors.white} />
               <Text style={styles.nearbyBtnText}>{'주변 ' + NEARBY_RADIUS_M + 'm'}</Text>
-            </Pressable>
-            <Pressable
-              style={styles.nearbyBtn}
-              onPress={shareMyMap}
-              accessibilityRole="button"
-              accessibilityLabel="내 지도 공유하기"
-            >
-              <Ionicons name="share-social-outline" size={14} color={colors.white} />
-              <Text style={styles.nearbyBtnText}>지도 공유</Text>
             </Pressable>
             <Pressable
               style={[styles.fab, myCoords && styles.fabLive]}
@@ -947,8 +957,14 @@ const styles = StyleSheet.create({
     // v2.16 — 헤더 바로 아래(오버레이 top:8)에 붙는 필터 칩 바
     marginTop: 0,
   },
-  visitWrap: {
-    marginTop: 6,
+  // v2.17 — 펌찄 메뉴가 열렸을 때 지도(메뉴 밖)를 누르면 접기 위한 투명 막.
+  //          지도·네이버 로고를 덮지만, 이 막 위에 왼쪽 하단 도구·오른쪽 버튼 스택이 그려집니다.
+  toolsBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   viewToggleBtn: {
     backgroundColor: colors.coral,
@@ -971,31 +987,6 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '600',
     lineHeight: 14,
-  },
-  countPill: {
-    position: 'absolute',
-    left: 16,
-    bottom: 26,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(15,23,42,0.72)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.navyLine,
-  },
-  countDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.coral,
-  },
-  countText: {
-    color: '#AEB9CC',
-    fontSize: 11,
-    fontWeight: '700',
   },
   actionCol: {
     position: 'absolute',

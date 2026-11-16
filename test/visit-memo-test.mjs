@@ -300,7 +300,15 @@ check('배선: App 이 한도 없이 추가 (planPinAddition)', app.indexOf('pla
 check('배선: App 이 방문·메모 핸들러를 지도에 넘김', app.indexOf('onTogglePinVisited={handleTogglePinVisited}') > 0 && app.indexOf('onChangePinMemo={handleSavePinMemo}') > 0);
 check('배선: 저장 화면에 한도 잠금이 없음', paste.indexOf('FREE_PIN_LIMIT') < 0 && paste.indexOf('무료 플랜은 핀') < 0);
 check('배선: 내 정보에 한도 문구·프로그레스 없음', profile.indexOf('FREE_PIN_LIMIT') < 0 && profile.indexOf('무료 한도를 다 채웠어요') < 0);
-check('배선: 지도가 방문 필터를 쓰고 상세 시트에 콜백 전달', map.indexOf('VisitFilterChips') > 0 && map.indexOf('onToggleVisited={onTogglePinVisited}') > 0 && map.indexOf('onChangeMemo={onChangePinMemo}') > 0);
+// v2.17 — 지도 상단 방문 칩은 사라지고, 왼쪽 하단 펼침 메뉴의 '가본 곳만 보기' Y/N 이 같은 visitFilter 를 씁니다.
+check(
+  '배선: 지도가 방문 필터(가본 곳만 보기)를 쓰고 상세 시트에 콜백 전달',
+  map.indexOf('MapToolsMenu') > 0 &&
+    map.indexOf('changeVisitFilter(VISIT_DONE)') > 0 &&
+    map.indexOf('const visitedOnly = visitFilter === VISIT_DONE') > 0 &&
+    map.indexOf('onToggleVisited={onTogglePinVisited}') > 0 &&
+    map.indexOf('onChangeMemo={onChangePinMemo}') > 0
+);
 check('배선: 목록 행에 방문 배지 + 메모 미리보기', list.indexOf('✓ 방문완료') > 0 && list.indexOf('pin-memo-preview-') > 0);
 check('배선: 상세 시트에 가봤어요 토글 + 메모 입력', sheet.indexOf('pin-visited-toggle') > 0 && sheet.indexOf('pin-memo-input') > 0);
 check('배선: 저장 화면에 선택 메모 입력', paste.indexOf('paste-memo-input') > 0);

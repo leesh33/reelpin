@@ -279,6 +279,7 @@ check('배지 HTML: 100곳이면 99+', clusterIconHtml(120, null).indexOf('99+')
 // ── 9. 화면 배선 ────────────────────────────────────────────
 const read = (rel) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
 const mapSource = read('src/components/RealMapView.web.js');
+const toolsSource = read('src/components/MapToolsMenu.js');
 const screenSource = read('src/screens/MapScreen.js');
 const listSource = read('src/components/PinListView.js');
 const searchSource = read('src/components/PinSearchBar.js');
@@ -304,8 +305,11 @@ const wiring = [
   ['지도 화면: [목록 보기] / [지도 보기] 토글', screenSource.indexOf('목록 보기') > 0 && listSource.indexOf('지도 보기') > 0],
   ['지도 화면: 목록 모드에서 목록이 지도를 덮음', screenSource.indexOf("view === 'list' && (") > 0],
   [
-    '지도 화면: 실시간 개수 반영',
-    screenSource.indexOf("' / ' + pins.length + ' 핀 표시 중'") > 0 && screenSource.indexOf('filtered.length') > 0,
+    // v2.17 — 개수 알약은 지도 왼쪽 하단 도구 메뉴(MapToolsMenu)로 옮겼습니다.
+    '지도 화면: 실시간 개수 반영(요약 알약 = filtered / pins)',
+    toolsSource.indexOf("' / ' + totalCount + ' 핀 표시 중'") > 0 &&
+      screenSource.indexOf('filteredCount: filtered.length') > 0 &&
+      screenSource.indexOf('totalCount: pins.length') > 0,
   ],
   ['목록: 분류 색 점 + 분류 배지 + 이름 + 지역/주소 + 거리', listSource.indexOf('pin-dot-') > 0 && listSource.indexOf('pinDistanceMeters') > 0 && listSource.indexOf('formatDistance') > 0 && listSource.indexOf('categoryTint') > 0],
   ['목록: 탭하면 그 핀 상세 시트', listSource.indexOf('onSelectPin(pin.id)') > 0],
