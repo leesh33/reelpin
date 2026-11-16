@@ -30,6 +30,8 @@ import {
 } from '../src/utils/memoDraft.js';
 import { extractKakaoPlaceId, extractNaverPlaceId, needsPlaceInfo, placeInfoPathOf, placeInfoTargetOf } from '../src/services/placeInfo.js';
 import { buildPin, normalizePin, withPlaceHours } from '../src/utils/pins.js';
+// v2.20 — Gemini 응답의 memo 재료를 추출기가 그대로 받는지 (영상·사진 공통)
+import { memoPartsOf } from '../src/services/extractor.js';
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -230,6 +232,27 @@ check(
 );
 check('핀: 영업시간은 updatedAt 을 건드리지 않음 (클라우드 동기화 대상 아님)', !withHours.updatedAt);
 check('핀: 예전 핀(v2.19) 정규화에도 hours 기본값', normalizePin({ name: '옛 핀', id: 'p1' }).hours === null);
+
+// ── 6. Gemini memo 재료 → 추출기 ────────────────────────────────────
+const geminiParts = memoPartsOf({
+  storeName: '착한부대찌개',
+  memo: { recommendedMenu: '부대찌개', parking: '', kidsOrWaitingTip: '웨이팅 있음' },
+});
+check(
+  'AI: memo 세 칸을 그대로 받음 (빈 칸은 빈 문자열)',
+  geminiParts.recommendedMenu === '부대찌개' && geminiParts.parking === '' && geminiParts.kidsOrWaitingTip === '웨이팅 있음',
+  JSON.stringify(geminiParts)
+);
+check('AI: memo 가 없으면 전부 빈 문자열 (지어내지 않음)', JSON.stringify(memoPartsOf({})) === '{"recommendedMenu":"","parking":"","kidsOrWaitingTip":""}');
+check(
+  'AI: 최상위 필드로 와도 받아 줌',
+  memoPartsOf({ recommendedMenu: '마제소바', parking: '주차 불가' }).parking === '주차 불가'
+);
+check(
+  'AI: 초안이 실제 한줄 메모로',
+  memoDraftOfParts(geminiParts) === '추천: 부대찌개 · 웨이팅 있음',
+  memoDraftOfParts(geminiParts)
+);
 
 if (fails) {
   console.log('\nHOURS_TEST_FAILED=' + fails);
