@@ -252,6 +252,27 @@ alter table public.pins add column if not exists memo    text    not null defaul
 - 화면 렌더 스모크에 **헤더 색 검사 13건** 추가: 다크 차콜 4곳(저장 화면·상세 시트·모달 웹/네이티브) · 흰 글자 · 반투명 `✕` · 둥근 모서리 · `✕` 헤더 전수 검사 · 스크롤 상단 여백.
 - `npm test` — **ALL_TESTS_OK**(1516건 · 화면 렌더 스모크 **283/283**), `npm run export:web` — 에러 0건.
 
+## Gemini 모델 전환 (2026-11-16) — ⚡ 영상 분석 55초 타임아웃 → 2~3초 (`gemini-3.5-flash-lite`)
+
+앱 화면은 그대로이고 **서버 함수(`api/gemini.js`) 설정만** 바뀌었습니다(앱 버전은 v2.11.0 유지).
+
+- 문제: 기본 모델이던 **`gemini-3.8-flash`** 가 `https://youtube.com/shorts/_Yc2CwHTKtY` 분석에서 **55초를 넘겨 `gemini-timeout` 으로 실패**했습니다(모델·영상에 따라 24~50초+ 변동).
+- 조치: `DEFAULT_MODEL` 을 **`gemini-3.5-flash-lite`** 로 바꾸고, 폴백 순서를 **`gemini-3.5-flash-lite` → `gemini-3.8-flash` → `gemini-3.1-flash-lite` → `gemini-2.5-flash`**(중복 자동 제거 · `GEMINI_MODEL` 로 고정 가능)으로 두었습니다.
+- '생각' 옵션은 모델별로 다르게 둡니다 — **lite 계열은 `thinkingConfig` 없이(off) 먼저**(생각 없이도 4초대), **그 밖의 모델은 `thinkingLevel: LOW` → `thinkingBudget: 0` → 옵션 없음**. 응답의 `thinking` 필드로 어느 모드로 답했는지 바로 보입니다.
+- 타임아웃(55초)·전체 예산(57초)·`maxDuration 60` 은 그대로 두었습니다. lite 는 2~3초라 상한에 거의 닿지 않고, 상한을 줄이면 무거운 폴백 모델이 정상적으로 오래 걸릴 때 오히려 끊기기 때문입니다.
+
+### ✅ 검증 (라이브 `https://reelpin.vercel.app`, 커밋 `a0ce76b`)
+
+| 입력 | 응답 | 걸린 시간(서버 `elapsedMs` / HTTP 총) | 추출 |
+|---|---|---|---|
+| `_Yc2CwHTKtY` | **200** · `model: gemini-3.5-flash-lite` · `thinking: off` | **2,530ms / 2.81초** | `영화장` · 이문동 · 고추삼선간짜장, 탕수육 |
+| `_Yc2CwHTKtY` (반복) | 200 · 같은 모델 | **1,534ms / 1.92초** | `영화장` · 외대앞 |
+| `LPLE_SH2b9U` | 200 · 같은 모델 | **2,999ms / 3.14초** | `착한부대찌개` · 쌍문동 |
+
+- 저장 화면(390×844)에서 `_Yc2CwHTKtY` 를 실제로 넣어 확인: `추출된 장소 1곳` · **`AI 영상 분석으로 찾았어요 · “영화장” (외대앞역)`** · 후보 1곳(`영화장` · 카카오·네이버) — 함수 응답 `elapsedMs` 1,486ms / 2,984ms. (검증 스크립트·스크린샷: `../reelpin-verify-gemini-lite/`)
+- `npm test` — **ALL_TESTS_OK**(**1523건** · 화면 렌더 스모크 283/283). Gemini 단위 검사에 **10건 추가**: 기본 모델·후보 순서(중복 제거)·`GEMINI_MODEL` 1순위·모델별 생각 옵션 순서·404 폴백이 `gemini-3.8-flash` 로 내려가는지(그때는 `thinkingLevel: LOW` 로 시작).
+- `npm run export:web` — 에러 0건.
+
 ## v2.9에서 달라진 점 (2026-11-16) — 🎬 유튜브는 Gemini 가 영상을 직접 보고 가게를 찾습니다
 
 상훈 님 요청: **“유튜브 쇼츠 영상 내용(음성·화면 자막)에서 가게 이름·동네를 뽑아내기”**.
