@@ -253,15 +253,15 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - `npm test` — **ALL_TESTS_OK (1717건 · 화면 렌더 스모크 359/359)**. v2.14.1로 **24건 추가**: 스와이프 판정 규칙 6건(32px 경계·31px·빠른 플릭·짧은 플릭·아래 방향·무이동) · 배너 소스 검사 9건(웹 터치 3종·포인터·터치/포인터 중복 방지·PanResponder 6px·`translateY` 추종·닫힘 애니메이션·스냅백·애니메이션 뒤 `onDismiss`·오탭 방지) · 지도 연결 5건(`dismissedBannerKey`·배너 키 규칙·닫힌 배너 미표시·`onDismiss` 전달·`내 위치` 재표시) · 핀 시트 주황 헤더 5건(배경·핸들·이름·✕·구조 유지) · 렌더 1건.
 - `npm run export:web` — **에러 0건**.
 
-### 4. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `e0dafe8`)
+### 4. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `1701aa3`)
 
 진짜 터치 이벤트(CDP `Input.dispatchTouchEvent`: touchStart → touchMove×8 → touchEnd)로 확인했습니다.
 
 | 확인 | 결과 |
 |---|---|
 | 배너 처음 | `반경 500m 앞, 저장한 맛집이 있어요 / 영등포아바이순대국 · 278m` · 박스 `0,8 · 390×61` |
-| 위로 18px · 546ms | 배너 **그대로** (32px 미만 → 스냅백) |
-| 위로 80px · 422ms | 배너 **사라짐** |
+| 위로 18px · 547ms | 배너 **그대로** (32px 미만 → 스냅백) |
+| 위로 80px · 431ms | 배너 **사라짐** |
 | 1.6초 뒤 | **다시 뜨지 않음** |
 | `내 위치` 새로 누름 | 배너 **다시 보임** |
 | 시트 헤더 | `rgb(255, 90, 54)` = **#FF5A36** · `border-top-left-radius: 28px` |
