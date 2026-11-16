@@ -6,6 +6,7 @@ import {
   StatusBar,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
@@ -14,7 +15,7 @@ import MapScreen from './src/screens/MapScreen';
 import PasteScreen from './src/screens/PasteScreen';
 import CollectionsScreen from './src/screens/CollectionsScreen';
 import TabBar from './src/components/TabBar';
-import Toast from './src/components/Toast';
+import Toast, { toastTopBelowSheetHeader } from './src/components/Toast';
 // v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
 // v2.16 — 호갱노노처럼 헤더(🔍 · 🔔 · ☰) + 🔍 검색 레이어 팝업 · ☰ 메뉴 시트
 import AlertInbox from './src/components/AlertInbox';
@@ -105,6 +106,10 @@ export default function App() {
   const [sharedPins, setSharedPins] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+  // v2.20.2 — 핀 상세 시트가 열린 동안 토스트는 시트 헤더(분류 색) **아래**에 뜨도록 화면 높이로 계산합니다.
+  //   · screenHeight … 탭 화면이 실제로 그려지는 높이(MapScreen = 시트의 기준 컨테이너)
+  const { height: windowHeight } = useWindowDimensions();
+  const [screenHeight, setScreenHeight] = useState(0);
 
   // ── v2.15 · 공통 헤더(🔔 알림 모음 · 👤 계정) ──────────────────
   //   myCoords … 지도 탭이 잡은 현재 위치를 그대로 받아 둡니다(헤더 뱃지·알림 모음이 같은 위치를 씀)
@@ -1048,7 +1053,7 @@ export default function App() {
     <SafeAreaView style={styles.safe}>
       <ExpoStatusBar style="light" />
       <View style={[styles.container, { paddingTop: TOP_INSET }]}>
-        <View style={styles.screenStack}>
+        <View style={styles.screenStack} onLayout={(e) => setScreenHeight(e.nativeEvent.layout.height)}>
           <View style={[styles.screen, tab !== 'map' && styles.hidden]}>
             <MapScreen
               pins={pins}
@@ -1114,8 +1119,9 @@ export default function App() {
         <Toast
           message={toast ? toast.message : null}
           tone={toast ? toast.tone : 'dark'}
-          bottomOffset={tab === 'map' && selectedPinId ? 440 : tabBar.controlsBottom + 16}
+          bottomOffset={tabBar.controlsBottom + 16}
           placement={tab === 'map' && selectedPinId ? 'top' : 'bottom'}
+          topOffset={toastTopBelowSheetHeader(screenHeight || windowHeight)}
         />
         {/* v2.15 — 🔔 알림 모음 (헤더 오른쪽 아이콘) · 열려 있을 때만 그립니다 */}
         <AlertInbox

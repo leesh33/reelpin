@@ -387,7 +387,7 @@ export default function PasteScreen({
    * v2.8 — 히어로 카드 배경 사진.
    *   1순위: 고른 후보 자체의 사진(coverImage·thumbnail)
    *   2순위: 링크에서 읽어 온 영상 썸네일(유튜브 hqdefault 등)
-   *   없으면(가게명 직접 검색 등) 기존처럼 분류 이모지 타일을 보여 줍니다.
+   *   없으면(가게명 직접 검색 등) **큰 배너를 그리지 않습니다**(v2.20.2 — 빈 이모지 타일 미노출).
    */
   const heroThumbnail = String(
     (heroCandidate && (heroCandidate.coverImage || heroCandidate.thumbnail)) ||
@@ -756,30 +756,29 @@ export default function PasteScreen({
               onSearchByName={() => switchToSearch(meta && meta.suggestedQuery)}
             />
 
-            <View style={styles.heroCard}>
-              {/* 썸네일이 없을 때의 폴백 — 분류 이모지 타일 */}
-              <View style={styles.heroTile}>
-                <Text style={styles.heroEmoji}>
-                  {EMOJI_BY_CATEGORY[heroCandidate ? heroCandidate.category : '맛집'] || '📍'}
-                </Text>
-              </View>
-              {/* v2.8 — 영상 썸네일이 있으면 카드 전체를 배경 사진으로 (로딩 실패 시 이모지 타일이 그대로 보임) */}
-              {!!heroThumbnail && (
+            {/*
+              v2.20.2 — 상훈 님 요청: "저 국수그림 나오는 큰 영역 … 없다면 그냥 미노출하는건 어떨까"
+              실제 사진(유튜브 영상 썸네일 · 사진으로 찾기에서 올린 사진)이 **있을 때만** 큰 배너를 그립니다.
+              가게명 직접 검색처럼 사진이 없는 결과에서는 베이지 타일 + 큰 분류 이모지(🍜)만 남던
+              빈 배너 자리를 아예 렌더링하지 않아, 결과 목록이 화면 위쪽부터 바로 시작합니다.
+            */}
+            {!!heroThumbnail && (
+              <View style={styles.heroCard}>
                 <Image
                   source={{ uri: heroThumbnail }}
                   style={styles.heroImage}
                   resizeMode="cover"
                   accessibilityIgnoresInvertColors
                 />
-              )}
-              {!!heroThumbnail && <View style={styles.heroScrim} pointerEvents="none" />}
-              <View style={[styles.heroOverlay, heroThumbnail && styles.heroOverlayOnPhoto]}>
-                <Text style={styles.heroName} numberOfLines={1}>
-                  {heroCandidate ? heroCandidate.name : '저장할 곳을 골라 주세요'}
-                </Text>
-                {heroCandidate ? <ProviderBadges item={heroCandidate} size="sm" style={styles.heroBadges} /> : null}
+                <View style={styles.heroScrim} pointerEvents="none" />
+                <View style={[styles.heroOverlay, styles.heroOverlayOnPhoto]}>
+                  <Text style={styles.heroName} numberOfLines={1}>
+                    {heroCandidate ? heroCandidate.name : '저장할 곳을 골라 주세요'}
+                  </Text>
+                  {heroCandidate ? <ProviderBadges item={heroCandidate} size="sm" style={styles.heroBadges} /> : null}
+                </View>
               </View>
-            </View>
+            )}
 
             {/* v2.0 — 전체 선택 토글 + 선택 개수 */}
             <View style={styles.selectRow}>
@@ -1242,12 +1241,6 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 12,
   },
-  heroTile: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3E6D8',
-  },
   heroImage: {
     ...StyleSheet.absoluteFillObject,
   },
@@ -1259,9 +1252,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     height: 62,
     backgroundColor: 'rgba(20, 16, 12, 0.28)',
-  },
-  heroEmoji: {
-    fontSize: 52,
   },
   heroOverlay: {
     position: 'absolute',

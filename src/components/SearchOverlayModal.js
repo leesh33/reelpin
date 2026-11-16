@@ -10,8 +10,9 @@
  *       동일하게 구현 (높이 및 배경 딤처리도 동일하게)"
  *
  *   · v2.19.1 부터 **내 정보·알림 모음·목록 보기와 같은 `LayerSheet` 틀**을 씁니다 —
- *     높이 86% · 같은 딤 · 같은 둥근 모서리 · 다크 차콜 헤더(코랄 원 아이콘 + `장소 검색` + ✕) ·
+ *     높이 86% · 같은 딤 · 같은 둥근 모서리 · 다크 차콜 헤더(코랄 원 아이콘 + `내 장소 검색` + ✕) ·
  *     바깥을 누르면 닫힘
+ *   · v2.20.2 — 상훈 님 요청: "돋보기 버튼의 타이틀은 내장소 검색 으로 해줘" → 헤더 타이틀 `내 장소 검색`
  *   · ① 검색 인풋 … 내 핀(가게명·지역·주소·분류·메뉴·한줄 메모) 실시간 검색 + ✕ 지우기
  *   · ② 추천 장소 … 내 위치 기준 **가까운 저장 장소**, 위치를 모르면 **아직 안 가본(!visited)** 곳
  *                 (지역은 `인천 서구 당하동` 처럼 **시·군·구·동까지** 표기 — utils/areaLabel)
@@ -97,7 +98,7 @@ export default function SearchOverlayModal({
       visible={visible}
       onClose={onClose}
       icon="search"
-      title="장소 검색"
+      title="내 장소 검색"
       sub={
         savedCount
           ? '내 핀 ' + savedCount + '곳에서 찾기 · ' + SEARCH_PLACEHOLDER
@@ -130,7 +131,7 @@ export default function SearchOverlayModal({
             returnKeyType="search"
             autoCapitalize="none"
             autoCorrect={false}
-            accessibilityLabel="장소 검색"
+            accessibilityLabel="내 장소 검색"
             testID="search-overlay-input"
           />
           {query ? (

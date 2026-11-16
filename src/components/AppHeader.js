@@ -65,7 +65,7 @@ export default function AppHeader({
             onPress={onPressSearch}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="장소 검색"
+            accessibilityLabel="내 장소 검색"
             testID="header-search"
           >
             <Ionicons name="search" size={18} color={colors.white} />

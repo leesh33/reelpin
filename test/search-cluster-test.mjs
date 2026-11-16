@@ -8,7 +8,7 @@
  *   · 검색 매칭 — 가게명·지역·주소·분류·메뉴태그, 대소문자/공백 무시, 여러 낱말 AND
  *   · 분류 필터 AND 검색어
  *   · 목록 정렬 — 내 위치가 있으면 가까운 순, 없으면 최신순 (좌표 없는 핀은 뒤로)
- *   · 클러스터링 — 46px 안에 2곳 이상이면 한 무리, 줌을 키우면 자동으로 풀림
+ *   · 클러스터링 — 22px(v2.20.2 부터) 안에 2곳 이상이면 한 무리, 줌을 키우면 자동으로 풀림
  *   · 웹 지도(네이버·Leaflet)가 **같은 규칙**을 쓰는지, 검색·목록이 지도 화면에 붙었는지
  */
 import fs from 'node:fs';
@@ -171,31 +171,35 @@ check(
 // ── 6. 픽셀 거리 ────────────────────────────────────────────
 check('픽셀: 3-4-5 삼각형', pixelDistance({ x: 0, y: 0 }, { x: 3, y: 4 }) === 5);
 check('픽셀: 값이 없으면 Infinity', pixelDistance({ x: 0, y: 0 }, null) === Infinity);
-check('픽셀: 기준 거리는 46px (44~48 사이)', CLUSTER_THRESHOLD_PX >= 44 && CLUSTER_THRESHOLD_PX <= 48, CLUSTER_THRESHOLD_PX);
+check('픽셀: 기준 거리는 22px (20~24 사이) — v2.20.2에서 46→22로 줄임', CLUSTER_THRESHOLD_PX >= 20 && CLUSTER_THRESHOLD_PX <= 24, CLUSTER_THRESHOLD_PX);
 
 // ── 7. 클러스터 묶기 ────────────────────────────────────────
 const pt = (id, x, y, lat = 37.58, lng = 126.71) => ({ id, x, y, lat, lng });
 
-const near2 = clusterPoints([pt('a', 100, 100), pt('b', 130, 100)]);
-check('클러스터: 30px 떨어진 2곳은 한 무리', near2.length === 1 && near2[0].count === 2, near2.map((g) => g.count));
+const near2 = clusterPoints([pt('a', 100, 100), pt('b', 116, 100)]);
+check('클러스터: 16px 떨어진 2곳은 한 무리', near2.length === 1 && near2[0].count === 2, near2.map((g) => g.count));
 check('클러스터: 무리 열쇠는 id 정렬', near2[0].key === 'a|b', near2[0].key);
-check('클러스터: 대표 좌표는 가운데(130,100)', near2[0].x === 115 && near2[0].y === 100, [near2[0].x, near2[0].y]);
+check('클러스터: 대표 좌표는 가운데(108,100)', near2[0].x === 108 && near2[0].y === 100, [near2[0].x, near2[0].y]);
+
+// v2.20.2 — 예전 46px 이면 `2` 로 묶였을 30px 거리는 이제 **각자 핀**으로 보입니다(사용자 요청의 핵심)
+const near30 = clusterPoints([pt('a', 100, 100), pt('b', 130, 100)]);
+check('클러스터: 30px 떨어진 2곳은 이제 안 묶임(v2.20.2)', near30.length === 2 && near30.every((g) => g.count === 1), near30.map((g) => g.count));
 
 const far2 = clusterPoints([pt('a', 0, 0), pt('b', 60, 0)]);
 check('클러스터: 60px 떨어지면 따로 (1 + 1)', far2.length === 2 && far2.every((g) => g.count === 1), far2.map((g) => g.count));
 
 const edge = clusterPoints([pt('a', 0, 0), pt('b', CLUSTER_THRESHOLD_PX, 0)]);
-check('클러스터: 정확히 46px 은 묶임(포함)', edge.length === 1 && edge[0].count === 2, edge.map((g) => g.count));
+check('클러스터: 정확히 22px 은 묶임(포함)', edge.length === 1 && edge[0].count === 2, edge.map((g) => g.count));
 const justOver = clusterPoints([pt('a', 0, 0), pt('b', CLUSTER_THRESHOLD_PX + 0.5, 0)]);
-check('클러스터: 46.5px 는 안 묶임', justOver.length === 2, justOver.map((g) => g.count));
+check('클러스터: 22.5px 는 안 묶임', justOver.length === 2, justOver.map((g) => g.count));
 
-const three = clusterPoints([pt('a', 100, 100), pt('b', 120, 110), pt('c', 90, 120)]);
+const three = clusterPoints([pt('a', 100, 100), pt('b', 110, 108), pt('c', 95, 112)]);
 check('클러스터: 3곳이 서로 가까우면 한 무리', three.length === 1 && three[0].count === 3, three.map((g) => g.count));
 
-// 40px 씩 이어진 줄 — a-b, b-c 가 가까우면 a·b·c 모두 한 무리 (배지가 서로 겹치지 않게)
-const chain = clusterPoints([pt('a', 0, 0), pt('b', 40, 0), pt('c', 80, 0)]);
+// 12px 씩 이어진 줄 — a-b, b-c 가 가까우면 a·b·c 모두 한 무리 (배지가 서로 겹치지 않게)
+const chain = clusterPoints([pt('a', 0, 0), pt('b', 12, 0), pt('c', 24, 0)]);
 check('클러스터: 이어진 핀은 한 무리 (사슬)', chain.length === 1 && chain[0].count === 3, chain.map((g) => g.count));
-const twoGroups = clusterPoints([pt('a', 0, 0), pt('b', 30, 0), pt('c', 200, 0), pt('d', 230, 0)]);
+const twoGroups = clusterPoints([pt('a', 0, 0), pt('b', 10, 0), pt('c', 200, 0), pt('d', 210, 0)]);
 check(
   '클러스터: 두 무리의 배지 중심은 서로 겹치지 않음',
   twoGroups.length === 2 && pixelDistance(twoGroups[0], twoGroups[1]) > CLUSTER_THRESHOLD_PX,
@@ -203,16 +207,16 @@ check(
 );
 
 // 입력 순서를 바꿔도 같은 묶음 (배지가 깜빡이지 않게)
-const shuffled = clusterPoints([pt('c', 90, 120), pt('a', 100, 100), pt('b', 120, 110)]);
+const shuffled = clusterPoints([pt('c', 95, 112), pt('a', 100, 100), pt('b', 110, 108)]);
 check(
   '클러스터: 입력 순서와 무관하게 같은 묶음',
   shuffled.length === three.length && shuffled[0].key === three[0].key,
   [shuffled[0].key, three[0].key]
 );
 
-// 줌인하면 거리가 벌어져 자동으로 풀림 (같은 좌표, 2배 확대)
-const zoomedIn = clusterPoints([pt('a', 100, 100), pt('b', 130, 100)].map((p) => ({ ...p, x: p.x * 2, y: p.y * 2 })));
-check('클러스터: 줌을 2배로 키우면(30→60px) 개별 핀으로 풀림', onlyClusters(zoomedIn).length === 0, zoomedIn.map((g) => g.count));
+// 줌인하면 거리가 벌어져 자동으로 풀림 (10px → 2.4배 확대 = 24px)
+const zoomedIn = clusterPoints([pt('a', 100, 100), pt('b', 110, 100)].map((p) => ({ ...p, x: p.x * 2.4, y: p.y * 2.4 })));
+check('클러스터: 줌을 키우면(10px→24px) 개별 핀으로 풀림', onlyClusters(zoomedIn).length === 0, zoomedIn.map((g) => g.count));
 
 // 이상한 값은 조용히 건너뜀
 const dirty = clusterPoints([pt('a', 0, 0), { id: 'bad' }, { id: 'b', x: NaN, y: 0 }, null, pt('c', 10, 0)]);
@@ -224,10 +228,8 @@ check('클러스터: clusteredIds / isClusteredId', clusteredIds(three).has('a')
 check('클러스터: 배지 숫자 — 99까지는 그대로', clusterLabel(3) === '3' && clusterLabel(CLUSTER_LABEL_MAX) === '99', clusterLabel(CLUSTER_LABEL_MAX));
 check('클러스터: 배지 숫자 — 100곳이면 99+', clusterLabel(100) === '99+', clusterLabel(100));
 check('클러스터: 배지 크기는 두 자리에서 커짐', clusterBadgeSize(3) === 40 && clusterBadgeSize(12) === 46, clusterBadgeSize(12));
-check('클러스터: 픽셀 폭·높이', (() => {
-  const span = clusterSpanPx(three[0]);
-  return span.w === 30 && span.h === 20;
-})(), clusterSpanPx(three[0]));
+const spanThree = clusterSpanPx(three[0]);
+check('클러스터: 픽셀 폭·높이', spanThree.w === 15 && spanThree.h === 12, spanThree);
 
 // 배지 색 — 한 분류면 그 분류 색, 섞이면 다크
 const sameCat = clusterPoints([{ ...pt('a', 0, 0), category: '카페' }, { ...pt('b', 10, 0), category: '카페' }]);
