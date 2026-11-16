@@ -190,9 +190,34 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 - 스택 순서를 뒤집었습니다. 예전(아래 = `+ / −` · 위 = `내 위치`) → 지금(**아래 = `내 위치` FAB · 위 = `+ / −` 박스**).
 - 값은 여전히 `theme.mapControls` 한 곳: `stackBottom = 26 + tabBar.floatTop`(탭바·NAVER 로고 위) → `actionBottom = stackBottom`(FAB) → `zoomBottom = actionBottom + fabSize + stackGap`(+/− 박스) → `panelBottom`(주변 목록 패널). 실측 390×844: `+ / −` 박스 top 628 · `내 위치` FAB top 706 · 두 컨트롤 겹침 0 · 오른쪽 끝선 378px 일치 · FAB 아래 끝이 하단 알약 위 26px.
 
-### 4. ✅ 검증
+### 4. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `af9fa40` · Vercel Production success)
 
-- `npm test` — **ALL_TESTS_OK (화면 렌더 스모크 588/588)**. v2.19.2 로 **17건 추가**(분류색 헤더 5 / 뒤로 `‹` 4 / 지도 스택 5 / 여백·버전 등 3)하고, 예전 동작을 고정하던 12건(주황 헤더 · `+ / −` 아래 · 2.19.1 표기)은 v2.19.2 동작에 맞게 갱신했습니다.
+`reelpin-verify-v2.19.2/check-390x844.mjs` 로 **로컬 dist → 라이브** 두 번 실측(둘 다 **VERIFY_OK**, 이슈 0):
+
+| 항목 | 실측값 |
+|---|---|
+| ① 가볼곳 상세 헤더 | `가볼곳` 핀(`송도 센트럴파크`) 시트 헤더 배경 **`rgb(59, 130, 246)`**(#3B82F6) · 분류 배지도 `가볼곳` |
+| ① 헤더가 분류를 따라감 | 시트 안 `분류` 칩에서 **`맛집`** 탭 → 헤더 즉시 **`rgb(255, 90, 54)`**(#FF5A36) |
+| ① 하단 여백 | `네이버지도 열기` 버튼 아래 끝이 하단 알약 위로 **43px** (가림 0) |
+| ② 서브 뒤로 버튼 | `분류 관리` 서브 헤더 뒤로 버튼 innerText **`""`** (한글 없음) · `aria-label="뒤로"` 유지 · 눌러서 내 정보 복귀 OK · 버튼 폭 30px |
+| ③ 지도 스택 | **위 = `+ / −`**(top 628) · **아래 = `내 위치`**(top 706) · 겹침 0(간격 10px) · 오른쪽 끝선 **378px 일치** · 하단 알약 위 26px |
+| 버전 | 시트 발끝 `릴스핀 v2.19.2` |
+
+- 스크린샷: `reelpin-verify-v2.19.2/A1-blue-pin-detail-header-390x844.png` · `A2-header-follows-category-390x844.png` · `B1-menu-sub-back-chevron-only-390x844.png` · `C1-map-zoom-above-locate-390x844.png` · `C2-map-after-zoom-out-390x844.png`
+
+### 5. 📁 바뀐 파일
+
+- `src/components/PinDetailSheet.js` — 헤더 배경 = `getCategoryColor` · 이름 그림자 · 본문 `paddingBottom: tabBar.floatTop + 10`
+- `src/components/LayerSheet.js` — 서브 뒤로 버튼 `‹` 아이콘만 (30×30 히트 영역 · `aria-label` 유지)
+- `src/screens/ProfileScreen.js` — 단독 서브 헤더 뒤로도 `‹` 만 (`subBackText` 제거) · 버전 `2.19.2`
+- `src/theme.js` — `mapControls` 스택 순서 교체(`stackBottom` → `actionBottom`(FAB) → `zoomBottom`(+/−) → `panelBottom`)
+- `src/screens/MapScreen.js` · `src/components/RealMapView.web.js` — 주석·`bottom` 값이 새 순서를 따름
+- `src/components/MenuDrawerModal.js` · `package.json` · `app.json` — 버전 `2.19.2`
+- `test/ssr-smoke.jsx` · `test/collections-test.mjs` — v2.19.2 검사 17건 추가, 옛 동작 고정 18건 갱신
+
+### 6. ✅ 검증
+
+- `npm test` — **ALL_TESTS_OK (화면 렌더 스모크 588/588)**. v2.19.2 로 **17건 추가**(분류색 헤더 5 / 뒤로 `‹` 4 / 지도 스택 5 / 여백·버전 등 3)하고, 예전 동작을 고정하던 18건(주황 헤더 · `+ / −` 아래 · 2.19.1 표기 등)은 v2.19.2 동작에 맞게 갱신했습니다.
 - `npm run export:web` — **에러 0건**.
 
 ## v2.19.1에서 달라진 점 (2026-11-17) — 🪟 팝업 3종 통일 · ✅ 가봤어요 체크 · 🔔 알림 설정 · 📍 시군구동
