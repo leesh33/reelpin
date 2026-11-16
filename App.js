@@ -21,6 +21,9 @@ import Toast, { toastTopBelowSheetHeader } from './src/components/Toast';
 import AlertInbox from './src/components/AlertInbox';
 import SearchOverlayModal from './src/components/SearchOverlayModal';
 import MenuDrawerModal from './src/components/MenuDrawerModal';
+// v2.21 🛡️ 어드민 — /admin 경로면 앱 대신 어드민 화면을, 관리자 계정이면 ☰ 메뉴에 진입점을 보여 줍니다.
+import AdminScreen from './src/screens/AdminScreen';
+import { ADMIN_PATH_PATTERN, isAdminAccount, isAdminPreview } from './src/utils/adminAccess';
 import { buildAlertFeed } from './src/utils/alertFeed';
 // v2.20.1 — 프로필 이름의 출처는 **로그인한 계정 하나** (로그아웃 = 게스트)
 import { profileIdentity } from './src/utils/profileIdentity';
@@ -128,6 +131,9 @@ export default function App() {
   //                  ({ id, mode:'search', query }) — PasteScreen 이 id 가 바뀔 때만 적용
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // v2.21 — 지금 주소가 /admin 인지 (웹). 네이티브에서는 항상 false.
+  const adminRoute = useMemo(() => (Platform.OS === 'web' ? ADMIN_PATH_PATTERN.test(typeof window !== 'undefined' && window.location ? window.location.pathname : '') : false), []);
+  const adminPreview = useMemo(() => (adminRoute && Platform.OS === 'web' ? isAdminPreview() : false), [adminRoute]);
   const [pasteRequest, setPasteRequest] = useState(null);
   const pasteRequestId = useRef(0);
 
@@ -1035,6 +1041,16 @@ export default function App() {
     [alertFeed.badgeCount, openSearch, openAlerts, openMenu, signedIn]
   );
 
+  // v2.21 🛡️ `/admin` — 앱 화면 대신 어드민 화면을 그립니다. (권한은 /api/admin 이 최종 확인)
+  if (adminRoute) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ExpoStatusBar style="light" />
+        <AdminScreen preview={adminPreview} />
+      </SafeAreaView>
+    );
+  }
+
   if (!ready) {
     return (
       <View style={styles.splash}>
@@ -1165,6 +1181,11 @@ export default function App() {
           notifyPermission={notifyPermission}
           onToggleAlerts={handleToggleAlerts}
           isPro={isPro}
+          isAdminAccount={isAdminAccount(cloudUser && cloudUser.email)}
+          onGoAdmin={() => {
+            closeMenu();
+            if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.href = '/admin';
+          }}
           onSignIn={handleSignIn}
           onSignUp={handleSignUp}
           onMagicLink={handleMagicLink}

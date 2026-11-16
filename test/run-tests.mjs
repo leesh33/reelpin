@@ -14,6 +14,7 @@
  *   npm run test:visit    … ✅ 가봤어요 · 📝 한줄 메모 · 🔓 10개 한도 해제 테스트만 (v2.10)
  *   npm run test:collections … 📂 컬렉션 만들기·담기·공유·정리 테스트만 (v2.19)
  *   npm run test:hours     … 🕒 영업 상태 배지 · 📝 한줄 메모 초안 테스트만 (v2.20)
+ *   npm run test:admin     … 🛡️ 어드민 인증(401·403)·화이트리스트·RPC 접근 테스트만 (v2.21)
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -170,6 +171,16 @@ if (!only || only === 'hours') {
     out: 'opening-status-test.bundle.mjs',
     format: 'esm',
     alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
+if (!only || only === 'admin') {
+  // v2.21 — 🛡️ 어드민: 토큰 검증(401/403) · 화이트리스트 · RPC 데이터 접근 · service_role 미사용
+  failed += await runSuite({
+    name: '어드민 인증·API 테스트',
+    entry: 'admin-test.mjs',
+    out: 'admin-test.bundle.mjs',
+    format: 'esm',
   });
 }
 

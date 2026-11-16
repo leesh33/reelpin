@@ -12,6 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import {
   DIRECT_PRESETS,
+  MAX_DIRECT_CANDIDATES,
   extractFromImage,
   extractPlaces,
   isSupportedUrl,
@@ -264,7 +265,7 @@ export default function PasteScreen({
 
     const stageTimer = startProgress();
     try {
-      const result = await searchPlacesDirect(value, { limit: 4 });
+      const result = await searchPlacesDirect(value, { limit: MAX_DIRECT_CANDIDATES });
       await new Promise((resolve) => setTimeout(resolve, 420));
       clearInterval(stageTimer);
       if (seq !== runSeq.current) return;
@@ -620,6 +621,23 @@ export default function PasteScreen({
                 onSubmitEditing={() => runExtract()}
                 accessibilityLabel="릴스 링크 입력"
               />
+              {/* v2.21 — 입력값이 있으면 맨 우측 ✕ 로 한 번에 지웁니다. (상훈 님 요청) */}
+              {url ? (
+                <Pressable
+                  style={styles.inputIconBtn}
+                  onPress={() => {
+                    setUrl('');
+                    setError('');
+                    setStage(0);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="링크 지우기"
+                  testID="url-clear"
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </Pressable>
+              ) : null}
             </View>
             {/* v2.18 — `클립보드에서 붙여넣기` 버튼과 입력창 안의 클립보드 아이콘을 없앴습니다
                 (상훈 님 요청). 붙여넣기는 아이폰 키보드의 길게 눌러 붙여넣기로 합니다. */}

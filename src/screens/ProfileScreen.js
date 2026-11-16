@@ -508,7 +508,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.20.2';
+export const APP_INFO_VERSION = '릴스핀 v2.21.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -717,6 +717,9 @@ export default function ProfileScreen({
   panel = false,
   onOpenSub = null,
   onShareMap = null,
+  // v2.21 🛡️ 어드민 진입점 — 관리자 계정으로 로그인했을 때만 보입니다.
+  isAdminAccount = false,
+  onGoAdmin = null,
 }) {
   const [copied, setCopied] = useState(false);
   // v2.18 — 설정 서브 페이지: null | 'categories' | 'radius' | 'about'
@@ -952,6 +955,19 @@ export default function ProfileScreen({
             onPress={() => openSub('about')}
             testID="profile-row-about"
           />
+          {/* v2.21 — 관리자 계정에만 보이는 어드민 진입점 (일반 사용자 화면에는 노출하지 않음) */}
+          {isAdminAccount && typeof onGoAdmin === 'function' ? (
+            <>
+              <View style={styles.rowDivider} />
+              <SettingsRow
+                icon="shield-checkmark-outline"
+                title="어드민"
+                sub="회원 · 장소(핀) 관리 · 인기 장소 지표"
+                onPress={onGoAdmin}
+                testID="profile-row-admin"
+              />
+            </>
+          ) : null}
         </View>
 
         {/* 프로 안내 */}

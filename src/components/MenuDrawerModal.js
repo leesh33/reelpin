@@ -34,7 +34,7 @@ import { colors } from '../theme';
 import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.20.2';
+export const APP_VERSION_LABEL = '릴스핀 v2.21.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
@@ -62,6 +62,9 @@ export default function MenuDrawerModal({
   cloudBusy = false,
   radiusMeters = 300,
   isPro = false,
+  // v2.21 🛡️ 관리자 계정에만 어드민 진입점을 보여 줍니다.
+  isAdminAccount = false,
+  onGoAdmin = null,
   // v2.19.1 — 🔔 알림 설정 (반경 내 알림 ON/OFF)
   alertsOn = false,
   notifyPermission = 'default',
@@ -184,6 +187,8 @@ export default function MenuDrawerModal({
         cloudBusy={cloudBusy}
         cloudSyncing={cloudSyncing}
         cloudMessage={cloudMessage}
+        isAdminAccount={isAdminAccount}
+        onGoAdmin={onGoAdmin}
         onSignIn={onSignIn}
         onSignUp={onSignUp}
         onMagicLink={onMagicLink}

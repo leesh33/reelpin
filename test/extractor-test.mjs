@@ -60,6 +60,12 @@ import {
   naverBackfillMatch,
   backfillNaverByAddress,
   NAVER_BACKFILL_MAX_QUERIES,
+  // v2.21 — 직접 검색 15개 · 숫자+단위 토큰 차단 · 지역뿐인 검색어 뒤로 미루기
+  MAX_DIRECT_CANDIDATES,
+  KAKAO_SIZE_MAX,
+  NAVER_DISPLAY_MAX,
+  isQuantityOrPriceToken,
+  isAreaOnlyQuery,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -2119,6 +2125,74 @@ check(
     Math.abs(scaledImageSize(2532, 1170).height - 591) <= 1 &&
     (parseImageDataUri('data:image/jpeg;base64,AAEC') || {}).base64 === 'AAEC',
   JSON.stringify(scaledImageSize(2532, 1170))
+);
+
+// ── v2.21 · 가게명 찾기는 최대 15곳 · 숫자+단위 토큰은 상호가 아님 ───────────
+// 상훈 님: "5개 이후로도 더 많이 나오게" / "1마리를 상호명으로 뽑아서 광어1마리15000원이 나왔다"
+check('v2.21 직접 검색: 후보 상한 15 · 카카오 15 · 네이버 5', MAX_DIRECT_CANDIDATES === 15 && KAKAO_SIZE_MAX === 15 && NAVER_DISPLAY_MAX === 5, MAX_DIRECT_CANDIDATES + '/' + KAKAO_SIZE_MAX + '/' + NAVER_DISPLAY_MAX);
+
+const fifteen = Array.from({ length: 15 }, (_, i) => ({
+  place_name: '성수 카페 ' + (i + 1),
+  category_name: '음식점 > 카페',
+  category_group_code: 'CE7',
+  phone: '',
+  address_name: '서울 성동구 성수동1가 ' + (i + 1),
+  road_address_name: '서울 성동구 연무장길 ' + (i + 1),
+  x: String(127.05 + i * 0.001),
+  y: String(37.54 + i * 0.001),
+  place_url: 'http://place.map.kakao.com/' + (9000 + i),
+}));
+setKeys({ kakao: 'KAKAOKEY', naver: true });
+calls = [];
+handler = (url) =>
+  String(url).includes('dapi.kakao.com')
+    ? jsonRes({ documents: fifteen })
+    : jsonRes({ items: [] });
+const direct15 = await searchPlacesDirect('성수 카페');
+const kakaoCall15 = calls.find((c) => c.url.includes('dapi.kakao.com'));
+const naverCall15 = calls.find((c) => c.url.includes('openapi.naver.com'));
+check('v2.21 직접 검색: 15곳까지 반환', direct15.ok === true && direct15.candidates.length === 15, String(direct15.candidates.length));
+check('v2.21 직접 검색: 카카오 size=15 요청', !!kakaoCall15 && kakaoCall15.url.indexOf('&size=15') > 0, kakaoCall15 && kakaoCall15.url);
+check('v2.21 직접 검색: 네이버 display 는 5(규격 상한)', !!naverCall15 && naverCall15.url.indexOf('display=5') > 0, naverCall15 && naverCall15.url);
+
+setKeys({});
+check(
+  'v2.21 상호 후보: 숫자+수량/가격 토큰 차단',
+  ['1마리', '2마리', '2인분', '3인분', '1개', '2개', '1병', '1잔', '80,000원', '1만원', '8만원', '2시간', '3명', '1그릇'].every((t) => isQuantityOrPriceToken(t) === true),
+  '수량 토큰 통과'
+);
+check(
+  'v2.21 상호 후보: 진짜 상호는 통과',
+  ['닭볶음탕', '솥뚜껑', '베통', '디오디아', '연남동', '가평'].every((t) => isQuantityOrPriceToken(t) === false),
+  '상호 오탐'
+);
+
+// 실제 제보 케이스 — youtube.com/shorts/994t_EyrIiA
+//   제목: `닭 1마리 80,000원?! 솥뚜껑 닭볶음탕?! #리뷰` / 설명: `#가평 #가평맛집 #닭볶음탕`
+const eyrTitle = '닭 1마리 80,000원?! 솥뚜껑 닭볶음탕?! #리뷰';
+const eyrDesc = '#가평 #가평맛집 #닭볶음탕';
+const eyr = extractSearchQueries(eyrTitle + '\n' + eyrDesc);
+check('v2.21 994t_EyrIiA: 검색어에 1마리 없음', eyr.queries.every((q) => q.indexOf('1마리') < 0), JSON.stringify(eyr.queries));
+check('v2.21 994t_EyrIiA: 지역 = 가평', eyr.area === '가평', eyr.area);
+check('v2.21 994t_EyrIiA: 첫 검색어가 가게/메뉴+지역', /가평/.test(eyr.queries[0]) && /닭볶음탕|솥뚜껑/.test(eyr.queries[0]), eyr.queries[0]);
+check('v2.21 994t_EyrIiA: 상호명은 비움(지어내지 않음)', eyr.storeName === '', eyr.storeName);
+check(
+  'v2.21 지역뿐인 검색어 판정',
+  isAreaOnlyQuery('가평') === true && isAreaOnlyQuery('성수동 맛집') === true && isAreaOnlyQuery('가평 닭볶음탕') === false,
+  '지역 판정'
+);
+
+// 상호가 전혀 없을 때는 Gemini 폴백으로 넘어갑니다(지도 결과 0건).
+const geminiFallbackSource = fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8');
+check(
+  'v2.21 Gemini 폴백: 지도에서 못 찾으면 영상 분석',
+  /gemini = await fetchGeminiAnalysis\(/.test(geminiFallbackSource) && /gemini && gemini.storeName/.test(geminiFallbackSource),
+  'Gemini 폴백 없음'
+);
+check(
+  'v2.21 지역뿐인 검색어는 뒤로 미룸',
+  geminiFallbackSource.indexOf('const strongList = mergedList.filter((q) => !isAreaOnlyQuery(q))') > 0,
+  'strongList 필터 없음'
 );
 
 // ── 원복 ─────────────────────────────────────────────────────

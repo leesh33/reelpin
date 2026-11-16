@@ -1526,6 +1526,8 @@ export const KNOWN_AREAS = [
   '여의도', '검단', '을지로', '한남', '삼청', '서촌', '북촌', '신사', '압구정', '청담',
   '건대', '왕십리', '분당', '판교', '송도', '해운대', '광안리', '서면', '전주', '경주', '제주',
   '이시가키', '오키나와', '후쿠오카', '오사카', '도쿄', '교토', '나고야', '방콕', '다낭', '타이베이',
+  // v2.21 — 수도권 나들이 지역 (상훈 님 제보: 쇼츠 “#가평 #닭볶음탕” → 지역 인식 실패로 ‘가평’만 검색)
+  '가평', '청평', '양평', '춘천', '강화', '파주', '포천',
 ];
 
 const AREA_SUFFIX_BLOCK = ['특별시', '광역시', '특별자치시', '특별자치도', '자치구', '자치동', '특별', '광역', '자치'];
@@ -1709,6 +1711,7 @@ function findStoreNameInText(rawText, area) {
     if (VERB_TAIL_RE.test(name)) continue;
     if (isBasePredicate(name)) continue;
     if (area && (name === area || name.indexOf(area) === 0)) continue;
+    if (isQuantityOrPriceToken(name)) continue;
     if (/^[0-9]/.test(name)) continue;
     return name;
   }
@@ -1789,9 +1792,9 @@ export function extractSearchQueries(text) {
     }
     let tok = stripTokenSuffixes(stripParticles(bare));
     if (!tok) return;
-    if (/^[0-9]+(개|곳|분|초|원|년|월|일|명|위|차|인)?$/.test(tok)) return;
-    // '35만원짜리' · '350,000원' · '5만원대' 같은 금액·수량 표현은 지도 검색어가 되지 않습니다.
-    if (/^[0-9][0-9,.]*\s*(만|천|억|백)?\s*(원|만원|천원|억원)?\s*(짜리|정도|이상|미만|부터|까지|대)?$/.test(tok)) return;
+    // v2.21 — `1마리` · `2인분` · `80,000원` 처럼 숫자+단위만 있는 토큰은 검색어가 될 수 없습니다.
+    if (isQuantityOrPriceToken(tok)) return;
+    if (/^[0-9]/.test(tok) && !/[가-힣A-Za-z]/.test(tok.replace(/[0-9]/g, ''))) return;
     if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
     if (PREDICATE_TAIL_RE.test(tok)) return;
     if (isBasePredicate(tok)) return;
@@ -1854,6 +1857,7 @@ export function extractSearchQueries(text) {
     const bare = String(tag).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
     if (!bare || bare.length < 2 || bare.length > 12) return;
     if (!/[가-힣A-Za-z]/.test(bare)) return;
+    if (isQuantityOrPriceToken(bare)) return;
     if (/^[0-9]/.test(bare)) return;
     if (CAPTION_CATEGORY_WORDS.indexOf(bare) >= 0) return;
     if (isStopToken(bare, stopSet)) return;
@@ -1925,6 +1929,32 @@ const LIST_MARKER_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\d{
 /** 번호가 붙은 줄인지 — 2줄 이상이면 '여러 곳 목록'으로 봅니다. */
 const NUMBERED_LINE_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\d{1,2}\s*\uBC88[.)]?)\s*\S/;
 /**
+ * v2.21 — 숫자+수량/가격 단위만으로 이루어진 토큰인가?
+ *   `1마리` · `2인분` · `3명` · `1개` · `2병` · `80,000원` · `1만원` · `8만원` · `2시간` …
+ *
+ *   이런 토큰은 **상호명이 아닙니다.** 검색어로 나가면 엉뚱한 가게가 잡힙니다.
+ *   (실제 사례: 쇼츠 제목 “닭 1마리 80,000원?!” → 검색어 `1마리` → `광어1마리15000원` 이라는
+ *    다른 가게가 1순위로 저장됨 — 2026-11-17 상훈 님 제보)
+ */
+const QUANTITY_NUMBER_ONLY_RE = /^\d+(?:[.,]\d+)?$/;
+/** `80000원` · `1만원` · `350,000원짜리` 같은 금액 표현 */
+const PRICE_TOKEN_RE = /^\d+(?:[.,]\d+)?(?:만|천|억|백)?(?:원|만원|천원|억원)(?:짜리|대|정도|이상|미만|부터|까지)?$/;
+/** `1마리` · `2인분` · `1개` … 숫자 + 수량 단위 */
+const QUANTITY_UNIT_RE = /^\d+(?:[.,]\d+)?(?:마리|인분|인|명|개|병|잔|그릇|접시|kg|g|ml|L|분|시간|초|일|호|번|점|층)$/i;
+
+export function isQuantityOrPriceToken(token) {
+  const raw = String(token == null ? '' : token).replace(/\s+/g, ' ').trim();
+  if (!raw) return false;
+  // 쉼표(80,000)·띄어쓰기(1 마리)를 지우고 모양만 봅니다.
+  const compact = raw.replace(/,/g, '').replace(/\s+/g, '');
+  if (!/[0-9]/.test(compact)) return false;
+  if (QUANTITY_NUMBER_ONLY_RE.test(compact)) return true;
+  if (PRICE_TOKEN_RE.test(compact)) return true;
+  if (QUANTITY_UNIT_RE.test(compact)) return true;
+  return false;
+}
+
+/**
  * v2.8 — 불릿·체크·핀처럼 **사람이 목록으로 쓴 표식**으로 시작하는 줄.
  *   `- 성수동 베통` · `• 연남 뚜레쥬르` · `✅ 꿉당` · `📍 런던베이글`
  */
@@ -1966,6 +1996,28 @@ function isAreaToken(token) {
 }
 
 /**
+ * v2.21 — 지역·업종·군더더기만으로 된 검색어인가? (`가평` · `성수동 맛집` …)
+ *   이런 검색어는 **가게를 특정하지 못합니다.** (`가평` → 쁘띠프랑스 같은 관광지가 1순위)
+ *   → 상호·메뉴가 들어간 다른 검색어가 있으면 뒤로 미루고, 그것도 없으면 Gemini 폴백으로 넘깁니다.
+ */
+export function isAreaOnlyQuery(query) {
+  const tokens = String(query == null ? '' : query)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean);
+  if (!tokens.length) return true;
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  return tokens.every(
+    (t) =>
+      isAreaToken(t) ||
+      CITY_NOISE.indexOf(t) >= 0 ||
+      CAPTION_CATEGORY_WORDS.indexOf(t) >= 0 ||
+      isStopToken(t, stopSet)
+  );
+}
+
+/**
  * 목록 한 줄 → { name, area, queries }
  *   '1. 성수동 베통 (소금빵)'  → { name:'베통', area:'성수동', queries:['성수동 베통','베통',…] }
  * 이름은 '지역·카테고리·수식어'를 걸러 낸 마지막 토큰을 씁니다. (상호는 대개 줄 끝에 옵니다)
@@ -1997,9 +2049,9 @@ export function parseListItem(line, index = 0, options = {}) {
       if (SENTENCE_TAIL_RE.test(tok)) return false;
       if (isBasePredicate(tok)) return false;
       if (isStopToken(tok, stopSet)) return false;
-      // '350' · '000원' · '3곳' 같은 수량·금액 토큰은 상호가 아닙니다.
+      // '350' · '000원' · '3곳' · '1마리' · '2인분' 같은 수량·금액 토큰은 상호가 아닙니다. (v2.21)
+      if (isQuantityOrPriceToken(tok)) return false;
       if (/^[0-9]/.test(tok)) return false;
-      if (/^[0-9]+(?:개|곳|분|초|원|년|월|일|명|위|차|인|타임)$/.test(tok)) return false;
       return true;
     });
   let usable = pickUsable(cleanedHead.split(' ').filter(Boolean));
@@ -2065,6 +2117,7 @@ export function looksLikeListLine(line) {
   if (isBasePredicate(last)) return false;
   if (isAreaToken(last)) return false;
   if (CAPTION_CATEGORY_WORDS.indexOf(last) >= 0) return false;
+  if (isQuantityOrPriceToken(last)) return false;
   if (/^[0-9]/.test(last)) return false;
   const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
   if (isStopToken(last, stopSet)) return false;
@@ -2129,7 +2182,12 @@ export function extractCandidatesFromText(text, options = {}) {
     const parts = raw
       .split(/,|、|\s[·•]\s/)
       .map((p) => p.trim())
-      .filter((p) => cleanCaptionText(p).length >= 2 && cleanCaptionText(p).length <= 20);
+      .filter(
+        (p) =>
+          cleanCaptionText(p).length >= 2 &&
+          cleanCaptionText(p).length <= 20 &&
+          !isQuantityOrPriceToken(p)
+      );
     if (parts.length >= 2 && parts.length === raw.split(/,|、|\s[·•]\s/).length) {
       items = parts.map((p, i) => parseListItem(p, i)).filter(Boolean);
     }
@@ -2574,6 +2632,18 @@ const GOOGLE_TEXT_SEARCH_ENDPOINT = 'https://places.googleapis.com/v1/places:sea
 
 /** 지도 3사 후보를 합친 뒤 화면에 보여 줄 최대 개수(라디오 선택 UX 기준) */
 export const MAX_MAP_RESULTS = 5;
+/**
+ * v2.21 — `가게명으로 찾기`(직접 검색)에서 보여 줄 후보 상한.
+ *   · 상훈 님: "5개 이후로도 더 많이 나오면 좋겠다"
+ *   · 카카오 로컬은 size 상한이 15, 네이버 지역검색은 display 상한이 5 입니다.
+ *     → 카카오는 15개까지 받아 오고, 네이버는 규격대로 5개까지만 받아 합칩니다.
+ *   · 링크·캡션에서 한 곳을 고르는 흐름은 기존대로 MAX_MAP_RESULTS(5)를 씁니다.
+ */
+export const MAX_DIRECT_CANDIDATES = 15; 
+/** 카카오 로컬 keyword.json size 상한 (문서 규격) */
+export const KAKAO_SIZE_MAX = 15;
+/** 네이버 지역검색 display 상한 (HUB·legacy 두 규격 모두 5) */
+export const NAVER_DISPLAY_MAX = 5;
 
 function stripTags(s) {
   return String(s || '')
@@ -2983,7 +3053,7 @@ export const kakaoLocalAdapter = {
       '?query=' +
       encodeURIComponent(query) +
       '&size=' +
-      clamp(Number(limit) || 3, 1, 15) +
+      clamp(Number(limit) || 3, 1, KAKAO_SIZE_MAX) +
       '&sort=accuracy';
     const res = await fetch(url, {
       method: 'GET',
@@ -2999,7 +3069,7 @@ export const kakaoLocalAdapter = {
    */
   async searchViaProxy({ query, limit = 3 }) {
     const json = await fetchProxyJson(
-      proxyPathOf('kakao', { query, size: clamp(Number(limit) || 3, 1, 15) })
+      proxyPathOf('kakao', { query, size: clamp(Number(limit) || 3, 1, KAKAO_SIZE_MAX) })
     );
     if (!json) return null;
     return mapKakaoDocuments(json.documents);
@@ -3047,7 +3117,7 @@ export const naverLocalAdapter = {
   buildRequest({ query, limit = 3, credentials } = {}) {
     const creds = credentials || this.credentials();
     if (!creds || !query) return null;
-    const display = clamp(Number(limit) || 3, 1, 5); // 두 규격 모두 display 상한이 5입니다.
+    const display = clamp(Number(limit) || 3, 1, NAVER_DISPLAY_MAX); // 두 규격 모두 display 상한이 5입니다.
     if (creds.mode === 'hub') {
       return {
         mode: 'hub',
@@ -3203,7 +3273,13 @@ function nameMatchBonus(itemName, query) {
   return 0;
 }
 
-function mergeProviderResults(groups, query) {
+/**
+ * 이름+좌표가 같은 후보를 하나로 합칩니다.
+ * @param {Array<{provider:string, items:Array<object>}>} groups
+ * @param {string} query
+ * @param {number} [max] 합친 뒤 남길 최대 개수 (기본 MAX_MAP_RESULTS · 직접 검색은 15)
+ */
+function mergeProviderResults(groups, query, max = MAX_MAP_RESULTS) {
   const latin = !/[가-힣]/.test(String(query || ''));
   const weights = latin ? PROVIDER_WEIGHT_LATIN : PROVIDER_WEIGHT_KO;
   const merged = [];
@@ -3234,7 +3310,8 @@ function mergeProviderResults(groups, query) {
   }
 
   merged.sort((a, b) => b.confidence - a.confidence);
-  return merged.slice(0, MAX_MAP_RESULTS);
+  const cap = Math.max(1, Number(max) || MAX_MAP_RESULTS);
+  return merged.slice(0, cap);
 }
 
 /**
@@ -3249,7 +3326,7 @@ function mergeProviderResults(groups, query) {
  * @returns {Promise<{candidates:Array<object>, providersTried:string[], providersUsed:string[],
  *                    failures:Array<{provider:string,error:string}>, naverBackfill?:object, reason?:string}>}
  */
-export async function searchPlaceProviders({ query, limit = 3, providers, backfill } = {}) {
+export async function searchPlaceProviders({ query, limit = 3, providers, backfill, max } = {}) {
   const q = String(query || '').trim();
   const empty = { candidates: [], providersTried: [], providersUsed: [], failures: [] };
   if (!q) return { ...empty, reason: 'empty-query' };
@@ -3271,7 +3348,7 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
   );
 
   const groups = results.filter((r) => r.items.length).map((r) => ({ provider: r.provider, items: r.items }));
-  const candidates = mergeProviderResults(groups, q);
+  const candidates = mergeProviderResults(groups, q, max);
 
   // ── v2.12 · 카카오만 찾았는데 네이버가 비었을 때 — 주소 기반 네이버 안전 교차 보강 ──
   //   `동대문 영화장` → 카카오 1곳 · 네이버 `items: []` 인 경우, `휘경로 영화장`·`동대문구 영화장`
@@ -3315,8 +3392,11 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
  * 직접 검색 — 릴스 캡션을 못 긁어온 상황에서 '가게명/동네'만으로 지도 3사를 조회합니다.
  * 화면(PasteScreen '가게명으로 찾기' 모드)에서 그대로 호출하고, 결과 후보를 핀으로 꽂습니다.
  *
+ * v2.21 — 후보를 최대 MAX_DIRECT_CANDIDATES(15)개까지 보여 줍니다.
+ *   · 카카오 로컬 size=15 · 네이버 지역검색 display=5(규격 상한) · 합친 뒤 15개에서 자릅니다.
+ *
  * @param {string} rawQuery 예: '성수동 소금빵', '연남동 딸기케이크'
- * @param {{limit?:number, providers?:string[]}} options
+ * @param {{limit?:number, max?:number, providers?:string[]}} options
  * @returns {Promise<{ok:boolean, query:string, candidates:Array<object>, message?:string,
  *                    reason?:string, usedAdapter?:string, providersTried:string[],
  *                    providersUsed:string[], failures:Array<object>}>}
@@ -3334,7 +3414,12 @@ export async function searchPlacesDirect(rawQuery, options = {}) {
     return { ok: false, ...empty, query, reason: 'too-short', message: '두 글자 이상으로 찾아 주세요. (예: 성수동 소금빵)' };
   }
 
-  const chain = await searchPlaceProviders({ query, limit: options.limit || 4, providers: options.providers });
+  const chain = await searchPlaceProviders({
+    query,
+    limit: options.limit || MAX_DIRECT_CANDIDATES,
+    max: options.max || MAX_DIRECT_CANDIDATES,
+    providers: options.providers,
+  });
 
   if (chain.candidates.length) {
     return {
@@ -3726,7 +3811,10 @@ export async function extractPlaces(rawInput, options = {}) {
     const v = String(q || '').trim();
     if (v && mergedList.indexOf(v) < 0) mergedList.push(v);
   });
-  const queryList = mergedList.slice(0, limitQueries);
+  // v2.21 — `가평` 처럼 지역 이름만 있는 검색어로는 가게를 못 찾습니다(관광지가 잡힘).
+  //   상호·메뉴가 들어간 검색어가 하나라도 있으면 그것부터 시도하고, 없으면 Gemini 폴백으로 넘깁니다.
+  const strongList = mergedList.filter((q) => !isAreaOnlyQuery(q));
+  const queryList = (strongList.length ? strongList : mergedList).slice(0, limitQueries);
 
   // 2) 후보 검색어를 순서대로 조회 + 후보 병합 (첫 후보로 결과가 없으면 다음 후보로 자동 재시도)
   let chain = {

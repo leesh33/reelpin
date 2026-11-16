@@ -53,7 +53,7 @@ export default function AlertInbox({
       visible={visible}
       onClose={onClose}
       icon="notifications"
-      title="🔔 알림 모음"
+      title="알림 모음"
       sub={summary}
       closeLabel="알림 모음 닫기"
       overlayTestID="alert-inbox-overlay"
