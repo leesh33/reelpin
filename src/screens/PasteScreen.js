@@ -56,7 +56,18 @@ export default function PasteScreen({
   onToast,
   initialMode = 'link',
 }) {
-  const [mode, setMode] = useState(initialMode === 'search' ? 'search' : 'link'); // 'link' | 'search'
+  // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
+  const canUsePhoto = isWebPlatform();
+  /**
+   * v2.14 — 저장 화면 상단을 3개 탭으로 나눕니다: `🔗 릴스 링크` · `📸 사진으로 찾기` · `🔍 가게명 찾기`.
+   *   · 사진 탭은 Gemini 서버 프록시(웹 전용)로 동작하므로, 웹에서는 3개 탭이 모두 보이고
+   *     네이티브(`Platform.OS !== 'web'`)에서는 예전처럼 2개 탭만 보입니다.
+   *   · 네이티브에서 `initialMode="photo"` 로 들어와도 사진 탭이 없으니 링크 탭으로 엽니다.
+   */
+  const [mode, setMode] = useState(() => {
+    const want = initialMode === 'search' ? 'search' : initialMode === 'photo' ? 'photo' : 'link';
+    return want === 'photo' && !canUsePhoto ? 'link' : want;
+  }); // 'link' | 'photo' | 'search'
   const [url, setUrl] = useState('');
   const [query, setQuery] = useState('');
   const [extracting, setExtracting] = useState(false);
@@ -74,11 +85,26 @@ export default function PasteScreen({
   // v2.13 — 📸 사진을 읽고 있는 동안 (버튼 자체가 'AI 사진 분석 중…' 으로 바뀝니다)
   const [photoBusy, setPhotoBusy] = useState(false);
   const scrollRef = useRef(null);
+  /**
+   * v2.14 — 분석이 도는 동안 다른 탭으로 옮겨 갈 수 있습니다(탭은 잠그지 않습니다).
+   *   그래서 `runSeq` 로 '지금 화면의 요청'만 결과를 반영하고, 늦게 도착한 이전 탭의 결과는 버립니다.
+   */
+  const runSeq = useRef(0);
 
   const isSearch = mode === 'search';
-  const stageLabels = photoBusy ? PHOTO_STAGES : isSearch ? SEARCH_STAGES : LINK_STAGES;
-  // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
-  const canUsePhoto = isWebPlatform();
+  const isPhoto = mode === 'photo';
+  const stageLabels = photoBusy || isPhoto ? PHOTO_STAGES : isSearch ? SEARCH_STAGES : LINK_STAGES;
+  // 웹에서는 3탭(릴스·사진·가게명), 네이티브에서는 2탭(릴스·가게명) — 좁은 390px 폭에 맞춘 짧은 라벨
+  const tabs = canUsePhoto
+    ? [
+        { key: 'link', label: '릴스 링크', icon: 'link-outline' },
+        { key: 'photo', label: '사진으로 찾기', icon: 'image-outline' },
+        { key: 'search', label: '가게명 찾기', icon: 'search' },
+      ]
+    : [
+        { key: 'link', label: '릴스 링크', icon: 'link-outline' },
+        { key: 'search', label: '가게명으로 찾기', icon: 'search' },
+      ];
 
   /**
    * v2.1.1 — 클립보드는 **사용자가 [클립보드에서 붙여넣기] 를 눌렀을 때만** 읽습니다.
@@ -115,9 +141,15 @@ export default function PasteScreen({
     }
   };
 
-  /** 모드를 바꾸면 이전 결과는 지웁니다. (링크 결과를 검색 결과처럼 저장하는 실수 방지) */
+  /**
+   * 모드를 바꾸면 이전 결과는 지웁니다. (링크 결과를 검색 결과처럼 저장하는 실수 방지)
+   *   · 진행 중이던 분석은 `runSeq` 로 무효화해, 늦게 도착해도 새 탭에 결과·에러를 흘리지 않습니다.
+   *   · 네이티브에서 사진 탭은 없으므로 눌러도 무시합니다.
+   */
   const changeMode = (next) => {
     if (next === mode) return;
+    if (next === 'photo' && !canUsePhoto) return;
+    runSeq.current += 1;
     setMode(next);
     setError('');
     setCandidates([]);
@@ -127,6 +159,8 @@ export default function PasteScreen({
     setCategoryTouched(false);
     setPickedCategory('');
     setMemo('');
+    setExtracting(false);
+    setPhotoBusy(false);
   };
 
   const startProgress = () => {
@@ -152,6 +186,8 @@ export default function PasteScreen({
       setError('http:// 또는 https:// 로 시작하는 링크를 넣어 주세요.');
       return;
     }
+    const seq = runSeq.current + 1;
+    runSeq.current = seq;
     setError('');
     setExtracting(true);
     setCandidates([]);
@@ -171,6 +207,7 @@ export default function PasteScreen({
       // 최소 로딩 시간을 줘서 '분석 중' 단계가 눈에 보이게 합니다.
       await new Promise((resolve) => setTimeout(resolve, 520));
       clearInterval(stageTimer);
+      if (seq !== runSeq.current) return; // 다른 탭으로 옮겼으면 이전 결과는 버립니다
       setExtracting(false);
       if (!result.ok) {
         setError(result.reason || '링크를 읽지 못했어요.');
@@ -202,6 +239,7 @@ export default function PasteScreen({
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
       clearInterval(stageTimer);
+      if (seq !== runSeq.current) return;
       setExtracting(false);
       setError('추출 중 문제가 생겼어요. 다시 시도해 주세요.');
     }
@@ -214,6 +252,8 @@ export default function PasteScreen({
       setError('가게명이나 동네를 먼저 입력해 주세요. 예) 성수동 소금빵');
       return;
     }
+    const seq = runSeq.current + 1;
+    runSeq.current = seq;
     setError('');
     setExtracting(true);
     setCandidates([]);
@@ -227,6 +267,7 @@ export default function PasteScreen({
       const result = await searchPlacesDirect(value, { limit: 4 });
       await new Promise((resolve) => setTimeout(resolve, 420));
       clearInterval(stageTimer);
+      if (seq !== runSeq.current) return;
       setExtracting(false);
       if (!result.ok) {
         setCandidates([]);
@@ -249,13 +290,14 @@ export default function PasteScreen({
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
       clearInterval(stageTimer);
+      if (seq !== runSeq.current) return;
       setExtracting(false);
       setError('검색 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요.');
     }
   };
 
   /**
-   * v2.13 — 📸 캡처·사진으로 찾기.
+   * v2.14 — 📸 사진으로 찾기 탭.
    *   · 버튼을 누른 **그 순간** 사진 보관함/파일 선택창을 엽니다. (iOS 는 사용자 동작에서만 허용)
    *   · 사진은 웹에서 1280px · JPEG 0.82 로 줄여 `/api/gemini` 로 보내고(Gemini 키는 서버에만),
    *     AI 가 읽은 상호를 기존 지도 파이프라인(카카오·네이버 · v2.12 주소 보강)으로 다시 찾습니다.
@@ -265,6 +307,9 @@ export default function PasteScreen({
     if (extracting || photoBusy) return;
     const file = await pickImageFile();
     if (!file) return; // 사용자가 취소 — 화면은 그대로 둡니다
+    const seq = runSeq.current + 1;
+    runSeq.current = seq;
+    if (mode !== 'photo') setMode('photo');
     setError('');
     setCandidates([]);
     setSelectedIds([]);
@@ -276,6 +321,7 @@ export default function PasteScreen({
     setPhotoBusy(true);
     try {
       const result = await extractFromImage(file, { onStage: (s) => setStage(s) });
+      if (seq !== runSeq.current) return; // 다른 탭으로 옮겼으면 이전 결과는 버립니다
       if (!result.ok) {
         setError(result.message || '사진에서 가게를 찾지 못했어요. 다시 시도해 주세요.');
         return;
@@ -303,13 +349,14 @@ export default function PasteScreen({
       });
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
+      if (seq !== runSeq.current) return;
       setError('사진을 분석하는 중 문제가 생겼어요. 다시 시도해 주세요.');
     } finally {
-      setPhotoBusy(false);
+      if (seq === runSeq.current) setPhotoBusy(false);
     }
   };
 
-  const runPrimary = () => (isSearch ? runSearch() : runExtract());
+  const runPrimary = () => (isPhoto ? runPhoto() : isSearch ? runSearch() : runExtract());
 
   /**
    * 제목을 못 읽어온 링크에서 [가게명으로 찾기] 한 번으로 검색 모드로 넘어가고,
@@ -438,12 +485,9 @@ export default function PasteScreen({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* 입력 방식 전환: 릴스 링크 ↔ 가게명 직접 검색 */}
+        {/* 입력 방식 전환: 🔗 릴스 링크 ↔ 📸 사진으로 찾기 ↔ 🔍 가게명으로 찾기 */}
         <View style={styles.modeRow}>
-          {[
-            { key: 'link', label: '릴스 링크', icon: 'link-outline' },
-            { key: 'search', label: '가게명으로 찾기', icon: 'search' },
-          ].map((m) => {
+          {tabs.map((m) => {
             const on = mode === m.key;
             return (
               <Pressable
@@ -452,9 +496,16 @@ export default function PasteScreen({
                 onPress={() => changeMode(m.key)}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: on }}
+                accessibilityLabel={m.label + ' 탭'}
+                testID={'paste-tab-' + m.key}
               >
-                <Ionicons name={m.icon} size={14} color={on ? colors.coralDark : colors.textSub} />
-                <Text style={[styles.modeText, on && styles.modeTextOn]}>{m.label}</Text>
+                <Ionicons name={m.icon} size={13} color={on ? colors.coralDark : colors.textSub} />
+                <Text
+                  style={[styles.modeText, tabs.length > 2 && styles.modeTextTight, on && styles.modeTextOn]}
+                  numberOfLines={1}
+                >
+                  {m.label}
+                </Text>
               </Pressable>
             );
           })}
@@ -463,7 +514,56 @@ export default function PasteScreen({
         {/* v2.1.1 — 자동 클립보드 감지 배너는 없앴습니다.
             아이폰 사파리에서 탭 진입만으로 붙여넣기 허용 팝업이 뜨지 않게 하기 위함입니다. */}
 
-        {isSearch ? (
+        {isPhoto ? (
+          <>
+            {/* 📸 사진 업로드 카드 — 점선 테두리 카드를 눌러도 바로 사진 고르기가 열립니다. */}
+            <Pressable
+              style={[styles.photoDrop, photoBusy && styles.photoDropBusy]}
+              onPress={runPhoto}
+              disabled={extracting || photoBusy}
+              accessibilityRole="button"
+              accessibilityLabel="인스타 캡처·스크린샷 올리기"
+              testID="paste-photo-card"
+            >
+              <View style={styles.photoDropIcon}>
+                {photoBusy ? (
+                  <ActivityIndicator color={colors.coralDark} size="small" />
+                ) : (
+                  <Text style={styles.photoDropEmoji}>📸</Text>
+                )}
+              </View>
+              <Text style={styles.photoDropTitle}>인스타 캡처·스크린샷 올리기</Text>
+              <Text style={styles.photoDropDesc}>
+                사진 속 가게 이름과 동네를 AI가 읽어 카카오·네이버 지도에서 찾아드려요.
+              </Text>
+              <View style={styles.photoDropHintRow}>
+                <Ionicons name="images-outline" size={12} color={colors.textMuted} />
+                <Text style={styles.photoDropHint}>JPG · PNG · 아이폰 스크린샷 그대로</Text>
+              </View>
+            </Pressable>
+
+            <Pressable
+              style={[styles.primaryBtn, (extracting || photoBusy) && styles.primaryBtnDisabled]}
+              onPress={runPhoto}
+              disabled={extracting || photoBusy}
+              accessibilityRole="button"
+              accessibilityLabel="사진·캡처 고르기"
+              testID="paste-photo-button"
+            >
+              {photoBusy ? (
+                <View style={styles.loadingRow}>
+                  <ActivityIndicator color={colors.white} size="small" />
+                  <Text style={styles.primaryBtnText}>{(PHOTO_STAGES[stage] || 'AI 사진 분석') + ' 중…'}</Text>
+                </View>
+              ) : (
+                <View style={styles.loadingRow}>
+                  <Ionicons name="camera" size={16} color={colors.white} />
+                  <Text style={styles.primaryBtnText}>사진·캡처 고르기</Text>
+                </View>
+              )}
+            </Pressable>
+          </>
+        ) : isSearch ? (
           <>
             <Text style={styles.label}>가게명 · 동네</Text>
             <View style={styles.inputWrap}>
@@ -534,58 +634,35 @@ export default function PasteScreen({
                 <Ionicons name="clipboard-outline" size={15} color={colors.coralDark} />
                 <Text style={styles.pasteBtnText}>클립보드에서 붙여넣기</Text>
               </Pressable>
-              {/* v2.13 — 📸 캡처·사진으로 찾기. 누르면 사진 보관함/파일 선택창이 바로 열립니다.
-                  (Gemini 키가 서버에만 있어 웹에서만 동작 → 네이티브에서는 숨깁니다) */}
-              {canUsePhoto ? (
-                <Pressable
-                  style={[styles.photoBtn, photoBusy && styles.photoBtnBusy]}
-                  onPress={runPhoto}
-                  disabled={extracting || photoBusy}
-                  accessibilityRole="button"
-                  accessibilityLabel="캡처·사진으로 찾기"
-                  testID="paste-photo-button"
-                >
-                  {photoBusy ? (
-                    <ActivityIndicator color={colors.white} size="small" />
-                  ) : (
-                    <Ionicons name="image-outline" size={15} color={colors.white} />
-                  )}
-                  <Text style={styles.photoBtnText}>
-                    {photoBusy ? (PHOTO_STAGES[stage] || 'AI 사진 분석') + ' 중…' : '📸 캡처·사진으로 찾기'}
-                  </Text>
-                </Pressable>
-              ) : null}
             </View>
             <Text style={styles.helper}>
               공유할 때 복사된 문구를 통째로 붙여넣어도 돼요. (예: “성수동 소금빵 맛집 베통
               https://...”) 유튜브는 제목을, 네이버 블로그는 페이지 제목을 읽어 가게를 찾아요.
             </Text>
-            {canUsePhoto ? (
-              <Text style={styles.helper}>
-                📸 인스타 캡처·스크린샷을 고르면 AI 가 사진 속 가게 이름을 읽어 지도에서 찾아요.
-              </Text>
-            ) : null}
           </>
         )}
 
-        <Pressable
-          style={[styles.primaryBtn, (extracting || photoBusy) && styles.primaryBtnDisabled]}
-          onPress={runPrimary}
-          disabled={extracting || photoBusy}
-          accessibilityRole="button"
-        >
-          {extracting ? (
-            <View style={styles.loadingRow}>
-              <ActivityIndicator color={colors.white} size="small" />
-              <Text style={styles.primaryBtnText}>{stageLabels[stage]} 중…</Text>
-            </View>
-          ) : (
-            <View style={styles.loadingRow}>
-              <Ionicons name={isSearch ? 'search' : 'sparkles'} size={16} color={colors.white} />
-              <Text style={styles.primaryBtnText}>{isSearch ? '가게 찾기' : '장소 추출하기'}</Text>
-            </View>
-          )}
-        </Pressable>
+        {/* 📸 사진으로 찾기 — 사진 탭이 이미 메인 CTA 를 갖고 있으므로 링크·검색 탭에서만 공통 버튼을 그립니다. */}
+        {!isPhoto && (
+          <Pressable
+            style={[styles.primaryBtn, (extracting || photoBusy) && styles.primaryBtnDisabled]}
+            onPress={runPrimary}
+            disabled={extracting || photoBusy}
+            accessibilityRole="button"
+          >
+            {extracting ? (
+              <View style={styles.loadingRow}>
+                <ActivityIndicator color={colors.white} size="small" />
+                <Text style={styles.primaryBtnText}>{stageLabels[stage]} 중…</Text>
+              </View>
+            ) : (
+              <View style={styles.loadingRow}>
+                <Ionicons name={isSearch ? 'search' : 'sparkles'} size={16} color={colors.white} />
+                <Text style={styles.primaryBtnText}>{isSearch ? '가게 찾기' : '장소 추출하기'}</Text>
+              </View>
+            )}
+          </Pressable>
+        )}
 
         {!!error && (
           <View style={styles.errorBox}>
@@ -594,34 +671,46 @@ export default function PasteScreen({
           </View>
         )}
 
-        {/* 원탭 테스트 프리셋 */}
-        <View style={styles.presetHead}>
-          <Text style={styles.sectionTitle}>{isSearch ? '이렇게 찾아보세요' : '원탭 테스트'}</Text>
-          <Text style={styles.sectionHint}>{isSearch ? '한 번 눌러 바로 검색' : '링크 없이 바로 눌러 보세요'}</Text>
-        </View>
-        <View style={styles.presetRow}>
-          {isSearch
-            ? DIRECT_PRESETS.map((q) => (
-                <Pressable key={q} style={styles.presetChip} onPress={() => runSearch(q)}>
-                  <Text style={styles.presetText} numberOfLines={1}>
-                    {q}
-                  </Text>
-                </Pressable>
-              ))
-            : PRESETS.map((p) => (
-                <Pressable key={p.url} style={styles.presetChip} onPress={() => usePreset(p)}>
-                  <Text style={styles.presetText} numberOfLines={1}>
-                    {p.label}
-                  </Text>
-                </Pressable>
-              ))}
-        </View>
+        {/* 원탭 테스트 프리셋 (사진 탭에는 필요 없어 숨깁니다) */}
+        {!isPhoto && (
+          <>
+            <View style={styles.presetHead}>
+              <Text style={styles.sectionTitle}>{isSearch ? '이렇게 찾아보세요' : '원탭 테스트'}</Text>
+              <Text style={styles.sectionHint}>{isSearch ? '한 번 눌러 바로 검색' : '링크 없이 바로 눌러 보세요'}</Text>
+            </View>
+            <View style={styles.presetRow}>
+              {isSearch
+                ? DIRECT_PRESETS.map((q) => (
+                    <Pressable key={q} style={styles.presetChip} onPress={() => runSearch(q)}>
+                      <Text style={styles.presetText} numberOfLines={1}>
+                        {q}
+                      </Text>
+                    </Pressable>
+                  ))
+                : PRESETS.map((p) => (
+                    <Pressable key={p.url} style={styles.presetChip} onPress={() => usePreset(p)}>
+                      <Text style={styles.presetText} numberOfLines={1}>
+                        {p.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+            </View>
+          </>
+        )}
 
         {/* 안내 카드 */}
-        {candidates.length === 0 && !extracting && (
+        {candidates.length === 0 && !extracting && !photoBusy && (
           <View style={styles.guideCard}>
-            <Text style={styles.guideTitle}>{isSearch ? '이름만 알 때는 이렇게' : '저장은 3초면 끝나요'}</Text>
-            {(isSearch
+            <Text style={styles.guideTitle}>
+              {isPhoto ? '사진 한 장이면 충분해요' : isSearch ? '이름만 알 때는 이렇게' : '저장은 3초면 끝나요'}
+            </Text>
+            {(isPhoto
+              ? [
+                  ['인스타 캡처·스크린샷', '위치 태그나 가게 이름이 보이게'],
+                  ['[사진·캡처 고르기]', 'AI 가 사진 속 상호·동네를 읽어요'],
+                  ['후보 확인 후 [지도에 핀 꽂기]', '여러 곳이면 한 번에 저장'],
+                ]
+              : isSearch
               ? [
                   ['가게명이나 동네를 입력', '예) 성수동 소금빵'],
                   ['지도에서 찾은 후보 확인', '출처 배지로 카카오·네이버 확인'],
@@ -828,7 +917,9 @@ export default function PasteScreen({
             </Pressable>
 
             <Pressable style={styles.againBtn} onPress={runPrimary}>
-              <Text style={styles.againText}>{isSearch ? '다시 찾기' : '다시 추출하기'}</Text>
+              <Text style={styles.againText}>
+                {isPhoto ? '다른 사진으로 찾기' : isSearch ? '다시 찾기' : '다시 추출하기'}
+              </Text>
             </Pressable>
           </View>
         )}
@@ -940,6 +1031,11 @@ const styles = StyleSheet.create({
     color: colors.coralDark,
     fontWeight: '800',
   },
+  // v2.14 — 3탭(릴스·사진·가게명)을 390px 한 줄에 넣기 위한 조금 작은 라벨
+  modeTextTight: {
+    fontSize: 11.5,
+    letterSpacing: -0.2,
+  },
   // v2.1.1 — 명시적으로 누를 때만 클립보드를 읽는 버튼
   pasteBtn: {
     alignSelf: 'flex-start',
@@ -957,31 +1053,61 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.coralDark,
   },
-  // v2.13 — [클립보드에서 붙여넣기] 와 한 줄에 나란히 (좁은 화면에서는 줄바꿈)
+  // v2.14 — [클립보드에서 붙여넣기] 는 릴스 링크 탭의 단독 버튼입니다.
   linkActionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 8,
   },
-  photoBtn: {
-    flexDirection: 'row',
+  // v2.14 — 📸 사진으로 찾기 탭: 점선 업로드 카드 (카드를 눌러도 사진 고르기가 열립니다)
+  photoDrop: {
+    alignItems: 'center',
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1.5,
+    borderColor: colors.coralSoft2,
+    borderStyle: 'dashed',
+    paddingHorizontal: 18,
+    paddingVertical: 22,
+    gap: 6,
+  },
+  photoDropBusy: {
+    borderColor: colors.coral,
+    backgroundColor: colors.coralSoft,
+  },
+  photoDropIcon: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    backgroundColor: colors.coralSoft,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 9,
-    backgroundColor: colors.coral,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: radius.sm,
+    marginBottom: 2,
   },
-  photoBtnBusy: {
-    backgroundColor: colors.coralDark,
+  photoDropEmoji: {
+    fontSize: 26,
   },
-  photoBtnText: {
-    fontSize: 12,
+  photoDropTitle: {
+    fontSize: 14.5,
     fontWeight: '800',
-    color: colors.white,
+    color: colors.text,
+    textAlign: 'center',
+  },
+  photoDropDesc: {
+    fontSize: 11.5,
+    lineHeight: 17,
+    color: colors.textSub,
+    textAlign: 'center',
+  },
+  photoDropHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  photoDropHint: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: colors.textMuted,
   },
   label: {
     ...typography.sub,

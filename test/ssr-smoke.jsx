@@ -161,7 +161,7 @@ const contentCases = [
   ['PinDetailSheet: [매장 정보 보기] 버튼', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['매장 정보 보기', '카카오맵']],
   ['PinDetailSheet: 출처 배지 두 개', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['카카오', '네이버']],
   ['PinDetailSheet: 링크 핀에는 원본 릴스 행', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['인스타 릴스', 'instagram.com/reel']],
-  ['PasteScreen: 모드 전환 버튼', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 링크', '가게명으로 찾기']],
+  ['PasteScreen: 3탭(릴스·사진·가게명)', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 링크', '사진으로 찾기', '가게명 찾기']],
   ['PasteScreen(가게명 찾기): 검색 입력·버튼', <PasteScreen active pinCount={4} isPro={false} initialMode="search" onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['가게명 · 동네', '가게 찾기', '성수동 소금빵']],
   ['PasteScreen: 혼합 붙여넣기 안내', <PasteScreen active pinCount={4} isPro={false} onSaved={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['문구를 통째로 붙여넣어도 돼요', '유튜브는 제목을']],
   ['ExtractedTitleNote: 읽어온 제목 표기', <ExtractedTitleNote title="성수동 소금빵 맛집 베통" />, ['읽어온 제목:', '성수동 소금빵 맛집 베통']],
@@ -196,8 +196,8 @@ const contentCases = [
   // v2.1.1 — 클립보드는 사용자가 버튼을 눌렀을 때만 (아이폰 사파리 붙여넣기 팝업 방지)
   ['PasteScreen: [클립보드에서 붙여넣기] 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['클립보드에서 붙여넣기']],
   ['PasteScreen: 링크 입력 + 붙여넣기 버튼 렌더', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 · 쇼츠 링크', '클립보드에서 붙여넣기']],
-  // v2.13 — 📸 캡처·사진으로 찾기 (웹 = react-native-web 렌더에서 버튼이 보입니다)
-  ['PasteScreen: 📸 캡처·사진으로 찾기 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['📸 캡처·사진으로 찾기', 'AI 가 사진 속 가게 이름을 읽어']],
+  // v2.14 — 📸 사진으로 찾기 탭 (웹 = react-native-web 렌더에서 탭·카드·버튼이 보입니다)
+  ['PasteScreen(사진으로 찾기): 업로드 카드 + 큰 버튼', <PasteScreen pinCount={4} isPro={false} initialMode="photo" onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['인스타 캡처·스크린샷 올리기', '사진 속 가게 이름과 동네를 AI가 읽어', '사진·캡처 고르기']],
   // v2.2 — 분류 직접 고르기 · 만들기 · 관리
   ['CategoryPicker: 기본 3개 + 내 분류 + [분류 추가]', <CategoryPicker value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} onAddCategory={noop} label="저장할 분류" hint="고른 분류로 저장해요" />, ['맛집', '카페', '가볼곳', '아이랑', '분류 추가', '저장할 분류', '고른 분류로 저장해요']],
   ['FilterChips: 커스텀 분류가 이어서 + 개수', <FilterChips value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} counts={{ '전체': 6, '맛집': 3, '아이랑': 1 }} />, ['아이랑 1', '아이랑 필터']],
@@ -599,8 +599,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.13.0', pkg.version === '2.13.0', pkg.version],
-  ['버전: app.json 2.13.0', expoConfig.version === '2.13.0', expoConfig.version],
+  ['버전: package.json 2.14.0', pkg.version === '2.14.0', pkg.version],
+  ['버전: app.json 2.14.0', expoConfig.version === '2.14.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -909,7 +909,7 @@ const pinDetailSource = fs.readFileSync(path.join(process.cwd(), 'src/components
 const extractorSource = fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8');
 const geminiSource = fs.readFileSync(path.join(process.cwd(), 'api', 'gemini.js'), 'utf8');
 const v213PhotoChecks = [
-  ['저장 화면: 사진 버튼은 웹에서만(canUsePhoto)', pasteSource.indexOf('const canUsePhoto = isWebPlatform()') > 0 && pasteSource.indexOf('{canUsePhoto ?') > 0],
+  ['저장 화면: 사진 버튼은 웹에서만(canUsePhoto)', pasteSource.indexOf('const canUsePhoto = isWebPlatform()') > 0 && pasteSource.indexOf('const tabs = canUsePhoto') > 0],
   ['저장 화면: 사진 버튼이 pickImageFile 을 부름', pasteSource.indexOf('pickImageFile()') > 0 && pasteSource.indexOf('extractFromImage(file') > 0],
   ['저장 화면: 진행 중 AI 사진 분석 문구', pasteSource.indexOf('AI 사진 분석') > 0 && pasteSource.indexOf('중…') > 0],
   ['저장 화면: 사진 읽는 동안 다른 버튼도 잠금', /disabled=\{extracting \|\| photoBusy\}/.test(pasteSource)],
@@ -930,7 +930,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.13.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.13.0') > 0],
+  ['프로필: 버전 표기 v2.14.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.14.0') > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -975,6 +975,117 @@ for (const [label, ok, extra] of v213SheetChecks) {
   }
 }
 
+// ── v2.14 저장 화면 3탭 — 🔗 릴스 링크 · 📸 사진으로 찾기 · 🔍 가게명 찾기 ──────
+const v214Checks = [
+  [
+    '저장 화면: 웹은 3탭(릴스·사진·가게명)',
+    pasteSource.indexOf('const tabs = canUsePhoto') > 0 &&
+      pasteSource.indexOf("{ key: 'photo', label: '사진으로 찾기'") > 0 &&
+      pasteSource.indexOf("{ key: 'search', label: '가게명 찾기'") > 0,
+  ],
+  [
+    '저장 화면: 네이티브는 예전처럼 2탭(사진 탭 없음)',
+    pasteSource.indexOf("    : [") > 0 && pasteSource.indexOf("{ key: 'search', label: '가게명으로 찾기'") > 0,
+  ],
+  [
+    '저장 화면: 3탭을 390px 한 줄에 — 작은 라벨 + 한 줄 고정',
+    /modeTextTight: \{[\s\S]{0,90}?fontSize: 11\.5/.test(pasteSource) &&
+      pasteSource.indexOf('tabs.length > 2 && styles.modeTextTight') > 0 &&
+      /accessibilityLabel=\{m\.label \+ ' 탭'\}[\s\S]{0,700}?numberOfLines=\{1\}/.test(pasteSource),
+  ],
+  [
+    '저장 화면: 탭 키는 link·photo·search 3상태',
+    pasteSource.indexOf("// 'link' | 'photo' | 'search'") > 0,
+  ],
+  [
+    '저장 화면: 네이티브에서 initialMode=photo 면 링크 탭으로',
+    pasteSource.indexOf("want === 'photo' && !canUsePhoto ? 'link' : want") > 0,
+  ],
+  [
+    '저장 화면: 탭을 옮기면 이전 결과·에러를 지움',
+    /const changeMode = \(next\) => \{[\s\S]{0,700}?setError\(''\)[\s\S]{0,200}?setCandidates\(\[\]\)[\s\S]{0,250}?setMeta\(null\)/.test(
+      pasteSource
+    ) && /const changeMode = \(next\) => \{[\s\S]{0,900}?setMemo\(''\)/.test(pasteSource),
+  ],
+  [
+    '저장 화면: 늦게 도착한 이전 탭 결과는 버림(runSeq)',
+    pasteSource.indexOf('runSeq.current += 1') > 0 &&
+      (pasteSource.match(/if \(seq !== runSeq\.current\) return;/g) || []).length >= 3,
+  ],
+  [
+    '저장 화면: 사진 탭 업로드 카드는 점선 테두리',
+    /photoDrop: \{[\s\S]{0,260}?borderStyle: 'dashed'/.test(pasteSource),
+  ],
+  [
+    '저장 화면: 카드를 눌러도 사진 고르기(카드 + CTA)',
+    pasteSource.indexOf('testID="paste-photo-card"') > 0 &&
+      pasteSource.indexOf('testID="paste-photo-button"') > 0,
+  ],
+  [
+    '저장 화면: 사진 탭 전용 오렌지 CTA(사진·캡처 고르기)',
+    pasteSource.indexOf('accessibilityLabel="사진·캡처 고르기"') > 0 &&
+      pasteSource.indexOf('>사진·캡처 고르기<') > 0,
+  ],
+  [
+    '저장 화면: 사진 분석 중 진행 문구',
+    pasteSource.indexOf("(PHOTO_STAGES[stage] || 'AI 사진 분석') + ' 중…'") > 0,
+  ],
+  [
+    '저장 화면: 사진 탭에는 원탭 프리셋 없음',
+    /\{!isPhoto && \(\s*<>\s*<View style=\{styles\.presetHead\}/.test(pasteSource),
+  ],
+  [
+    '저장 화면: 링크 탭은 붙여넣기 버튼 하나(옆의 좁은 사진 버튼 제거)',
+    pasteSource.indexOf('📸 캡처·사진으로 찾기') < 0 && pasteSource.indexOf('linkActionRow') > 0,
+  ],
+  [
+    '저장 화면: 사진 안내 문구는 사진 탭으로 이동',
+    pasteSource.indexOf('사진 속 가게 이름과 동네를 AI가 읽어 카카오·네이버 지도에서 찾아드려요.') > 0,
+  ],
+  [
+    '저장 화면: 사진 분석 파이프라인(runPhoto·결과 카드)은 그대로',
+    /const runPhoto = async \(\) => \{[\s\S]{0,1200}?extractFromImage\(file/.test(pasteSource) &&
+      pasteSource.indexOf("'사진에서 찾은 가게 '") > 0 &&
+      pasteSource.indexOf('paste-memo-input') > 0,
+  ],
+  [
+    '저장 화면: 탭을 오가도 photoBusy·extracting 이 남지 않음',
+    /const changeMode = \(next\) => \{[\s\S]{0,1000}?setExtracting\(false\)[\s\S]{0,120}?setPhotoBusy\(false\)/.test(
+      pasteSource
+    ),
+  ],
+];
+for (const [label, ok, extra] of v214Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
+// v2.14 — 3탭 렌더: 링크 탭과 사진 탭에 서로의 항목이 섞이지 않는지
+const linkTabHtml = renderToString(
+  <PasteScreen pinCount={4} onSaved={noop} onSavedMany={noop} onClose={noop} onToast={noop} />
+);
+const photoTabHtml = renderToString(
+  <PasteScreen pinCount={4} initialMode="photo" onSaved={noop} onSavedMany={noop} onClose={noop} onToast={noop} />
+);
+const v214RenderChecks = [
+  ['저장 화면(링크 탭): 사진 안내 문구·사진 버튼 없음', linkTabHtml.indexOf('사진 속 가게 이름과 동네를 AI가 읽어') < 0 && linkTabHtml.indexOf('캡처·사진으로 찾기') < 0],
+  ['저장 화면(링크 탭): 링크 입력 + 붙여넣기 + 장소 추출하기', linkTabHtml.indexOf('릴스 · 쇼츠 링크') > 0 && linkTabHtml.indexOf('클립보드에서 붙여넣기') > 0 && linkTabHtml.indexOf('장소 추출하기') > 0],
+  ['저장 화면(사진 탭): 링크 입력·원탭 테스트 없음', photoTabHtml.indexOf('릴스 · 쇼츠 링크') < 0 && photoTabHtml.indexOf('원탭 테스트') < 0 && photoTabHtml.indexOf('장소 추출하기') < 0],
+  ['저장 화면(사진 탭): 업로드 카드 + 큰 사진 버튼', photoTabHtml.indexOf('인스타 캡처·스크린샷 올리기') > 0 && photoTabHtml.indexOf('사진·캡처 고르기') > 0],
+  ['저장 화면(사진 탭): 안내 3단계', photoTabHtml.indexOf('사진 한 장이면 충분해요') > 0],
+  ['저장 화면: 어느 탭에서든 3탭이 모두 보임', ['릴스 링크', '사진으로 찾기', '가게명 찾기'].every((t) => photoTabHtml.indexOf(t) >= 0 && linkTabHtml.indexOf(t) >= 0)],
+];
+for (const [label, ok, extra] of v214RenderChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -998,6 +1109,8 @@ const total =
   v211HeaderChecks.length +
   v213PhotoChecks.length +
   v213SheetChecks.length +
+  v214Checks.length +
+  v214RenderChecks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);
