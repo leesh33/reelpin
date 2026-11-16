@@ -23,6 +23,7 @@ import {
   searchPlacesDirect,
   splitSharedText,
 } from '../services/extractor';
+import AppHeader from '../components/AppHeader';
 import ProviderBadges from '../components/ProviderBadge';
 import ExtractedTitleNote from '../components/ExtractedTitleNote';
 import CategoryPicker from '../components/CategoryPicker';
@@ -55,6 +56,7 @@ export default function PasteScreen({
   onClose,
   onToast,
   initialMode = 'link',
+  header,
 }) {
   // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
   const canUsePhoto = isWebPlatform();
@@ -461,22 +463,9 @@ export default function PasteScreen({
 
   return (
     <View style={styles.root}>
-      {/* 헤더 — v2.11: 오른쪽 위 ✕ 가 있는 화면은 모두 같은 다크 차콜(#1C1C1E) 헤더를 씁니다.
-          (인앱 매장 정보 모달 헤더와 같은 색 · 아래 흰 본문과 확실히 갈립니다.) */}
-      <View style={styles.header}>
-        <View style={styles.brand}>
-          <View style={styles.brandPin}>
-            <Ionicons name="location" size={16} color={colors.white} />
-          </View>
-          <Text style={styles.brandText}>Reelspin</Text>
-          <View style={styles.brandBadge}>
-            <Text style={styles.brandBadgeText}>저장</Text>
-          </View>
-        </View>
-        <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8} accessibilityLabel="닫기">
-          <Ionicons name="close" size={18} color={colors.white} />
-        </Pressable>
-      </View>
+      {/* 헤더 — v2.15: 세 탭이 같은 공통 다크 차콜(#1C1C1E) 헤더(AppHeader)를 씁니다.
+          저장 탭은 여기에만 ✕(지도로 돌아가기)가 함께 붙습니다. */}
+      <AppHeader badge="저장" onPressClose={onClose} closeLabel="닫기" {...header} />
 
       <ScrollView
         ref={scrollRef}
@@ -936,63 +925,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: colors.bg,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 13,
-    backgroundColor: colors.charcoal,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.charcoalLine,
-    // 스크롤할 때 본문이 다크 헤더 '밑으로' 들어가는 게 보이게 얇은 그림자를 드리웁니다.
-    shadowColor: '#000000',
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
-    zIndex: 2,
-  },
-  brand: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-  },
-  brandPin: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  brandText: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: colors.white,
-    letterSpacing: -0.4,
-  },
-  brandBadge: {
-    backgroundColor: colors.charcoalPill,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  brandBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.charcoalSub,
-  },
-  // 다크 헤더 위 닫기 — 반투명 흰 원 + 흰 ✕ (모달 헤더와 같은 규칙)
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.charcoalPill,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   scroll: { flex: 1 },
   scrollContent: {

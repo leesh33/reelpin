@@ -3,6 +3,7 @@ import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, Text, V
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import RealMapView from '../components/RealMapView';
+import AppHeader from '../components/AppHeader';
 import FilterChips from '../components/FilterChips';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 // v2.6 — 검색 결과 1곳이면 그 핀으로 지도 이동, 2곳 이상이면 검색창 아래 결과 목록
@@ -75,7 +76,19 @@ export default function MapScreen({
   sharedPins = [],
   onAddSharedPins,
   onDismissShared,
+  header,
+  onMyCoords,
+  focusPin,
+  alertCoords,
 }) {
+  /**
+   * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
+   * 위치를 잡을 때마다 상위(App)로 한 번씩 알려 줍니다.
+   */
+  const onMyCoordsRef = useRef(typeof onMyCoords === 'function' ? onMyCoords : null);
+  useEffect(() => {
+    onMyCoordsRef.current = typeof onMyCoords === 'function' ? onMyCoords : null;
+  }, [onMyCoords]);
   const [filter, setFilter] = useState('전체');
   // v2.10 — ✅ 방문 상태 필터 ('전체' | '미방문' | '가봤어요')
   const [visitFilter, setVisitFilter] = useState(VISIT_ALL);
@@ -193,6 +206,8 @@ export default function MapScreen({
     const fly = options.fly !== false;
     setMyCoords(position);
     setLocationError('');
+    // v2.15 — 공통 헤더의 🔔 알림 모음 뱃지도 같은 위치를 쓰도록 위로 알립니다.
+    if (position && onMyCoordsRef.current) onMyCoordsRef.current(position);
     if (fly) {
       setFocus({ lat: position.lat, lng: position.lng });
       setFocusKey((k) => k + 1);
@@ -385,6 +400,37 @@ export default function MapScreen({
     [onSelectPin]
   );
 
+  /**
+   * v2.15 — 🔔 알림 모음에서 [내 위치 켜기]로 잡은 위치도 지도가 함께 씁니다.
+   * (지도가 아직 위치를 모를 때만 받아들임 — 이미 잡아 둔 위치를 되돌리지 않음)
+   */
+  useEffect(() => {
+    if (!alertCoords || myCoords) return;
+    applyPosition(alertCoords, { fly: false });
+  }, [alertCoords, myCoords, applyPosition]);
+
+  /**
+   * v2.15 — 🔔 알림 모음(헤더)에서 장소를 눌렀을 때:
+   * 상위가 `focusPin={{ id, key }}` 로 알려 주면 지도를 그 핀으로 옮기고 상세 시트를 엽니다.
+   * `key` 가 같으면 다시 움직이지 않습니다(핀이 바뀔 때만).
+   */
+  const focusPinKeyRef = useRef(null);
+  useEffect(() => {
+    const request = focusPin;
+    if (!request || !request.id) return;
+    if (focusPinKeyRef.current === request.key) return;
+    focusPinKeyRef.current = request.key;
+    const target = (pins || []).find((p) => p && p.id === request.id);
+    if (!target) return;
+    const coords = pinMapCoords(target);
+    if (coords) {
+      setFocus({ lat: coords.lat, lng: coords.lng });
+      setFocusKey((k) => k + 1);
+    }
+    setNearbyOpen(false);
+    if (typeof onSelectPin === 'function') onSelectPin(target.id);
+  }, [focusPin, pins, onSelectPin]);
+
   const toggleNearby = useCallback(async () => {
     if (nearbyOpen) {
       setNearbyOpen(false);
@@ -553,306 +599,317 @@ export default function MapScreen({
 
   return (
     <View style={styles.root}>
-      <RealMapView
-        pins={mapPins}
-        selectedId={selectedPinId}
-        onSelect={onSelectPin}
-        myCoords={myCoords}
-        focus={focus}
-        focusKey={focusKey}
-        fit={fit}
-        fitKey={fitKey}
-        radiusMeters={NEARBY_RADIUS_M}
-        categories={categories}
-      />
+      <AppHeader badge="지도" {...header} />
 
-      {/* v2.5 — 📋 목록 보기: 지도 위를 덮는 카드 목록 (검색·필터·가까운 순) */}
-      {view === 'list' && (
-        <PinListView
-          pins={filtered}
-          query={query}
-          onQueryChange={setQuery}
-          onClearQuery={clearSearch}
-          filter={filter}
-          onChangeFilter={setFilter}
-          counts={counts}
-          visitFilter={visitFilter}
-          onChangeVisitFilter={changeVisitFilter}
-          visitCounts={visitCounts}
-          categories={categories}
+      {/* v2.15 — 헤더는 지도 '위' 고정 바입니다. 지도·오버레이는 이 아래 영역에서만 그려져
+          검색창·분류 칩·알림 배너가 헤더와 겹치지 않습니다. */}
+      <View style={styles.mapArea}>
+        <RealMapView
+          pins={mapPins}
+          selectedId={selectedPinId}
+          onSelect={onSelectPin}
           myCoords={myCoords}
-          onSelectPin={onSelectPin}
-          onOpenPin={openPinFromList}
-          onToggleView={toggleView}
-          onGoPaste={onGoPaste}
+          focus={focus}
+          focusKey={focusKey}
+          fit={fit}
+          fitKey={fitKey}
+          radiusMeters={NEARBY_RADIUS_M}
+          categories={categories}
         />
-      )}
 
-      {/* 상단 오버레이(지도 보기): 공유받은 지도 배너 + 실시간 배너 + 검색 + 카테고리 필터 */}
-      {view === 'map' && (
-      <View style={styles.topOverlay} pointerEvents="box-none">
-        {previewPins.length > 0 && (
-          <View style={styles.sharedBanner}>
-            <View style={styles.sharedIcon}>
-              <Ionicons name="share-social" size={15} color={colors.white} />
-            </View>
-            <View style={styles.sharedTextWrap}>
-              <Text style={styles.sharedTitle} numberOfLines={1}>
-                {'공유받은 맛집 지도 (' + previewPins.length + '곳)'}
-              </Text>
-              <Text style={styles.sharedSub} numberOfLines={1}>
-                지도에 미리보기로 띄웠어요
-              </Text>
-            </View>
-            <Pressable
-              style={styles.sharedAddBtn}
-              onPress={onAddSharedPins}
-              accessibilityRole="button"
-              accessibilityLabel="내 지도에 모두 추가"
-            >
-              <Text style={styles.sharedAddText}>내 지도에 모두 추가</Text>
-            </Pressable>
-            <Pressable
-              style={styles.sharedClose}
-              onPress={onDismissShared}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="공유받은 지도 닫기"
-            >
-              <Ionicons name="close" size={14} color="#C9D3E4" />
-            </Pressable>
-          </View>
-        )}
-        {!bannerHidden && (
-          <GeofenceBanner
-            key={bannerKey}
-            pin={banner.pin}
-            radiusMeters={radiusMeters}
-            onPress={focusBannerPin}
-            onLocate={() => locateFromUser()}
-            onDismiss={dismissBanner}
-            locating={locating && !myCoords}
-            empty={banner.empty}
-            needsLocation={banner.needsLocation}
-            hintTitle={'내 위치를 켜면 가까운 맛집과 ' + NEARBY_RADIUS_M + 'm 알림이 보여요'}
-            title={banner.title}
-            sub={banner.sub}
-            badge={banner.badge}
-            tone={banner.tone}
-          />
-        )}
-        <View style={styles.searchWrap}>
-          <PinSearchBar value={query} onChange={setQuery} onClear={clearSearch} />
-        </View>
-        {showResults && (
-          <PinSearchResults
+        {/* v2.5 — 📋 목록 보기: 지도 위를 덮는 카드 목록 (검색·필터·가까운 순) */}
+        {view === 'list' && (
+          <PinListView
             pins={filtered}
             query={query}
+            onQueryChange={setQuery}
+            onClearQuery={clearSearch}
+            filter={filter}
+            onChangeFilter={setFilter}
+            counts={counts}
+            visitFilter={visitFilter}
+            onChangeVisitFilter={changeVisitFilter}
+            visitCounts={visitCounts}
             categories={categories}
             myCoords={myCoords}
+            onSelectPin={onSelectPin}
             onOpenPin={openPinFromList}
-            onShowAll={showAllResults}
+            onToggleView={toggleView}
+            onGoPaste={onGoPaste}
           />
         )}
-        {/* 검색 결과 목록이 떠 있는 동안에는 분류 칩을 잠시 접어 화면을 비워 둡니다 */}
-        {!showResults && (
-          <View style={styles.chipWrap}>
-            <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
-            {/* v2.10 — ✅ 방문 상태 필터 (지도에서도 바로 '안 가본 곳만' 볼 수 있게) */}
-            <View style={styles.visitWrap}>
-              <VisitFilterChips
-                value={visitFilter}
-                onChange={changeVisitFilter}
-                counts={visitCounts}
-              />
-            </View>
-          </View>
-        )}
-        {!!locationError && (
-          <Pressable style={styles.errorChip} onPress={() => locateFromUser()} accessibilityRole="button">
-            <Ionicons name="alert-circle" size={12} color={colors.white} />
-            <Text style={styles.errorText} numberOfLines={2}>
-              {locationError}
-            </Text>
-          </Pressable>
-        )}
-      </View>
-      )}
 
-      {/* 저장 개수 표시 — 상세 시트가 열리면 숨깁니다 */}
-      {view === 'map' && !selectedPin && (
-        <View style={styles.countPill} pointerEvents="none">
-          <View style={styles.countDot} />
-          <Text style={styles.countText}>
-            {visitFilter === VISIT_ALL
-              ? filtered.length + ' / ' + pins.length + ' 핀 표시 중'
-              : visitFilter + ' ' + filtered.length + '곳 / ' + pins.length + '곳'}
-          </Text>
-        </View>
-      )}
-
-      {/* 반경 500m 주변 목록 */}
-      {view === 'map' && !selectedPin && nearbyOpen && (
-        <View style={styles.nearbyPanel}>
-          <View style={styles.panelHead}>
-            <Text style={styles.panelTitle}>
-              {'반경 ' + NEARBY_RADIUS_M + 'm · ' + nearbyList.length + '곳'}
-            </Text>
-            <Pressable
-              style={[styles.alertToggle, alertsOn && styles.alertToggleOn]}
-              onPress={toggleAlerts}
-              accessibilityRole="button"
-              accessibilityState={{ selected: alertsOn }}
-              accessibilityLabel={alertsOn ? '근처 알림 끄기' : '근처 알림 켜기'}
-            >
-              <Ionicons
-                name={alertsOn ? 'notifications' : 'notifications-outline'}
-                size={12}
-                color={alertsOn ? colors.white : colors.coralDark}
-              />
-              <Text style={[styles.alertToggleText, alertsOn && styles.alertToggleTextOn]}>
-                {alertsOn ? '근처 알림 켜짐' : '🔔 근처 알림 켜기'}
-              </Text>
-            </Pressable>
-            <Pressable onPress={() => setNearbyOpen(false)} hitSlop={8} accessibilityLabel="주변 목록 닫기">
-              <Ionicons name="close" size={16} color={colors.textMuted} />
-            </Pressable>
-          </View>
-
-          {!myCoords ? (
-            <View style={styles.panelEmptyWrap}>
-              <Text style={styles.panelEmpty}>
-                {'내 위치를 켜면 반경 ' + NEARBY_RADIUS_M + 'm 안의 저장 장소를 가까운 순으로 보여드려요.'}
-              </Text>
-              <Pressable style={styles.panelLocateBtn} onPress={() => locateFromUser()} accessibilityRole="button">
-                {locating ? (
-                  <ActivityIndicator color={colors.white} size="small" />
-                ) : (
-                  <Ionicons name="locate" size={14} color={colors.white} />
-                )}
-                <Text style={styles.panelLocateText}>내 위치 켜기</Text>
+        {/* 상단 오버레이(지도 보기): 공유받은 지도 배너 + 실시간 배너 + 검색 + 카테고리 필터 */}
+        {view === 'map' && (
+        <View style={styles.topOverlay} pointerEvents="box-none">
+          {previewPins.length > 0 && (
+            <View style={styles.sharedBanner}>
+              <View style={styles.sharedIcon}>
+                <Ionicons name="share-social" size={15} color={colors.white} />
+              </View>
+              <View style={styles.sharedTextWrap}>
+                <Text style={styles.sharedTitle} numberOfLines={1}>
+                  {'공유받은 맛집 지도 (' + previewPins.length + '곳)'}
+                </Text>
+                <Text style={styles.sharedSub} numberOfLines={1}>
+                  지도에 미리보기로 띄웠어요
+                </Text>
+              </View>
+              <Pressable
+                style={styles.sharedAddBtn}
+                onPress={onAddSharedPins}
+                accessibilityRole="button"
+                accessibilityLabel="내 지도에 모두 추가"
+              >
+                <Text style={styles.sharedAddText}>내 지도에 모두 추가</Text>
+              </Pressable>
+              <Pressable
+                style={styles.sharedClose}
+                onPress={onDismissShared}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="공유받은 지도 닫기"
+              >
+                <Ionicons name="close" size={14} color="#C9D3E4" />
               </Pressable>
             </View>
-          ) : nearbyList.length === 0 ? (
-            <Text style={styles.panelEmpty}>
-              {'반경 ' + NEARBY_RADIUS_M + 'm 안에는 저장한 곳이 없어요.' +
-                (closest ? ' 가장 가까운 곳은 ' + closest.pin.name + ' (' + formatDistance(closest.distanceMeters) + ')' : '')}
+          )}
+          {!bannerHidden && (
+            <GeofenceBanner
+              key={bannerKey}
+              pin={banner.pin}
+              radiusMeters={radiusMeters}
+              onPress={focusBannerPin}
+              onLocate={() => locateFromUser()}
+              onDismiss={dismissBanner}
+              locating={locating && !myCoords}
+              empty={banner.empty}
+              needsLocation={banner.needsLocation}
+              hintTitle={'내 위치를 켜면 가까운 맛집과 ' + NEARBY_RADIUS_M + 'm 알림이 보여요'}
+              title={banner.title}
+              sub={banner.sub}
+              badge={banner.badge}
+              tone={banner.tone}
+            />
+          )}
+          <View style={styles.searchWrap}>
+            <PinSearchBar value={query} onChange={setQuery} onClear={clearSearch} />
+          </View>
+          {showResults && (
+            <PinSearchResults
+              pins={filtered}
+              query={query}
+              categories={categories}
+              myCoords={myCoords}
+              onOpenPin={openPinFromList}
+              onShowAll={showAllResults}
+            />
+          )}
+          {/* 검색 결과 목록이 떠 있는 동안에는 분류 칩을 잠시 접어 화면을 비워 둡니다 */}
+          {!showResults && (
+            <View style={styles.chipWrap}>
+              <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
+              {/* v2.10 — ✅ 방문 상태 필터 (지도에서도 바로 '안 가본 곳만' 볼 수 있게) */}
+              <View style={styles.visitWrap}>
+                <VisitFilterChips
+                  value={visitFilter}
+                  onChange={changeVisitFilter}
+                  counts={visitCounts}
+                />
+              </View>
+            </View>
+          )}
+          {!!locationError && (
+            <Pressable style={styles.errorChip} onPress={() => locateFromUser()} accessibilityRole="button">
+              <Ionicons name="alert-circle" size={12} color={colors.white} />
+              <Text style={styles.errorText} numberOfLines={2}>
+                {locationError}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+        )}
+
+        {/* 저장 개수 표시 — 상세 시트가 열리면 숨깁니다 */}
+        {view === 'map' && !selectedPin && (
+          <View style={styles.countPill} pointerEvents="none">
+            <View style={styles.countDot} />
+            <Text style={styles.countText}>
+              {visitFilter === VISIT_ALL
+                ? filtered.length + ' / ' + pins.length + ' 핀 표시 중'
+                : visitFilter + ' ' + filtered.length + '곳 / ' + pins.length + '곳'}
             </Text>
-          ) : (
-            <ScrollView style={styles.nearbyScroll} showsVerticalScrollIndicator={false}>
-              {nearbyList.map((item, index) => (
-                <Pressable
-                  key={item.pin.id}
-                  style={styles.nearbyRow}
-                  onPress={() => focusOnPin(item.pin)}
-                  accessibilityRole="button"
-                  accessibilityLabel={item.pin.name + ', ' + formatDistance(item.distanceMeters)}
-                >
-                  <Text style={styles.nearbyRank}>{index + 1}</Text>
-                  <View style={styles.nearbyTextWrap}>
-                    <Text style={styles.nearbyName} numberOfLines={1}>
-                      {item.pin.name}
-                    </Text>
-                    <Text style={styles.nearbySub} numberOfLines={1}>
-                      {[item.pin.category, item.pin.area].filter(Boolean).join(' · ')}
-                    </Text>
-                  </View>
-                  <Text style={styles.nearbyDistance}>{formatDistance(item.distanceMeters)}</Text>
-                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+          </View>
+        )}
+
+        {/* 반경 500m 주변 목록 */}
+        {view === 'map' && !selectedPin && nearbyOpen && (
+          <View style={styles.nearbyPanel}>
+            <View style={styles.panelHead}>
+              <Text style={styles.panelTitle}>
+                {'반경 ' + NEARBY_RADIUS_M + 'm · ' + nearbyList.length + '곳'}
+              </Text>
+              <Pressable
+                style={[styles.alertToggle, alertsOn && styles.alertToggleOn]}
+                onPress={toggleAlerts}
+                accessibilityRole="button"
+                accessibilityState={{ selected: alertsOn }}
+                accessibilityLabel={alertsOn ? '근처 알림 끄기' : '근처 알림 켜기'}
+              >
+                <Ionicons
+                  name={alertsOn ? 'notifications' : 'notifications-outline'}
+                  size={12}
+                  color={alertsOn ? colors.white : colors.coralDark}
+                />
+                <Text style={[styles.alertToggleText, alertsOn && styles.alertToggleTextOn]}>
+                  {alertsOn ? '근처 알림 켜짐' : '🔔 근처 알림 켜기'}
+                </Text>
+              </Pressable>
+              <Pressable onPress={() => setNearbyOpen(false)} hitSlop={8} accessibilityLabel="주변 목록 닫기">
+                <Ionicons name="close" size={16} color={colors.textMuted} />
+              </Pressable>
+            </View>
+
+            {!myCoords ? (
+              <View style={styles.panelEmptyWrap}>
+                <Text style={styles.panelEmpty}>
+                  {'내 위치를 켜면 반경 ' + NEARBY_RADIUS_M + 'm 안의 저장 장소를 가까운 순으로 보여드려요.'}
+                </Text>
+                <Pressable style={styles.panelLocateBtn} onPress={() => locateFromUser()} accessibilityRole="button">
+                  {locating ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Ionicons name="locate" size={14} color={colors.white} />
+                  )}
+                  <Text style={styles.panelLocateText}>내 위치 켜기</Text>
                 </Pressable>
-              ))}
-            </ScrollView>
-          )}
-
-          {isNotificationSupported() && notifyPermission === 'denied' && (
-            <Text style={styles.panelNote}>
-              브라우저 알림이 꺼져 있어 앱 안 배너로만 알려드려요.
-            </Text>
-          )}
-        </View>
-      )}
-
-      {/* 내 위치 · 주변 500m · 공유 · 목록 보기 버튼 */}
-      {view === 'map' && !selectedPin && (
-        <View style={styles.actionCol}>
-          <Pressable
-            style={[styles.nearbyBtn, styles.viewToggleBtn]}
-            onPress={toggleView}
-            accessibilityRole="button"
-            accessibilityLabel="목록 보기로 전환"
-            testID="view-toggle-map"
-          >
-            <Ionicons name="list-outline" size={14} color={colors.white} />
-            <Text style={styles.nearbyBtnText}>목록 보기</Text>
-          </Pressable>
-          <Pressable
-            style={styles.nearbyBtn}
-            onPress={toggleNearby}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: nearbyOpen }}
-            accessibilityLabel="반경 500m 주변 보기"
-          >
-            <Ionicons name="storefront-outline" size={14} color={colors.white} />
-            <Text style={styles.nearbyBtnText}>{'주변 ' + NEARBY_RADIUS_M + 'm'}</Text>
-          </Pressable>
-          <Pressable
-            style={styles.nearbyBtn}
-            onPress={shareMyMap}
-            accessibilityRole="button"
-            accessibilityLabel="내 지도 공유하기"
-          >
-            <Ionicons name="share-social-outline" size={14} color={colors.white} />
-            <Text style={styles.nearbyBtnText}>지도 공유</Text>
-          </Pressable>
-          <Pressable
-            style={[styles.fab, myCoords && styles.fabLive]}
-            onPress={() => locateFromUser()}
-            accessibilityRole="button"
-            accessibilityLabel="내 위치 찾기"
-          >
-            {locating ? (
-              <ActivityIndicator color={colors.white} size="small" />
+              </View>
+            ) : nearbyList.length === 0 ? (
+              <Text style={styles.panelEmpty}>
+                {'반경 ' + NEARBY_RADIUS_M + 'm 안에는 저장한 곳이 없어요.' +
+                  (closest ? ' 가장 가까운 곳은 ' + closest.pin.name + ' (' + formatDistance(closest.distanceMeters) + ')' : '')}
+              </Text>
             ) : (
-              <Ionicons name={myCoords ? 'locate' : 'locate-outline'} size={20} color={colors.white} />
+              <ScrollView style={styles.nearbyScroll} showsVerticalScrollIndicator={false}>
+                {nearbyList.map((item, index) => (
+                  <Pressable
+                    key={item.pin.id}
+                    style={styles.nearbyRow}
+                    onPress={() => focusOnPin(item.pin)}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.pin.name + ', ' + formatDistance(item.distanceMeters)}
+                  >
+                    <Text style={styles.nearbyRank}>{index + 1}</Text>
+                    <View style={styles.nearbyTextWrap}>
+                      <Text style={styles.nearbyName} numberOfLines={1}>
+                        {item.pin.name}
+                      </Text>
+                      <Text style={styles.nearbySub} numberOfLines={1}>
+                        {[item.pin.category, item.pin.area].filter(Boolean).join(' · ')}
+                      </Text>
+                    </View>
+                    <Text style={styles.nearbyDistance}>{formatDistance(item.distanceMeters)}</Text>
+                    <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                  </Pressable>
+                ))}
+              </ScrollView>
             )}
-          </Pressable>
-        </View>
-      )}
 
-      {/* 핀 없음 안내 (공유받은 지도만 있으면 띄우지 않습니다) */}
-      {view === 'map' && pins.length === 0 && previewPins.length === 0 && (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>지도가 비어 있어요</Text>
-          <Text style={styles.emptySub}>릴스 링크 하나면 3초 만에 핀이 꽂힙니다.</Text>
-          <Pressable style={styles.emptyBtn} onPress={onGoPaste}>
-            <Ionicons name="link-outline" size={15} color={colors.white} />
-            <Text style={styles.emptyBtnText}>링크 붙여넣으러 가기</Text>
-          </Pressable>
-        </View>
-      )}
+            {isNotificationSupported() && notifyPermission === 'denied' && (
+              <Text style={styles.panelNote}>
+                브라우저 알림이 꺼져 있어 앱 안 배너로만 알려드려요.
+              </Text>
+            )}
+          </View>
+        )}
 
-      {selectedPin && (
-        <PinDetailSheet
-          pin={selectedPin}
-          categories={categories}
-          onChangeCategory={onChangePinCategory}
-          onAddCategory={onAddCategory}
-          radiusMeters={radiusMeters}
-          distanceMeters={myCoords ? distanceById[selectedPin.id] : null}
-          onClose={() => onSelectPin(null)}
-          onDelete={onDeletePin}
-          onToggleVisited={onTogglePinVisited}
-          onChangeMemo={onChangePinMemo}
-          onToast={onToast}
-          readOnly={selectedIsShared}
-        />
-      )}
+        {/* 내 위치 · 주변 500m · 공유 · 목록 보기 버튼 */}
+        {view === 'map' && !selectedPin && (
+          <View style={styles.actionCol}>
+            <Pressable
+              style={[styles.nearbyBtn, styles.viewToggleBtn]}
+              onPress={toggleView}
+              accessibilityRole="button"
+              accessibilityLabel="목록 보기로 전환"
+              testID="view-toggle-map"
+            >
+              <Ionicons name="list-outline" size={14} color={colors.white} />
+              <Text style={styles.nearbyBtnText}>목록 보기</Text>
+            </Pressable>
+            <Pressable
+              style={styles.nearbyBtn}
+              onPress={toggleNearby}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: nearbyOpen }}
+              accessibilityLabel="반경 500m 주변 보기"
+            >
+              <Ionicons name="storefront-outline" size={14} color={colors.white} />
+              <Text style={styles.nearbyBtnText}>{'주변 ' + NEARBY_RADIUS_M + 'm'}</Text>
+            </Pressable>
+            <Pressable
+              style={styles.nearbyBtn}
+              onPress={shareMyMap}
+              accessibilityRole="button"
+              accessibilityLabel="내 지도 공유하기"
+            >
+              <Ionicons name="share-social-outline" size={14} color={colors.white} />
+              <Text style={styles.nearbyBtnText}>지도 공유</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.fab, myCoords && styles.fabLive]}
+              onPress={() => locateFromUser()}
+              accessibilityRole="button"
+              accessibilityLabel="내 위치 찾기"
+            >
+              {locating ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Ionicons name={myCoords ? 'locate' : 'locate-outline'} size={20} color={colors.white} />
+              )}
+            </Pressable>
+          </View>
+        )}
+
+        {/* 핀 없음 안내 (공유받은 지도만 있으면 띄우지 않습니다) */}
+        {view === 'map' && pins.length === 0 && previewPins.length === 0 && (
+          <View style={styles.emptyCard}>
+            <Text style={styles.emptyTitle}>지도가 비어 있어요</Text>
+            <Text style={styles.emptySub}>릴스 링크 하나면 3초 만에 핀이 꽂힙니다.</Text>
+            <Pressable style={styles.emptyBtn} onPress={onGoPaste}>
+              <Ionicons name="link-outline" size={15} color={colors.white} />
+              <Text style={styles.emptyBtnText}>링크 붙여넣으러 가기</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {selectedPin && (
+          <PinDetailSheet
+            pin={selectedPin}
+            categories={categories}
+            onChangeCategory={onChangePinCategory}
+            onAddCategory={onAddCategory}
+            radiusMeters={radiusMeters}
+            distanceMeters={myCoords ? distanceById[selectedPin.id] : null}
+            onClose={() => onSelectPin(null)}
+            onDelete={onDeletePin}
+            onToggleVisited={onTogglePinVisited}
+            onChangeMemo={onChangePinMemo}
+            onToast={onToast}
+            readOnly={selectedIsShared}
+          />
+        )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: {
+    flex: 1,
+    backgroundColor: colors.navy,
+  },
+  // 헤더 아래 지도·오버레이 영역 (v2.15)
+  mapArea: {
     flex: 1,
     backgroundColor: colors.navy,
   },

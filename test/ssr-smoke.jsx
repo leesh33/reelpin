@@ -18,6 +18,10 @@ import PinSearchBar from '../src/components/PinSearchBar';
 import PinListView from '../src/components/PinListView';
 import PinSearchResults from '../src/components/PinSearchResults';
 import TabBar from '../src/components/TabBar';
+// v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
+import AppHeader, { alertBadgeLabel, HEADER_TABS } from '../src/components/AppHeader';
+import AlertInbox from '../src/components/AlertInbox';
+import { ALERT_FEED_LIMIT, buildAlertFeed } from '../src/utils/alertFeed';
 import MapCanvas from '../src/components/MapCanvas';
 import RealMapViewWeb, {
   NAVER_MAP_CLIENT_ID,
@@ -602,8 +606,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.14.1', pkg.version === '2.14.1', pkg.version],
-  ['버전: app.json 2.14.1', expoConfig.version === '2.14.1', expoConfig.version],
+  ['버전: package.json 2.15.0', pkg.version === '2.15.0', pkg.version],
+  ['버전: app.json 2.15.0', expoConfig.version === '2.15.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -851,8 +855,10 @@ const webModalSource211 = fs.readFileSync(path.join(process.cwd(), 'src/componen
 const nativeModalSource211 = fs.readFileSync(path.join(process.cwd(), 'src/components/InAppPlaceModal.js'), 'utf8');
 
 /** 헤더에 ✕ 닫기 버튼이 있는 화면들 — 소스에서 같은 다크 차콜 헤더를 쓰는지 봅니다. */
+const headerSource215 = fs.readFileSync(path.join(process.cwd(), 'src/components/AppHeader.js'), 'utf8');
 const CLOSE_HEADER_FILES = [
-  ['저장 화면', pasteSource211, 'styles.header'],
+  // v2.15 — 저장 화면의 ✕ 헤더는 공통 AppHeader 로 옮겼습니다(지도·내 정보 탭도 같은 헤더).
+  ['공통 헤더(AppHeader)', headerSource215, 'styles.header'],
   ['핀 상세 시트', sheetSource211, 'styles.headerBar'],
   ['인앱 매장 정보 모달(웹)', webModalSource211, 'styles.header'],
   ['인앱 매장 정보 모달(iOS·안드로이드)', nativeModalSource211, 'styles.header'],
@@ -861,9 +867,9 @@ const CLOSE_HEADER_FILES = [
 const CHARCOAL_HEADER_FILES = CLOSE_HEADER_FILES.filter(([label]) => label !== '핀 상세 시트');
 
 const v211HeaderChecks = [
-  ['헤더 통일: 저장 화면 헤더가 다크 차콜', /header: \{[\s\S]{0,400}?backgroundColor: colors\.charcoal,/.test(pasteSource211)],
-  ['헤더 통일: 저장 화면 로고 흰색 · [저장] 뱃지 반투명', /brandText: \{[\s\S]{0,120}?color: colors\.white/.test(pasteSource211) && /brandBadge: \{[\s\S]{0,80}?backgroundColor: colors\.charcoalPill/.test(pasteSource211)],
-  ['헤더 통일: 저장 화면 닫기 = 반투명 원 + 흰 ✕', /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(pasteSource211) && /name="close" size=\{18\} color=\{colors\.white\}/.test(pasteSource211)],
+  ['헤더 통일: 공통 헤더가 다크 차콜', /header: \{[\s\S]{0,400}?backgroundColor: colors\.charcoal,/.test(headerSource215)],
+  ['헤더 통일: 공통 헤더 로고 흰색 · 탭 뱃지 반투명', /brandText: \{[\s\S]{0,120}?color: colors\.white/.test(headerSource215) && /brandBadge: \{[\s\S]{0,80}?backgroundColor: colors\.charcoalPill/.test(headerSource215)],
+  ['헤더 통일: 공통 헤더 닫기 = 반투명 원 + 흰 ✕', /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(headerSource215) && /name="close" size=\{18\} color=\{colors\.white\}/.test(headerSource215)],
   // v2.14.1 — 상세 시트 헤더는 다크 차콜이 아니라 브랜드 주황입니다(아래 v2.14.1 검사에서 확인).
   // ✕ 헤더를 가진 나머지 화면은 빠짐없이 charcoal 을 써야 합니다 (색을 되돌리면 여기서 걸립니다)
   ...CHARCOAL_HEADER_FILES.map(([label, source, styleKey]) => [
@@ -886,10 +892,11 @@ const v211HeaderChecks = [
         }
       };
       walk(path.join(process.cwd(), 'src'));
+      // v2.15 — 저장 화면의 ✕ 는 공통 AppHeader 로 옮겼습니다(closeLabel 기본값 '닫기').
       const withCloseHeader = files.filter((f) =>
-        /accessibilityLabel="(닫기|상세 닫기)"/.test(fs.readFileSync(f, 'utf8'))
+        /accessibilityLabel="(닫기|상세 닫기)"|accessibilityLabel=\{closeLabel\}/.test(fs.readFileSync(f, 'utf8'))
       );
-      const wanted = ['InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'PasteScreen.js', 'PinDetailSheet.js'];
+      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'PinDetailSheet.js'];
       return (
         withCloseHeader.length === wanted.length &&
         wanted.every((w) => withCloseHeader.some((f) => f.endsWith(w)))
@@ -933,7 +940,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.14.1', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.14.1') > 0],
+  ['프로필: 버전 표기 v2.15.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.15.0') > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1208,6 +1215,95 @@ for (const [label, ok, extra] of v2141Checks) {
   }
 }
 
+// ── v2.15: 전 탭 공통 상단 다크 헤더 (Reelspin) · 헤더 우측 🔔 알림 모음 / 👤 계정 ──
+// (headerSource215 는 위 v2.11 헤더 검사에서 이미 읽었습니다)
+const inboxSource215 = fs.readFileSync(path.join(process.cwd(), 'src/components/AlertInbox.js'), 'utf8');
+const mapSource215 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const pasteSource215 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const profileSource215 = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const appSource215 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+
+// 내 위치 = 영등포 (위도 0.001 ≈ 111m)
+const ALERT_ORIGIN = { lat: 37.5194, lng: 126.904 };
+const ALERT_PINS = [
+  { id: 'a-0', name: '영등포아바이순대국', category: '맛집', area: '영등포동', lat: 37.5194, lng: 126.904 },
+  { id: 'a-1', name: '문래동 소금빵', category: '카페', area: '문래동', lat: 37.5212, lng: 126.904 },
+  { id: 'a-2', name: '당산 곱창', category: '맛집', area: '당산동', lat: 37.523, lng: 126.904 },
+  { id: 'a-3', name: '여의도 국수', category: '맛집', area: '여의도', lat: 37.5284, lng: 126.904 },
+  { id: 'a-4', name: '신길 카페', category: '카페', area: '신길동', lat: 37.5374, lng: 126.904 },
+  { id: 'a-5', name: '홍대 파스타', category: '맛집', area: '홍대', lat: 37.5464, lng: 126.904 },
+  { id: 'a-6', name: '좌표 없는 핀', category: '가볼곳', area: '' },
+];
+const feedNear = buildAlertFeed(ALERT_PINS, ALERT_ORIGIN);
+const feedFar = buildAlertFeed(ALERT_PINS, { lat: 37.9, lng: 127.9 });
+const feedNoLocation = buildAlertFeed(ALERT_PINS, null);
+
+const headerAlertsHtml = stripSpaces(
+  renderToString(<AppHeader badge="지도" alertCount={3} onPressAlerts={noop} onPressAccount={noop} />)
+);
+const headerSignedHtml = stripSpaces(
+  renderToString(
+    <AppHeader badge="내 정보" alertCount={0} signedIn accountInitial="A" onPressAccount={noop} />
+  )
+);
+const inboxOpenHtml = renderToString(
+  <AlertInbox visible pins={ALERT_PINS} myCoords={ALERT_ORIGIN} onClose={noop} onOpenPin={noop} onGoMap={noop} onLocate={noop} />
+);
+const inboxNoLocationHtml = stripSpaces(
+  renderToString(<AlertInbox visible pins={ALERT_PINS} myCoords={null} onClose={noop} onLocate={noop} />)
+);
+const inboxEmptyHtml = renderToString(
+  <AlertInbox visible pins={[]} myCoords={ALERT_ORIGIN} onClose={noop} onOpenPin={noop} />
+);
+
+const v215Checks = [
+  // ① 알림 모음 규칙 (화면 없이)
+  ['알림 모음: 반경 500m 안 3곳', feedNear.inRadiusCount === 3, feedNear.inRadiusCount],
+  ['알림 모음: 🔔 뱃지 숫자 = 반경 안 개수', feedNear.badgeCount === 3, feedNear.badgeCount],
+  ['알림 모음: 목록 5곳 = 안 3곳 + 밖에서 가까운 2곳', feedNear.items.length === ALERT_FEED_LIMIT && feedNear.items[0].pin.id === 'a-0' && feedNear.items[2].pin.id === 'a-2' && feedNear.items[3].pin.id === 'a-3' && feedNear.items[4].pin.id === 'a-4', feedNear.items.map((i) => i.pin.id).join(',')],
+  ['알림 모음: 좌표 없는 핀은 건너뜀', feedNear.items.every((i) => i.pin.id !== 'a-6') && feedNear.closest.pin.id === 'a-0'],
+  ['알림 모음: 위치 없으면 hasLocation=false · 목록 비움', feedNoLocation.hasLocation === false && feedNoLocation.items.length === 0 && feedNoLocation.badgeCount === 0],
+  ['알림 모음: 반경 밖이면 뱃지 0 · 가까운 곳부터 5곳', feedFar.badgeCount === 0 && feedFar.items.length === ALERT_FEED_LIMIT && feedFar.items[0].distanceMeters < feedFar.items[4].distanceMeters && feedFar.items.every((i) => i.distanceMeters > feedFar.radiusMeters)],
+  ['알림 모음: limit 옵션(2곳)', buildAlertFeed(ALERT_PINS, ALERT_ORIGIN, { limit: 2 }).items.length === 2],
+  ['뱃지 라벨: 0은 빈 문자열 · 9까지 숫자 · 10부터 9+', alertBadgeLabel(0) === '' && alertBadgeLabel(3) === '3' && alertBadgeLabel(10) === '9+'],
+  ['헤더 뱃지 이름: 지도 · 저장 · 내 정보', HEADER_TABS.join('|') === '지도|저장|내 정보', HEADER_TABS.join('|')],
+  // ② 공통 헤더 (컴포넌트)
+  ['공통 헤더: Reelspin + 지금 탭 뱃지', headerAlertsHtml.indexOf('reelspin') > 0 && headerAlertsHtml.indexOf('지도') > 0],
+  ['공통 헤더: 🔔 알림 모음 버튼 + 숫자 뱃지', headerAlertsHtml.indexOf('알림모음') > 0 && headerSource215.indexOf('testID="header-alert-badge"') > 0 && headerSource215.indexOf('colors.coral') > 0],
+  ['공통 헤더: 비로그인 = [로그인] 알약 버튼', headerAlertsHtml.indexOf('로그인') > 0 && headerSource215.indexOf('loginBtn') > 0],
+  ['공통 헤더: 로그인 = 이니셜 아바타 + 초록 점', headerSignedHtml.indexOf('>a<') > 0 && headerSignedHtml.indexOf('header-account-dot') > 0 && headerSource215.indexOf('colors.visit') > 0],
+  ['공통 헤더: 뱃지 없으면 숫자 안 그림', stripSpaces(renderToString(<AppHeader badge="저장" alertCount={0} />)).indexOf('header-alert-badge') < 0],
+  ['공통 헤더: ✕ 는 넘긴 화면에만', headerSource215.indexOf('{onPressClose ?') > 0 && headerAlertsHtml.indexOf('✕') < 0],
+  // ③ 세 탭에 같은 헤더
+  ['지도 탭: 공통 다크 헤더', mapSource215.indexOf('<AppHeader badge="지도"') > 0],
+  ['지도 탭: 헤더가 지도·오버레이보다 위(겹침 없음)', mapSource215.indexOf('<AppHeader badge="지도"') < mapSource215.indexOf('<View style={styles.mapArea}>') && mapSource215.indexOf('<View style={styles.mapArea}>') < mapSource215.indexOf('styles.topOverlay')],
+  ['지도 탭: 오버레이는 헤더 아래 mapArea 안', /mapArea: \{[\s\S]{0,80}?flex: 1/.test(mapSource215)],
+  ['저장 탭: 공통 헤더 + 기존 ✕ 유지', pasteSource215.indexOf('<AppHeader badge="저장"') > 0 && pasteSource215.indexOf('onPressClose={onClose}') > 0],
+  ['저장 탭: 옛 인라인 헤더 스타일 제거', pasteSource215.indexOf('styles.header}') < 0 && pasteSource215.indexOf('brandBadgeText') < 0],
+  ['내 정보 탭: 공통 헤더 + 옛 큰 타이틀 제거', profileSource215.indexOf('<AppHeader badge="내 정보"') > 0 && profileSource215.indexOf('styles.title}>내 정보') < 0],
+  ['세 탭 모두 같은 headerProps 를 받음', (appSource215.match(/header=\{headerProps\}/g) || []).length === 3, (appSource215.match(/header=\{headerProps\}/g) || []).length],
+  // ④ 헤더 우측 아이콘의 동작
+  ['🔔: App 이 알림 모음을 열고 목록은 최대 5곳', appSource215.indexOf('<AlertInbox') > 0 && appSource215.indexOf('buildAlertFeed(pins, alertCoords)') > 0 && ALERT_FEED_LIMIT === 5],
+  ['🔔: 장소를 누르면 지도 탭 + 그 핀 상세로', appSource215.indexOf('setPinFocus(') > 0 && mapSource215.indexOf('focusPin') > 0 && mapSource215.indexOf('onSelectPin(target.id)') > 0],
+  ['🔔: 지도 탭이 잡은 위치를 헤더와 공유', mapSource215.indexOf('onMyCoordsRef.current(position)') > 0 && appSource215.indexOf('onMyCoords={handleMyCoords}') > 0],
+  ['👤: 누르면 내 정보 탭 + 계정 카드로 스크롤', appSource215.indexOf("setTab('profile')") > 0 && appSource215.indexOf('setAccountFocus(') > 0 && profileSource215.indexOf('accountYRef') > 0 && profileSource215.indexOf('scrollTo(') > 0],
+  // ⑤ 알림 모음 모달
+  ['알림 모음: 반경 500m 안 장소를 가까운 순으로', inboxOpenHtml.indexOf('영등포아바이순대국') > 0 && inboxOpenHtml.indexOf('문래동 소금빵') > 0 && inboxOpenHtml.indexOf('내 위치 반경 500m 안 3곳') > 0],
+  ['알림 모음: 위치를 모르면 [내 위치 켜기]', inboxNoLocationHtml.indexOf('내위치켜기') > 0 && inboxNoLocationHtml.indexOf('알림모음') > 0],
+  ['알림 모음: 저장한 곳이 없으면 안내', inboxEmptyHtml.indexOf('아직 저장한 장소가 없어요') > 0],
+  ['알림 모음: 닫힌 상태에서는 아무 것도 안 그림', renderToString(<AlertInbox visible={false} pins={ALERT_PINS} myCoords={ALERT_ORIGIN} onClose={noop} />) === ''],
+  ['알림 모음: 닫힌 배너도 여기서 다시 (안내 문구)', stripSpaces(inboxOpenHtml).indexOf('배너를위로스와이프해닫아도여기서는언제든다시볼수있어요') > 0],
+  ['알림 모음: [지도에서 보기]', inboxOpenHtml.indexOf('지도에서 보기') > 0],
+];
+
+for (const [label, ok, extra] of v215Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -1234,6 +1330,7 @@ const total =
   v214Checks.length +
   v214RenderChecks.length +
   v2141Checks.length +
+  v215Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

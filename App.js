@@ -14,6 +14,10 @@ import PasteScreen from './src/screens/PasteScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import TabBar from './src/components/TabBar';
 import Toast from './src/components/Toast';
+// v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
+import AlertInbox from './src/components/AlertInbox';
+import { buildAlertFeed } from './src/utils/alertFeed';
+import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
   loadCategories,
   loadPins,
@@ -74,6 +78,17 @@ export default function App() {
   const [sharedPins, setSharedPins] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
+
+  // ── v2.15 · 공통 헤더(🔔 알림 모음 · 👤 계정) ──────────────────
+  //   myCoords … 지도 탭이 잡은 현재 위치를 그대로 받아 둡니다(헤더 뱃지·알림 모음이 같은 위치를 씀)
+  //   pinFocus … 알림 모음에서 장소를 누르면 지도 탭이 그 핀으로 이동해 상세를 열라는 요청
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertCoords, setAlertCoords] = useState(null);
+  const [alertLocating, setAlertLocating] = useState(false);
+  const [alertError, setAlertError] = useState('');
+  const [pinFocus, setPinFocus] = useState(null);
+  const [accountFocus, setAccountFocus] = useState(0);
+  const pinFocusId = useRef(0);
 
   // v2.1 — 계정 · 클라우드 동기화 상태
   const [cloudConfigured, setCloudConfigured] = useState(isSupabaseConfigured());
@@ -647,6 +662,82 @@ export default function App() {
     showToast('결제는 앱스토어 등록 후 연결됩니다 (지금은 무료 MVP)');
   }, [isPro, showToast]);
 
+  // ── v2.15 · 공통 헤더의 🔔 알림 모음 · 👤 계정 ─────────────────
+  // 반경 500m 안 저장 장소 수 = 헤더 🔔 뱃지, 목록 = 알림 모음(최대 5곳)
+  const alertFeed = useMemo(() => buildAlertFeed(pins, alertCoords), [pins, alertCoords]);
+
+  /** 지도 탭이 위치를 잡을 때마다 알려 주는 현재 위치 (없으면 null) */
+  const handleMyCoords = useCallback((position) => {
+    if (!position) return;
+    const lat = Number(position.lat);
+    const lng = Number(position.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    setAlertCoords((prev) =>
+      prev && prev.lat === lat && prev.lng === lng ? prev : { lat, lng }
+    );
+  }, []);
+
+  /** 알림 모음 안의 [내 위치 켜기] — 사용자가 **직접 누를 때만** 위치를 요청합니다. */
+  const handleLocateForAlerts = useCallback(async () => {
+    setAlertLocating(true);
+    setAlertError('');
+    try {
+      const position = await requestCurrentPosition();
+      handleMyCoords(position);
+      writeLocationGrantedFlag(true);
+      return position;
+    } catch (err) {
+      setAlertError((err && err.message) || '위치를 확인하지 못했어요');
+      return null;
+    } finally {
+      setAlertLocating(false);
+    }
+  }, [handleMyCoords]);
+
+  const openAlerts = useCallback(() => {
+    setAlertError('');
+    setAlertOpen(true);
+  }, []);
+
+  const closeAlerts = useCallback(() => setAlertOpen(false), []);
+
+  /** 알림 모음에서 장소 선택 → 지도 탭으로 이동 + 그 핀으로 지도 이동 + 상세 시트 */
+  const openPinFromAlerts = useCallback((pin) => {
+    if (!pin || !pin.id) return;
+    setAlertOpen(false);
+    setTab('map');
+    pinFocusId.current += 1;
+    setPinFocus({ id: pin.id, key: pinFocusId.current });
+  }, []);
+
+  const goMapFromAlerts = useCallback(() => {
+    setAlertOpen(false);
+    setTab('map');
+  }, []);
+
+  /** 헤더의 👤 — 로그인 상태를 보여 주고, 누르면 내 정보 탭의 계정 카드로 내려갑니다. */
+  const openAccount = useCallback(() => {
+    setAlertOpen(false);
+    setTab('profile');
+    setAccountFocus((n) => n + 1);
+  }, []);
+
+  const signedIn = Boolean(cloudUser && (cloudUser.email || cloudUser.id));
+  const accountInitial =
+    (cloudUser && cloudUser.email ? cloudUser.email.trim().charAt(0).toUpperCase() : '') || '나';
+
+  /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 */
+  const headerProps = useMemo(
+    () => ({
+      alertCount: alertFeed.badgeCount,
+      onPressAlerts: openAlerts,
+      onPressAccount: openAccount,
+      signedIn,
+      accountInitial,
+    }),
+    [alertFeed.badgeCount, openAlerts, openAccount, signedIn, accountInitial]
+  );
+
   if (!ready) {
     return (
       <View style={styles.splash}>
@@ -663,12 +754,16 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ExpoStatusBar style={tab === 'map' ? 'light' : 'dark'} />
+      <ExpoStatusBar style="light" />
       <View style={[styles.container, { paddingTop: TOP_INSET }]}>
         <View style={styles.screenStack}>
           <View style={[styles.screen, tab !== 'map' && styles.hidden]}>
             <MapScreen
               pins={pins}
+              header={headerProps}
+              onMyCoords={handleMyCoords}
+              alertCoords={alertCoords}
+              focusPin={pinFocus}
               categories={categories}
               lastCategoryChange={categoryChange}
               onChangePinCategory={handleChangePinCategory}
@@ -689,6 +784,7 @@ export default function App() {
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
             <PasteScreen
               pinCount={pins.length}
+              header={headerProps}
               categories={categories}
               onAddCategory={handleAddCategory}
               onSaved={handleSaved}
@@ -701,6 +797,8 @@ export default function App() {
             <ProfileScreen
               name="이상훈"
               handle="odol"
+              header={headerProps}
+              accountFocus={accountFocus}
               pins={pins}
               categories={categories}
               onAddCategory={handleAddCategory}
@@ -734,6 +832,18 @@ export default function App() {
           tone={toast ? toast.tone : 'dark'}
           bottomOffset={tab === 'map' && selectedPinId ? 440 : 96}
           placement={tab === 'map' && selectedPinId ? 'top' : 'bottom'}
+        />
+        {/* v2.15 — 🔔 알림 모음 (헤더 오른쪽 아이콘) · 열려 있을 때만 그립니다 */}
+        <AlertInbox
+          visible={alertOpen}
+          onClose={closeAlerts}
+          pins={pins}
+          myCoords={alertCoords}
+          locating={alertLocating}
+          error={alertError}
+          onLocate={handleLocateForAlerts}
+          onOpenPin={openPinFromAlerts}
+          onGoMap={goMapFromAlerts}
         />
       </View>
     </SafeAreaView>

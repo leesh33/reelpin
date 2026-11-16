@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
+import AppHeader from '../components/AppHeader';
 import { OAUTH_PROVIDERS } from '../services/cloudSync';
 import { SUPABASE_SETUP_HINT } from '../services/supabase';
 import {
@@ -495,9 +496,37 @@ export default function ProfileScreen({
   onOAuth,
   onSignOut,
   onSyncNow,
+  header,
+  accountFocus,
 }) {
   const [copied, setCopied] = useState(false);
   const count = pins.length;
+  /**
+   * v2.15 — 헤더의 👤(로그인/계정) 아이콘을 누르면 '내 정보' 탭의 계정 카드로 바로 내려갑니다.
+   * (상위 App 이 `accountFocus` 를 1씩 올려 요청합니다.)
+   */
+  const scrollRef = useRef(null);
+  const accountYRef = useRef(0);
+  const accountSeenRef = useRef(0);
+  useEffect(() => {
+    if (!accountFocus || accountSeenRef.current === accountFocus) return undefined;
+    accountSeenRef.current = accountFocus;
+    const timer = setTimeout(() => {
+      const node = scrollRef.current;
+      if (!node) return;
+      const y = Math.max(0, accountYRef.current - 8);
+      if (typeof node.scrollTo === 'function') {
+        node.scrollTo({ y, animated: true });
+        return;
+      }
+      const dom =
+        typeof node.getScrollableNode === 'function' ? node.getScrollableNode() : node;
+      if (dom && typeof dom.scrollTo === 'function') {
+        dom.scrollTo({ top: y, behavior: 'smooth' });
+      }
+    }, 140);
+    return () => clearTimeout(timer);
+  }, [accountFocus]);
   // v2.10 — 무료 플랜 10개 한도를 없앴습니다. 이제 누구나 개수 제한 없이 저장합니다.
   const visitedCount = pins.filter((p) => p && p.visited === true).length;
 
@@ -529,12 +558,15 @@ export default function ProfileScreen({
 
   return (
     <View style={styles.root}>
-      <View style={styles.header}>
-        <Text style={styles.title}>내 정보</Text>
-        <Text style={styles.headerCount}>{count}개 저장됨</Text>
-      </View>
+      {/* v2.15 — 다른 탭과 같은 공통 다크 헤더. 예전의 큰 '내 정보' 타이틀 줄은
+          헤더 뱃지(`내 정보`)와 겹치지 않게 없앴습니다. */}
+      <AppHeader badge="내 정보" {...header} />
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
         {/* 프로필 카드 */}
         <View style={styles.profileCard}>
           <View style={styles.avatar}>
@@ -669,7 +701,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.14.1</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.15.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>
@@ -685,22 +717,29 @@ export default function ProfileScreen({
           </View>
         </View>
 
-        {/* 계정 · 클라우드 동기화 (v2.1) — 자주 쓰는 설정이 먼저 보이도록 맨 아래에 둡니다 */}
-        <AccountCard
-          cloudConfigured={cloudConfigured}
-          cloudUser={cloudUser}
-          cloudPinCount={cloudPinCount}
-          cloudBusy={cloudBusy}
-          cloudSyncing={cloudSyncing}
-          cloudMessage={cloudMessage}
-          onSignIn={onSignIn}
-          onSignUp={onSignUp}
-          onMagicLink={onMagicLink}
-          onOAuth={onOAuth}
-          onSignOut={onSignOut}
-          onSyncNow={onSyncNow}
-          onToast={onToast}
-        />
+        {/* 계정 · 클라우드 동기화 (v2.1) — 자주 쓰는 설정이 먼저 보이도록 맨 아래에 둡니다.
+            v2.15 — 헤더의 👤 아이콘을 누르면 이 카드로 바로 내려갑니다(onLayout 으로 위치를 기억). */}
+        <View
+          onLayout={(e) => {
+            accountYRef.current = (e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0) || 0;
+          }}
+        >
+          <AccountCard
+            cloudConfigured={cloudConfigured}
+            cloudUser={cloudUser}
+            cloudPinCount={cloudPinCount}
+            cloudBusy={cloudBusy}
+            cloudSyncing={cloudSyncing}
+            cloudMessage={cloudMessage}
+            onSignIn={onSignIn}
+            onSignUp={onSignUp}
+            onMagicLink={onMagicLink}
+            onOAuth={onOAuth}
+            onSignOut={onSignOut}
+            onSyncNow={onSyncNow}
+            onToast={onToast}
+          />
+        </View>
 
         <Text style={styles.footer}>기획 이상훈 · 개발 오돌</Text>
       </ScrollView>
@@ -710,25 +749,11 @@ export default function ProfileScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 12,
-  },
-  title: { ...typography.h1, fontSize: 24 },
   headerBadge: {
     backgroundColor: colors.coralSoft,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
-  },
-  headerCount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textMuted,
   },
   headerBadgeText: {
     fontSize: 10,
@@ -737,6 +762,8 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 20,
+    // v2.15 — 다크 헤더 바로 아래에 첫 카드가 붙어 보이지 않게 살짝 띄웁니다(저장 화면과 같은 규칙).
+    paddingTop: 12,
     paddingBottom: 32,
     gap: 12,
   },
