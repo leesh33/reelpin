@@ -422,6 +422,21 @@ const modes = calls.map((c) => {
 check('gemini: 400 이면 level → budget → off 순서로 시도', calls.length === 3 && JSON.stringify(modes) === JSON.stringify(['level', 'budget', 'off']), JSON.stringify(modes));
 check('gemini: 세 번 다 400 이면 빈 결과로 끝', r.body.storeName === '' && r.body.reason === 'gemini-upstream-400', r.body.reason);
 
+// 503(모델 과부하)은 잠깐 쉬고 한 번 더 — 무료 등급에서 흔함
+calls = [];
+let overloads = 0;
+handler = () => {
+  overloads += 1;
+  return overloads === 1 ? errRes(503) : jsonRes(geminiText(GEMINI_OK));
+};
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: 503 이면 한 번 더 시도해 살림', calls.length === 2 && r.body.storeName === '엄마손횟집', calls.length + ' | ' + r.body.storeName);
+
+calls = [];
+handler = () => errRes(503);
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini: 503 이 계속되면 두 번에서 멈춤', calls.length === 2 && r.body.reason === 'gemini-upstream-503', calls.length + ' | ' + r.body.reason);
+
 // 모델이 폐기·미제공(404)이면 다음 모델로 내려감
 calls = [];
 let geminiModelTry = 0;

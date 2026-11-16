@@ -155,7 +155,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 1419건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 화면 렌더 스모크 257/257) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 1421건 통과 (추출기·딥링크 400+ + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 화면 렌더 스모크 257/257) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -195,6 +195,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - Google Gemini REST `v1beta/models/gemini-3.8-flash:generateContent` 에 **`fileData: { fileUri: "https://www.youtube.com/watch?v=…", mimeType: "video/*" }`** 로 영상을 직접 넘기고, 제목·설명글은 참고 텍스트로 함께 보냅니다. (모델은 `GEMINI_MODEL` 로 교체 가능)
 - **`responseMimeType: "application/json"`** 로 JSON 을 강제하고(프롬프트가 키·형식을 지정), 혹시 ```json 울타리·앞뒤 잡담이 붙어도 벗겨서 파싱합니다. 응답에는 `elapsedMs`(걸린 시간)도 함께 담아 옵니다.
 - **타임아웃 55초** · 전체 예산 57초 · `vercel.json` 의 `api/gemini.js` 만 **`maxDuration: 60`** (다른 API 는 10초 유지 · Vercel 은 파일마다 **처음 매칭되는 키** 하나만 쓰므로 구체 패턴을 와이드 `api/*.js` **앞**에 둡니다 — 뒤에 두면 `unused_function` 빌드 오류). 실측: `responseSchema` 까지 붙이면 26초를 넘겨 타임아웃 → **`responseMimeType` + 프롬프트로 형식 고정**이 더 빠르고 안정적이었습니다. — 영상 분석은 실측 **24~50초+** 로 흔들립니다(무료 등급 대기열 영향으로 보임). 넘기면 앱은 조용히 기존 폴백으로 이어집니다.
+- **503(모델 과부하)** 은 1.2초 쉬고 한 번 더 시도합니다(무료 등급에서 실제로 자주 발생 · 두 번 연속이면 포기).
 - 모델이 폐기·미제공(404/400)이면 **`gemini-3.8-flash` → `gemini-2.5-flash` → `gemini-2.0-flash`** 순서로 자동 폴백(`GEMINI_MODEL` 로 고정 가능), 쿼타(429)·5xx 는 모델을 바꿔도 같으므로 바로 빈 결과입니다. (2026-11 기준 `gemini-2.5-flash` 는 **신규 키에 404** — "no longer available to new users" — 이므로 기본 모델을 3.8 로 두었습니다)
 - **키 없음 → `503 { error: 'gemini-not-configured' }`**, 유튜브 아님/가게 미확인/업스트림 실패/JSON 아님 → **모두 `200` + 빈 결과**로 조용히 폴백(앱이 멈추지 않음). 실패 응답·로그에 **키와 업스트림 본문을 담지 않습니다.**
 - 키는 쿼리스트링이 아니라 **`x-goog-api-key` 헤더**로 보냅니다(프록시 로그·Referer 에 남지 않게). 유튜브 URL은 `shorts`·`youtu.be`·`watch`·`embed` 를 **watch 주소로 정규화**하고, 유튜브 사칭 호스트(`youtube.com.evil.com`)는 거부합니다.
@@ -224,10 +225,10 @@ extractPlaces(url)
 
 ### 5. ✅ 검증
 
-- `npm run test:api` — `/api/gemini` 단위 43건: 키 없음 503 · GET 405 · 유튜브 아님 200 빈 결과(업스트림 호출 0) · `fileUri` watch 정규화 · `x-goog-api-key` 헤더 · `responseMimeType=application/json`(스키마 없이) · ```json 울타리 파싱 · places 만 있어도 상호 채움 · 400 재시도 · 모델 404 폴백 · 429 즉시 종료 · 업스트림 500 → 빈 결과 · **키 노출 0건** · `vercel.json maxDuration 60`·패턴 순서.
+- `npm run test:api` — `/api/gemini` 단위 45건: 키 없음 503 · GET 405 · 유튜브 아님 200 빈 결과(업스트림 호출 0) · `fileUri` watch 정규화 · `x-goog-api-key` 헤더 · `responseMimeType=application/json`(스키마 없이) · ```json 울타리 파싱 · places 만 있어도 상호 채움 · 400 재시도 · 모델 404 폴백 · 429 즉시 종료 · 업스트림 500 → 빈 결과 · **키 노출 0건** · `vercel.json maxDuration 60`·패턴 순서.
 - `npm run test:proxy` — 웹 흐름 21건: 1차 성공 시 **`/api/gemini` 호출 없음** · 1차 실패 → Gemini → **지도 재조회** → 후보 + `aiNote` · 좌표 못 찾으면 수동 후보 · 빈 결과/503 이면 기존 오프라인 폴백.
 - `npm run test:extract` — 네이티브는 **`/api/gemini` 를 부르지 않음**(키가 번들에 없음) + 기존 오프라인 폴백 유지.
-- `npm test` — **ALL_TESTS_OK**(1419건 · 화면 렌더 스모크 257/257), `npm run export:web` — 에러 0건.
+- `npm test` — **ALL_TESTS_OK**(1421건 · 화면 렌더 스모크 257/257), `npm run export:web` — 에러 0건.
 - **라이브 실측**(2026-11-16, `https://reelpin.vercel.app` · `GEMINI_API_KEY` 등록 상태):
   - `POST /api/gemini {url: youtube.com/shorts/LPLE_SH2b9U}` → **200 · 24.5초** · `{"storeName":"착한부대찌개","area":"쌍문동","menu":"착한부대찌개,라면사리","model":"gemini-3.8-flash"}` (shorts → watch 정규화 경로)
   - 저장 화면에서 `LPLE_SH2b9U` 추출 → 제목이 `6천원 부대찌개집 발견…ㄷㄷ`(상호 없음) → 1차 지도 실패 → **`AI 영상 분석 중…`** → **`AI 영상 분석으로 찾았어요 · “착한부대찌개” (쌍문동)`** + 후보 2곳(`착한부대찌개` · `착한부대찌개 쌍문2호점`, 카카오·네이버 배지) = 의도대로 동작.

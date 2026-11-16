@@ -81,6 +81,11 @@ function normalizeYouTubeUrl(raw) {
   return 'https://www.youtube.com/watch?v=' + id;
 }
 
+/** ms 만큼 쉬기 (503 재시도 사이) */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
 /** Vercel 은 JSON 본문을 req.body 로 주지만, 로컬·테스트를 위해 스트림도 읽습니다. */
 function readBody(req) {
   if (req && req.body != null) {
@@ -313,12 +318,23 @@ module.exports = async function handler(req, res) {
       const left = deadline - Date.now();
       if (left < 4000) break modelLoop;
       usedThinking = thinking;
-      attempt = await callGemini({
-        apiKey,
-        model,
-        timeoutMs: Math.min(GEMINI_TIMEOUT_MS, left),
-        body: buildRequestBody({ videoUrl, title, description, thinking }),
-      });
+      // 503(모델 과부하)은 구글이 권하는 대로 잠깐 쉬고 한 번 더 — 무료 등급에서 실제로 자주 납니다.
+      for (let tries = 1; ; tries += 1) {
+        const remain = deadline - Date.now();
+        attempt = await callGemini({
+          apiKey,
+          model,
+          timeoutMs: Math.min(GEMINI_TIMEOUT_MS, remain),
+          body: buildRequestBody({ videoUrl, title, description, thinking }),
+        });
+        if (attempt.ok) break;
+        const retryable = attempt.status === 503 || attempt.status === 502;
+        if (retryable && tries < 2 && deadline - Date.now() > 8000) {
+          await sleep(1200);
+          continue;
+        }
+        break;
+      }
       if (attempt.ok) break modelLoop;
       // 400 = 이 모델이 이 옵션을 모름 → 다음 옵션으로. 그 외(404·429·5xx·타임아웃)는 옵션 문제가 아님
       if (attempt.status !== 400) break;
