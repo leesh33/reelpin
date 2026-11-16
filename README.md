@@ -198,7 +198,7 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - 모델이 폐기·미제공(404/400)이면 **`gemini-3.8-flash` → `gemini-2.5-flash` → `gemini-2.0-flash`** 순서로 자동 폴백(`GEMINI_MODEL` 로 고정 가능), 쿼타(429)·5xx 는 모델을 바꿔도 같으므로 바로 빈 결과입니다. (2026-11 기준 `gemini-2.5-flash` 는 **신규 키에 404** — "no longer available to new users" — 이므로 기본 모델을 3.8 로 두었습니다)
 - **키 없음 → `503 { error: 'gemini-not-configured' }`**, 유튜브 아님/가게 미확인/업스트림 실패/JSON 아님 → **모두 `200` + 빈 결과**로 조용히 폴백(앱이 멈추지 않음). 실패 응답·로그에 **키와 업스트림 본문을 담지 않습니다.**
 - 키는 쿼리스트링이 아니라 **`x-goog-api-key` 헤더**로 보냅니다(프록시 로그·Referer 에 남지 않게). 유튜브 URL은 `shorts`·`youtu.be`·`watch`·`embed` 를 **watch 주소로 정규화**하고, 유튜브 사칭 호스트(`youtube.com.evil.com`)는 거부합니다.
-- 2.5 flash 의 '생각' 토큰은 `thinkingConfig.thinkingBudget: 0` 으로 끄고(속도), 모델이 이 옵션을 모르면(400) **옵션 없이 한 번 더** 시도합니다.
+- '생각' 토큰은 `thinkingConfig.thinkingBudget: 0` 으로 끄고(속도), 모델이 이 옵션을 모르면(400) **옵션 없이 한 번 더** 시도합니다. (`maxOutputTokens` 4096 — 생각 토큰까지 넉넉히)
 
 ### 3. 🧠 추출기 흐름 (`src/services/extractor.js`)
 
@@ -223,11 +223,14 @@ extractPlaces(url)
 
 ### 5. ✅ 검증
 
-- `npm run test:api` — `/api/gemini` 단위 34건: 키 없음 503 · GET 405 · 유튜브 아님 200 빈 결과(업스트림 호출 0) · `fileUri` watch 정규화 · `x-goog-api-key` 헤더 · `responseMimeType`·스키마 · ```json 울타리 파싱 · places 만 있어도 상호 채움 · 400 재시도 · 업스트림 500 → 빈 결과 · **키 노출 0건** · `vercel.json maxDuration 30`.
-- `npm run test:proxy` — 웹 흐름 20건: 1차 성공 시 **`/api/gemini` 호출 없음** · 1차 실패 → Gemini → **지도 재조회** → 후보 + `aiNote` · 좌표 못 찾으면 수동 후보 · 빈 결과/503 이면 기존 오프라인 폴백.
+- `npm run test:api` — `/api/gemini` 단위 41건: 키 없음 503 · GET 405 · 유튜브 아님 200 빈 결과(업스트림 호출 0) · `fileUri` watch 정규화 · `x-goog-api-key` 헤더 · `responseMimeType=application/json`(스키마 없이) · ```json 울타리 파싱 · places 만 있어도 상호 채움 · 400 재시도 · 모델 404 폴백 · 429 즉시 종료 · 업스트림 500 → 빈 결과 · **키 노출 0건** · `vercel.json maxDuration 60`·패턴 순서.
+- `npm run test:proxy` — 웹 흐름 21건: 1차 성공 시 **`/api/gemini` 호출 없음** · 1차 실패 → Gemini → **지도 재조회** → 후보 + `aiNote` · 좌표 못 찾으면 수동 후보 · 빈 결과/503 이면 기존 오프라인 폴백.
 - `npm run test:extract` — 네이티브는 **`/api/gemini` 를 부르지 않음**(키가 번들에 없음) + 기존 오프라인 폴백 유지.
 - `npm test` — **ALL_TESTS_OK**(1417건 · 화면 렌더 스모크 257/257), `npm run export:web` — 에러 0건.
-- 실테스트는 `GEMINI_API_KEY` 를 Vercel 에 넣은 뒤 `LPLE_SH2b9U` 로 확인합니다(키가 없으면 지금과 똑같이 1차 추출만 동작).
+- **라이브 실측**(2026-11-16, `https://reelpin.vercel.app` · `GEMINI_API_KEY` 등록 상태):
+  - `POST /api/gemini {url: youtube.com/shorts/LPLE_SH2b9U}` → **200 · 24.5초** · `{"storeName":"착한부대찌개","area":"쌍문동","menu":"착한부대찌개,라면사리","model":"gemini-3.8-flash"}` (shorts → watch 정규화 경로)
+  - 저장 화면에서 `LPLE_SH2b9U` 추출 → 제목이 `6천원 부대찌개집 발견…ㄷㄷ`(상호 없음) → 1차 지도 실패 → **`AI 영상 분석 중…`** → **`AI 영상 분석으로 찾았어요 · “착한부대찌개” (쌍문동)`** + 후보 2곳(`착한부대찌개` · `착한부대찌개 쌍문2호점`, 카카오·네이버 배지) = 의도대로 동작.
+  - 같은 화면에서 `2QZPPEle9IY`(엄마손횟집)는 **AI 줄 없이** `카카오 지도에서 실시간 확인 · “연동 엄마손횟집”` 1곳으로 즉시 종료(3초) — 정상 케이스에서 Gemini 를 부르지 않음을 라이브로 확인.
 
 ## v2.8에서 달라진 점 (2026-11-16) — 🧹 긴 설명글은 여러 가게가 아님 · 🖼️ 히어로 카드 썸네일
 
