@@ -10,6 +10,9 @@
  *   · v2.10 — 가봤어요 핀은 `✓ 방문완료` 배지, 메모가 있으면 한 줄 미리보기
  *   · 행을 누르면 그 핀의 상세 시트가 열립니다 (지도로 돌아가지 않아도 됨)
  *   · 검색 결과가 없으면 빈 상태 안내 ([검색어 지우기])
+ *   · v2.19.1 — 지도의 `☰ 목록` 버튼으로 열리면 **내 정보·돋보기·알림 모음과 같은 레이어 팝업**
+ *     (LayerSheet) 안에 들어갑니다. 그때는 `embedded` 로 전체 화면을 차지하지 않고
+ *     시트 본문을 채웁니다.
  */
 import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -45,6 +48,8 @@ export default function PinListView({
   onOpenPin,
   onToggleView,
   onGoPaste,
+  // v2.19.1 — 레이어 팝업(LayerSheet) 본문으로 들어갈 때 true (전체 화면 absoluteFill 아님)
+  embedded = false,
 }) {
   const origin = usableOrigin(myCoords);
   const rows = useMemo(() => sortPinsForList(pins, myCoords), [pins, myCoords]);
@@ -57,7 +62,7 @@ export default function PinListView({
     : rows.length + '곳 · ' + sortLabel;
 
   return (
-    <View style={styles.root}>
+    <View style={embedded ? styles.rootEmbedded : styles.root}>
       <View style={styles.header}>
         <PinSearchBar value={query} onChange={onQueryChange} onClear={onClearQuery} />
         <View style={styles.chipWrap}>
@@ -97,7 +102,7 @@ export default function PinListView({
       {rows.length > 0 ? (
         <ScrollView
           style={styles.scroll}
-          contentContainerStyle={styles.scrollBody}
+          contentContainerStyle={[styles.scrollBody, embedded && styles.scrollBodyEmbedded]}
           showsVerticalScrollIndicator={false}
         >
           {rows.map((pin) => {
@@ -227,6 +232,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.bg,
   },
+  // v2.19.1 — 레이어 팝업(LayerSheet) 본문일 때: 시트 안을 그대로 채웁니다.
+  rootEmbedded: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
   header: {
     paddingTop: 8,
     paddingBottom: 6,
@@ -295,6 +305,10 @@ const styles = StyleSheet.create({
     // v2.18 — 플로팅 탭바(floatTop 70px) 아래로 마지막 카드가 가리지 않게 여유를 둡니다.
     paddingBottom: 28 + tabBar.floatTop,
     gap: 8,
+  },
+  // v2.19.1 — 시트 안에서는 탭바가 이미 시트 밖(아래)에 있어 여백을 줄입니다.
+  scrollBodyEmbedded: {
+    paddingBottom: 20,
   },
   row: {
     flexDirection: 'row',

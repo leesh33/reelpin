@@ -1,20 +1,25 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, sheetShadow, typography } from '../theme';
+import { colors, radius, typography } from '../theme';
 import { formatDistance } from '../services/location';
 import { buildAlertFeed } from '../utils/alertFeed';
+import LayerSheet from './LayerSheet';
 
 /**
- * 🔔 알림 모음 (v2.15)
+ * 🔔 알림 모음 (v2.15 · v2.19.1 레이어 팝업 통일)
  *
  * 상훈 님 요청: "헤더 우측에는 로그인+알림 모음 아이콘을 넣고 … 반경 500m 이내 저장 장소를
  *               모아 보여주고, 장소를 누르면 지도 탭에서 그 핀을 열어 줘"
+ *   "1. 돋보기 버튼 클릭 시 & 알림모음 버튼 클릭 시 화면은 내정보 화면의 레이어팝업 형태와
+ *       동일하게 구현 (높이 및 배경 딤처리도 동일하게)"
  *
  *   · 지금 내 위치 기준 반경 500m 안의 저장 장소를 가까운 순으로 (전부)
  *   · 자리가 남으면 반경 밖에서 가장 가까운 저장 장소로 최대 5곳까지 채웁니다
  *   · 위치를 아직 모르면 모달 안에서 바로 [내 위치 켜기]를 눌러 잡을 수 있습니다
  *   · 위쪽 배너를 스와이프로 닫아 버렸어도 여기서는 언제든 다시 볼 수 있습니다
+ *   · v2.19.1 — 내 정보·돋보기·목록 보기와 **같은 `LayerSheet` 틀**(높이 86% · 같은 딤 ·
+ *     둥근 모서리 · 다크 차콜 헤더 · ✕ · 바깥 탭 닫기)
  *
  * 화면(앱)은 이 컴포넌트를 열려 있을 때만 그립니다 — 닫혀 있으면 아무 것도 렌더하지 않습니다.
  */
@@ -44,42 +49,44 @@ export default function AlertInbox({
     : '반경 ' + distanceText + 'm 안에는 저장한 곳이 없어요';
 
   return (
-    <View style={styles.overlay} testID="alert-inbox-overlay">
-      <Pressable
-        style={styles.backdrop}
-        onPress={onClose}
-        accessibilityRole="button"
-        accessibilityLabel="알림 모음 닫기"
-      />
-      <View style={styles.sheet} testID="alert-inbox">
-        <View style={styles.sheetHead}>
-          <View style={styles.headIcon}>
-            <Ionicons name="notifications" size={16} color={colors.white} />
-          </View>
-          <View style={styles.headText}>
-            <Text style={styles.title}>🔔 알림 모음</Text>
-            <Text style={styles.sub} numberOfLines={1}>
-              {summary}
-            </Text>
-          </View>
-          <Pressable
-            style={styles.closeBtn}
-            onPress={onClose}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="알림 모음 닫기"
-            testID="alert-inbox-close"
-          >
-            <Ionicons name="close" size={18} color={colors.white} />
-          </Pressable>
-        </View>
-
-        <ScrollView
-          style={styles.body}
-          contentContainerStyle={styles.bodyContent}
-          showsVerticalScrollIndicator={false}
-          testID="alert-inbox-scroll"
-        >
+    <LayerSheet
+      visible={visible}
+      onClose={onClose}
+      icon="notifications"
+      title="🔔 알림 모음"
+      sub={summary}
+      closeLabel="알림 모음 닫기"
+      overlayTestID="alert-inbox-overlay"
+      testID="alert-inbox"
+      headerTestID="alert-inbox-header"
+      closeTestID="alert-inbox-close"
+      zIndex={40}
+      footer={
+        <>
+          <Text style={styles.footNote}>
+            배너를 위로 스와이프해 닫아도 여기서는 언제든 다시 볼 수 있어요.
+          </Text>
+          {feed.items.length > 0 && onGoMap ? (
+            <Pressable
+              style={styles.mapBtn}
+              onPress={onGoMap}
+              accessibilityRole="button"
+              accessibilityLabel="지도에서 보기"
+              testID="alert-inbox-map"
+            >
+              <Ionicons name="map-outline" size={14} color={colors.white} />
+              <Text style={styles.mapText}>지도에서 보기</Text>
+            </Pressable>
+          ) : null}
+        </>
+      }
+    >
+      <ScrollView
+        style={styles.body}
+        contentContainerStyle={styles.bodyContent}
+        showsVerticalScrollIndicator={false}
+        testID="alert-inbox-scroll"
+      >
           {!feed.hasLocation ? (
             <View style={styles.needsLocation}>
               <Ionicons name="locate-outline" size={20} color={colors.coral} />
@@ -145,95 +152,18 @@ export default function AlertInbox({
             })
           )}
         </ScrollView>
-
-        <Text style={styles.footNote}>
-          배너를 위로 스와이프해 닫아도 여기서는 언제든 다시 볼 수 있어요.
-        </Text>
-        {feed.items.length > 0 && onGoMap ? (
-          <Pressable
-            style={styles.mapBtn}
-            onPress={onGoMap}
-            accessibilityRole="button"
-            accessibilityLabel="지도에서 보기"
-            testID="alert-inbox-map"
-          >
-            <Ionicons name="map-outline" size={14} color={colors.white} />
-            <Text style={styles.mapText}>지도에서 보기</Text>
-          </Pressable>
-        ) : null}
-      </View>
-    </View>
+    </LayerSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
-    zIndex: 40,
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15,23,42,0.55)',
-  },
-  sheet: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    maxHeight: '78%',
-    paddingBottom: 18,
-    ...sheetShadow,
-  },
-  sheetHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    backgroundColor: colors.charcoal,
-    borderTopLeftRadius: radius.xxl,
-    borderTopRightRadius: radius.xxl,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 13,
-  },
-  headIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  title: {
-    color: colors.white,
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  sub: {
-    color: colors.charcoalSub,
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.charcoalPill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   body: {
-    flexGrow: 0,
+    flex: 1,
   },
   bodyContent: {
     paddingHorizontal: 16,
-    paddingTop: 6,
-    paddingBottom: 4,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   needsLocation: {
     alignItems: 'center',
@@ -321,10 +251,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: 'center',
     paddingHorizontal: 16,
-    paddingTop: 10,
+    paddingTop: 8,
   },
   mapBtn: {
     marginTop: 8,
+    marginBottom: 16,
     marginHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',

@@ -29,7 +29,15 @@ import AppHeader, { HEADER_ACTIONS, alertBadgeLabel, HEADER_TABS } from '../src/
 import AlertInbox from '../src/components/AlertInbox';
 import SearchOverlayModal from '../src/components/SearchOverlayModal';
 import MenuDrawerModal, { APP_VERSION_LABEL } from '../src/components/MenuDrawerModal';
-import { APP_INFO_BUNDLE } from '../src/screens/ProfileScreen';
+// v2.19.1 — 네 화면(내 정보·돋보기·알림 모음·목록 보기)이 함께 쓰는 레이어 팝업 틀
+import LayerSheet, {
+  SHEET_BACKDROP_COLOR,
+  SHEET_CORNER_RADIUS,
+  SHEET_HEIGHT,
+} from '../src/components/LayerSheet';
+// v2.19.1 — 장소 검색 추천의 `시·군·구·동` 지역 라벨
+import { addressRegions, placeAreaLabel, placeMetaLabel } from '../src/utils/areaLabel';
+import { APP_INFO_BUNDLE, APP_INFO_VERSION } from '../src/screens/ProfileScreen';
 import {
   OVERLAY_RESULT_MAX,
   RECOMMEND_MAX,
@@ -634,8 +642,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.19.0', pkg.version === '2.19.0', pkg.version],
-  ['버전: app.json 2.19.0', expoConfig.version === '2.19.0', expoConfig.version],
+  ['버전: package.json 2.19.1', pkg.version === '2.19.1', pkg.version],
+  ['버전: app.json 2.19.1', expoConfig.version === '2.19.1', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -862,7 +870,8 @@ const v210Checks = [
   ['한도: 내 정보에 무료 한도·프로그레스 없음', profileSource210.indexOf('FREE_PIN_LIMIT') < 0 && profileSource210.indexOf('무료 한도를 다 채웠어요') < 0],
   ['한도: 12개 저장해도 저장 화면이 막지 않음', paste12Html.indexOf('핀 10개까지') < 0 && paste12Html.indexOf('저장된 장소 12곳') > 0],
   ['한도: 내 정보가 12곳을 그대로 셈', profile12Html.indexOf('>12<') > 0 && profile12Html.indexOf('저장된 핀') > 0 && profile12Html.indexOf('무료 한도') < 0],
-  ['가봤어요: 상세 시트에 토글 버튼', sheetSource210.indexOf('pin-visited-toggle') > 0 && plainPinHtml.indexOf('아직 안 가봤어요') > 0],
+  // v2.19.1 — 미방문이어도 라벨은 `가봤어요` (빈 체크박스). '아직 안 가봤어요' 로 뒤집혀 보이지 않습니다
+  ['가봤어요: 상세 시트에 체크박스 토글', sheetSource210.indexOf('pin-visited-toggle') > 0 && plainPinHtml.indexOf('가봤어요') > 0 && plainPinHtml.indexOf('아직 안 가봤어요') < 0],
   ['가봤어요: 체크된 핀은 가봤어요 + 체크 날짜', visitedPinHtml.indexOf('가봤어요') > 0 && visitedPinHtml.indexOf('2026.11.14') > 0],
   ['가봤어요: 읽기 전용(공유) 핀도 표시만', readOnlyPinHtml.indexOf('가봤어요') > 0 && readOnlyPinHtml.indexOf('pin-visited-toggle') < 0],
   ['메모: 상세 시트 입력칸 + 안내 문구', sheetSource210.indexOf('pin-memo-input') > 0 && plainPinHtml.indexOf('추천 메뉴, 아기의자') > 0],
@@ -887,6 +896,11 @@ const nativeModalSource211 = fs.readFileSync(path.join(process.cwd(), 'src/compo
 
 /** 헤더에 ✕ 닫기 버튼이 있는 화면들 — 소스에서 같은 다크 차콜 헤더를 쓰는지 봅니다. */
 const headerSource215 = fs.readFileSync(path.join(process.cwd(), 'src/components/AppHeader.js'), 'utf8');
+// v2.19.1 — 내 정보 · 돋보기 · 알림 모음 · 목록 보기가 같이 쓰는 레이어 팝업 시트(헤더 포함)
+const layerSheetSource2191 = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/LayerSheet.js'),
+  'utf8'
+);
 // v2.16 — 🔍 검색 레이어 팝업도 저장 화면과 같은 다크 차콜 헤더 + ✕ 를 씁니다.
 const searchOverlaySource216 = fs.readFileSync(
   path.join(process.cwd(), 'src/components/SearchOverlayModal.js'),
@@ -906,6 +920,8 @@ const CLOSE_HEADER_FILES = [
   // v2.16 — 저장 화면 형태의 검색 레이어 팝업
   // v2.18 — 헤더 몸통은 OverlayHeader.js 로 옮겼습니다(저장 화면과 같은 컴포넌트).
   ['검색 레이어 팝업(🔍)', overlayHeaderSource218, 'charcoal'],
+  // v2.19.1 — 돋보기·알림 모음·목록 보기·내 정보가 함께 쓰는 시트 헤더
+  ['레이어 팝업 시트(LayerSheet)', layerSheetSource2191, 'backgroundColor: colors.charcoal'],
 ];
 // v2.14.1 — 핀 상세 시트만 상훈 님 요청으로 **브랜드 주황 헤더**를 씁니다(나머지 3곳은 다크 차콜).
 const CHARCOAL_HEADER_FILES = CLOSE_HEADER_FILES.filter(([label]) => label !== '핀 상세 시트');
@@ -925,7 +941,7 @@ const v211HeaderChecks = [
   ['헤더 통일: ✕ 닫기 아이콘은 모두 흰색', CLOSE_HEADER_FILES.every(([, source]) => !/name="close"[^>]*color=\{colors\.(textSub|textMuted|text)\}/.test(source))],
   // 앱 전체(src)에서 ✕ 닫기를 가진 헤더 화면을 빠짐없이 찾습니다 — 새로 생기면 여기서 확인하게 됩니다
   [
-    '헤더 통일: ✕ 닫기 헤더는 넣은 5곳뿐 (전수 검사)',
+    '헤더 통일: ✕ 닫기 헤더는 넣은 6곳뿐 (전수 검사)',
     (() => {
       const files = [];
       const walk = (dir) => {
@@ -942,7 +958,8 @@ const v211HeaderChecks = [
       );
       // v2.18 — 저장 화면·검색 팝업이 같이 쓰는 OverlayHeader.js 가 헤 더로 들어왔습니다.
       // v2.18 — 저장 화면·검색 팝업의 ✕ 는 OverlayHeader.js 하나로 모였습니다(SearchOverlayModal 에서는 빠짐).
-      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'OverlayHeader.js', 'PinDetailSheet.js'];
+      // v2.19.1 — 네 화면(내 정보·돋보기·알림 모음·목록 보기)의 ✕ 는 LayerSheet.js 하나로 모였습니다.
+      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'OverlayHeader.js', 'LayerSheet.js', 'PinDetailSheet.js'];
       return (
         withCloseHeader.length === wanted.length &&
         wanted.every((w) => withCloseHeader.some((f) => f.endsWith(w)))
@@ -986,7 +1003,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.19.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.0") > 0],
+  ['프로필: 버전 표기 v2.19.1', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.1") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1463,7 +1480,8 @@ const v216Checks = [
   ['지도 탭: 그려진 화면에 검색 인풋 없음', mapHtml216.indexOf('pin-search-input') < 0],
   ['지도 탭: 분류 칩 한 줄만 (방문 칩 2번째 줄 없음)', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') < 0],
   // ③ 🔍 검색 레이어 팝업
-  ['검색 팝업: 저장 화면과 같은 전체 레이어(absoluteFill)', /overlay: \{[\s\S]{0,80}?StyleSheet\.absoluteFillObject/.test(searchOverlaySource216) && searchOverlaySource216.indexOf('colors.charcoal') > 0],
+  // v2.19.1 — 검색 팝업도 내 정보와 **같은 레이어 팝업 틀**(LayerSheet)을 씁니다
+  ['검색 팝업: 내 정보와 같은 레이어 팝업(LayerSheet · absoluteFill)', searchOverlaySource216.indexOf('<LayerSheet') > 0 && /overlay: \{\s*\.\.\.StyleSheet\.absoluteFillObject/.test(layerSheetSource2191)],
   ['검색 팝업: 헤더 `🔍 장소 검색` + ✕', overlayHtml216.indexOf('장소 검색') > 0 && overlayHtml216.indexOf('검색어 지우기') < 0 && searchOverlaySource216.indexOf('closeTestID="search-overlay-close"') > 0],
   ['검색 팝업: 검색 인풋 + ✕ 지우기', searchOverlaySource216.indexOf('testID="search-overlay-input"') > 0 && searchOverlaySource216.indexOf('testID="search-overlay-clear"') > 0],
   ['검색 팝업: 추천 장소 · 인기 검색 장소 섹션', overlayHtml216.indexOf('추천 장소') > 0 && overlayHtml216.indexOf(POPULAR_PLACES_TITLE) > 0],
@@ -1486,14 +1504,14 @@ const v216Checks = [
   ['인기 장소: 화면에 칩으로 그려지고 개수는 지어내지 않음', overlayHtml216.indexOf('베통 성수 · 소금빵') > 0 && overlayHtml216.indexOf('내 지도') > 0 && searchOverlaySource216.indexOf('조회수') < 0 && popularSource216.indexOf('POPULAR_PLACES_SUB') > 0],
   ['인기 장소: 섹션 설명 문구(고른 목록임을 밝힘)', POPULAR_PLACES_SUB.indexOf('골라') > 0 && overlayHtml216.indexOf(POPULAR_PLACES_SUB) >= 0, POPULAR_PLACES_SUB],
   // ⑤ ☰ 메뉴
-  ['메뉴: 시트 · 다크 차콜 헤더 · ☰', menuSource216.indexOf('testID="menu-drawer"') > 0 && menuSource216.indexOf('colors.charcoal') > 0 && menuSource216.indexOf('Ionicons name="menu"') > 0],
+  ['메뉴: 시트 · 다크 차콜 헤더 · ☰', menuSource216.indexOf('testID="menu-drawer"') > 0 && menuSource216.indexOf('icon="menu"') > 0 && menuSource216.indexOf('<LayerSheet') > 0 && layerSheetSource2191.indexOf('colors.charcoal') > 0],
   ['메뉴(v2.19): 비로그인 = 계정 · 클라우드 동기화 카드 + 로그인/회원가입', menuHtml216.indexOf('계정 · 클라우드 동기화') > 0 && menuHtml216.indexOf('로그인') > 0 && menuHtml216.indexOf('회원가입') > 0],
   ['메뉴(v2.19): 로그인 = 이메일 + 동기화 상태', menuSignedHtml216.indexOf('andy@example.com') > 0 && menuSignedHtml216.indexOf('클라우드 동기화 켜짐') > 0 && menuSignedHtml216.indexOf('개 저장됨') > 0],
   ['메뉴(v2.19): 분류 관리 3행 + 내 지도 공유 카드', menuHtml216.indexOf('분류 관리') > 0 && menuHtml216.indexOf('내 지도 공유하기') > 0 && appSource215.indexOf('onShareMap={shareMyMapFromMenu}') > 0],
   // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
   ['메뉴(v2.19): 분류 관리 → 시트 안 서브 페이지', appSource215.indexOf('setCategoriesFocus(') < 0 && profileSource215.indexOf("openSub('categories')") > 0 && menuSource216.indexOf('onOpenSub={setSub}') > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
   ['메뉴(v2.19): 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && profileSource215.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.19.0 표기', menuHtml216.indexOf('릴스핀 v2.19.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.19.0', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.19.1 표기', menuHtml216.indexOf('릴스핀 v2.19.1') > 0 && APP_VERSION_LABEL === '릴스핀 v2.19.1', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1607,7 +1625,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.19.0', APP_VERSION_LABEL === '릴스핀 v2.19.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.0") > 0],
+  ['버전: 메뉴·프로필 모두 v2.19.1', APP_VERSION_LABEL === '릴스핀 v2.19.1' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.19.1") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1688,7 +1706,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.19.0', APP_VERSION_LABEL === '릴스핀 v2.19.0'],
+  ['버전: v2.19.1', APP_VERSION_LABEL === '릴스핀 v2.19.1'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1734,7 +1752,8 @@ const v218Checks = [
   ['v2.18 지도: +/− 박스·내 위치도 탭바 위로 (mapControls.zoomBottom = 26 + floatTop)', mapControls.floatLift === tabBar.floatTop && mapControls.zoomBottom === 26 + tabBar.floatTop && mapControls.actionStackHeight === mapControls.fabSize],
   ['v2.18 지도: NAVER 로고를 탭바 위로 올리는 처리', webMapSource218.indexOf('export function liftNaverLogo') > 0 && webMapSource218.indexOf('liftNaverLogo(node, tabBar.floatTop + 6)') > 0 && webMapSource218.indexOf('export function liftLeafletBottom') > 0],
   // ③ 저장 — 검색과 같은 헤더 · 탭 이름 · 원탭/붙여넣기 제거
-  ['v2.18 저장: OverlayHeader 한 컴포넌트를 검색·저장이 함께 씀', pasteSource218.indexOf('<OverlayHeader') > 0 && searchOverlaySource216.indexOf('<OverlayHeader') > 0 && overlayHeaderSource218b.indexOf('colors.charcoal') > 0],
+  // v2.19.1 — 저장 화면은 OverlayHeader, 검색 팝업은 같은 다크 차콜 헤더를 가진 LayerSheet 시트
+  ['v2.18 저장: 저장 헤더(OverlayHeader) · 검색 팝업은 같은 다크 차콜 시트', pasteSource218.indexOf('<OverlayHeader') > 0 && searchOverlaySource216.indexOf('<LayerSheet') > 0 && overlayHeaderSource218b.indexOf('colors.charcoal') > 0],
   ['v2.18 저장: 헤더는 저장 + ✕ (풀페이지 유지)', pasteSource218.indexOf('testID="paste-header"') > 0 && /<OverlayHeader[\s\S]{0,300}?closeTestID="paste-header-close"/.test(pasteSource218)],
   ['v2.18 저장: 첫 탭 이름 `릴스·쇼츠로 찾기`', pasteSource218.indexOf("label: '릴스·쇼츠로 찾기'") > 0 && pasteCode.indexOf("label: '릴스 링크'") < 0],
   ['v2.18 저장: 원탭 테스트·클립보드 버튼 제거', pasteCode.indexOf('원탭 테스트') < 0 && pasteCode.indexOf('클립보드에서 붙여넣기') < 0 && pasteCode.indexOf('clipboard-outline') < 0],
@@ -1743,7 +1762,7 @@ const v218Checks = [
   ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
   ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
   ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
-  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.19.0') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.19.1') > 0],
   ['v2.19: ☰ 시트가 분류 관리 서브 페이지를 직접 연다', profileSource218.indexOf("openSub('categories')") > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
 ];
 for (const [label, ok, extra] of v218Checks) {
@@ -1864,7 +1883,7 @@ const v219Checks = [
   ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
-  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.19.0') > 0],
+  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.19.1') > 0],
   ['v2.19 앱: 내 정보 탭 제거 · ☰ 시트가 ProfileScreen(panel) 사용', appSource219.indexOf("tab !== 'profile'") < 0 && appSource219.indexOf('<MenuDrawerModal') > 0 && appSource219.indexOf('panel') < 0 && menuSource219.indexOf('panel') > 0],
   // ③ 📂 컬렉션 탭
   ['v2.19 컬렉션: 목록 머리(내 컬렉션 · N개 · M곳 · 새 컬렉션)', collectionsListHtml219.indexOf('내 컬렉션') > 0 && collectionsListHtml219.indexOf('2개 컬렉션 · 2곳 담김') > 0 && collectionsListHtml219.indexOf('collection-new') > 0],
@@ -1879,9 +1898,167 @@ const v219Checks = [
   ['v2.19 저장: 컬렉션은 기기에 저장(reelpin.collections.v1)', storageSource219.indexOf("'reelpin.collections.v1'") > 0 && appSource219.indexOf('saveCollections(collections)') > 0],
   ['v2.19 저장: 핀을 지우면 컬렉션에서도 정리(prune)', appSource219.indexOf('pruneCollections(prev, pins)') > 0],
   ['v2.19: 하단바 탭은 App 이 collections 를 그림', appSource219.indexOf('<CollectionsScreen') > 0 && appSource219.indexOf("tab !== 'collections'") > 0],
-  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.19.0', APP_VERSION_LABEL === '릴스핀 v2.19.0' && profileSource219.indexOf("'릴스핀 v2.19.0'") > 0 && pkg.version === '2.19.0'],
+  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.19.1', APP_VERSION_LABEL === '릴스핀 v2.19.1' && profileSource219.indexOf("'릴스핀 v2.19.1'") > 0 && pkg.version === '2.19.1'],
 ];
 for (const [label, ok, extra] of v219Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+
+// ── v2.19.1: 팝업 3종 통일 · 가봤어요 체크 · 알림 설정 · 시군구동 ────────────────
+// 상훈 님이 2026-11-17 `https://reelpin.vercel.app`(v2.19.0)을 직접 써보고 주신 6가지 디테일.
+const layerSheetSource191 = fs.readFileSync(path.join(process.cwd(), 'src/components/LayerSheet.js'), 'utf8');
+const menuDrawerSource191 = fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8');
+const searchOverlaySource191 = fs.readFileSync(path.join(process.cwd(), 'src/components/SearchOverlayModal.js'), 'utf8');
+const alertInboxSource191 = fs.readFileSync(path.join(process.cwd(), 'src/components/AlertInbox.js'), 'utf8');
+const listViewSource191 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinListView.js'), 'utf8');
+const mapSource191 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const profileSource191 = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const sheetSource191 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
+const appSource191 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+const storageSource191 = fs.readFileSync(path.join(process.cwd(), 'src/storage.js'), 'utf8');
+
+const AREA_PINS_191 = [
+  {
+    id: 'ap-1',
+    name: '당하 이탈리안',
+    area: '당하동',
+    address: '인천 서구 이음2로 70',
+    category: '맛집',
+    lat: 37.5828,
+    lng: 126.7141,
+    visited: false,
+    createdAt: '2026-11-16T10:00:00+09:00',
+  },
+  {
+    id: 'ap-2',
+    name: '역삼 소금빵',
+    area: '역삼동',
+    address: '서울 강남구 테헤란로 123',
+    category: '카페',
+    lat: 37.5006,
+    lng: 127.0364,
+    visited: false,
+    createdAt: '2026-11-16T09:00:00+09:00',
+  },
+  {
+    id: 'ap-3',
+    name: '일산 국밥',
+    area: '일산동',
+    address: '경기 고양시 일산서구 중앙로 1234',
+    category: '맛집',
+    lat: 37.6584,
+    lng: 126.7705,
+    visited: true,
+    createdAt: '2026-11-16T08:00:00+09:00',
+  },
+];
+
+const areaOverlayHtml191 = renderToString(
+  <SearchOverlayModal visible pins={AREA_PINS_191} onClose={noop} onOpenPin={noop} />
+);
+const alertInboxHtml191 = renderToString(
+  <AlertInbox visible pins={AREA_PINS_191} myCoords={null} onClose={noop} onLocate={noop} onOpenPin={noop} onGoMap={noop} radiusMeters={500} />
+);
+const menuAlertsHtml191 = renderToString(
+  <MenuDrawerModal
+    visible
+    initialSub="alerts"
+    pins={AREA_PINS_191}
+    categories={['맛집', '카페', '가볼곳']}
+    radiusMeters={500}
+    alertsOn
+    notifyPermission="granted"
+    onToggleAlerts={noop}
+    onClose={noop}
+    onToast={noop}
+  />
+);
+const menuAlertsOffHtml191 = renderToString(
+  <MenuDrawerModal
+    visible
+    initialSub="alerts"
+    pins={AREA_PINS_191}
+    radiusMeters={300}
+    alertsOn={false}
+    notifyPermission="default"
+    onToggleAlerts={noop}
+    onClose={noop}
+    onToast={noop}
+  />
+);
+const listEmbeddedHtml191 = renderToString(
+  <PinListView
+    embedded
+    pins={AREA_PINS_191}
+    filter="전체"
+    myCoords={{ lat: 37.5828, lng: 126.7141 }}
+    onSelectPin={noop}
+    onOpenPin={noop}
+    onToggleView={noop}
+  />
+);
+const unvisitedDetailHtml191 = renderToString(
+  <PinDetailSheet pin={{ ...SEARCH_PIN, visited: false }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} onToggleVisited={noop} />
+);
+const visitedDetailHtml191 = renderToString(
+  <PinDetailSheet
+    pin={{ ...SEARCH_PIN, visited: true, visitedAt: '2026-11-14T10:00:00+09:00' }}
+    radiusMeters={300}
+    onClose={noop}
+    onDelete={noop}
+    onToast={noop}
+    onToggleVisited={noop}
+  />
+);
+
+const v2191Checks = [
+  // ① 돋보기 · 알림 모음 · 목록 보기 = 내 정보와 **같은 레이어 팝업**
+  ['팝업 통일: 네 화면 모두 `<LayerSheet>` 하나를 씀', [menuDrawerSource191, searchOverlaySource191, alertInboxSource191, mapSource191].every((src) => src.indexOf('<LayerSheet') > 0)],
+  ['팝업 통일: 높이 86% · 딤 한 곳(LayerSheet)에서만', SHEET_HEIGHT === '86%' && SHEET_BACKDROP_COLOR === 'rgba(15,23,42,0.55)' && [menuDrawerSource191, searchOverlaySource191, alertInboxSource191].every((src) => src.indexOf("height: '86%'") < 0 && src.indexOf('rgba(15,23,42') < 0)],
+  ['팝업 통일: 위쪽 둥근 모서리 radius.xxl', SHEET_CORNER_RADIUS === 28 && layerSheetSource191.indexOf('borderTopLeftRadius: SHEET_CORNER_RADIUS') > 0],
+  ['팝업 통일: 바깥(딤) 탭 + ✕ 둘 다 닫힘', layerSheetSource191.indexOf('style={styles.backdrop}') > 0 && layerSheetSource191.indexOf("testID={testID + '-backdrop'}") > 0 && layerSheetSource191.indexOf('onPress={onClose}') > 0],
+  ['팝업 통일: 같은 다크 차콜 헤더(코랄 원 아이콘 · ✕)', layerSheetSource191.indexOf('backgroundColor: colors.charcoal') > 0 && layerSheetSource191.indexOf('backgroundColor: colors.coral') > 0 && layerSheetSource191.indexOf('colors.charcoalPill') > 0],
+  ['돋보기: 내 정보와 같은 시트(제목·부제·✕ 그대로)', searchOverlaySource191.indexOf('title="장소 검색"') > 0 && searchOverlaySource191.indexOf('overlayTestID="search-overlay"') > 0 && searchOverlaySource191.indexOf('closeTestID="search-overlay-close"') > 0],
+  ['알림 모음: 내 정보와 같은 시트(요약 부제·지도에서 보기 발끝)', alertInboxSource191.indexOf('sub={summary}') > 0 && alertInboxSource191.indexOf('footer={') > 0 && alertInboxHtml191.indexOf('alert-inbox') > 0],
+  ['목록 보기: 전체 화면 대신 레이어 팝업으로 열림', /view === 'list' && \(\s*\n\s*<LayerSheet/.test(mapSource191) && mapSource191.indexOf('headerTestID="pin-list-sheet-header"') > 0],
+  ['목록 보기: ✕·바깥 탭 = 지도로 복귀(toggleView)', /<LayerSheet\s+visible\s+onClose={toggleView}/.test(mapSource191) && mapSource191.indexOf('closeLabel="목록 닫기"') > 0],
+  ['목록 보기: 시트 안에서는 embedded(전체 화면 absoluteFill 아님)', listViewSource191.indexOf('embedded = false') > 0 && listViewSource191.indexOf('rootEmbedded') > 0 && listEmbeddedHtml191.indexOf('pin-row-ap-1') > 0],
+  // ② 장소 상세 `가봤어요` = 체크박스 (미방문도 라벨은 `가봤어요`)
+  ['가봤어요: 미방문 = 빈 체크박스 + `가봤어요`', unvisitedDetailHtml191.indexOf('pin-visited-box') > 0 && unvisitedDetailHtml191.indexOf('가봤어요') > 0 && unvisitedDetailHtml191.indexOf('아직 안 가봤어요') < 0],
+  ['가봤어요: 미방문 체크박스는 aria-checked=false', /aria-checked="false"[^>]*data-testid="pin-visited-toggle"/.test(unvisitedDetailHtml191) || /data-testid="pin-visited-toggle"[^>]*aria-checked="false"/.test(unvisitedDetailHtml191)],
+  ['가봤어요: 체크하면 `가봤어요 (방문 완료)` + aria-checked=true', visitedDetailHtml191.indexOf('가봤어요 (방문 완료)') > 0 && visitedDetailHtml191.indexOf('aria-checked="true"') > 0],
+  ['가봤어요: 저장값은 visited true/false 그대로(지도·목록 ✓ 와 같은 값)', sheetSource191.indexOf('const visited = pin.visited === true') > 0 && sheetSource191.indexOf('const next = !visited') > 0 && sheetSource191.indexOf('onToggleVisited(pin.id, next)') > 0],
+  ['가봤어요: 체크박스 모양(둥근 점 아님·초록 채움)', /visitCheck: \{[\s\S]{0,200}?borderRadius: 6/.test(sheetSource191) && /visitCheckOn: \{[\s\S]{0,120}?backgroundColor: colors\.visit/.test(sheetSource191)],
+  // ③ 내 정보 › 알림 설정
+  ['알림 설정: 내 정보 설정 목록에 행이 있음', menuHtml219.indexOf('profile-row-alerts') > 0 && profileSource191.indexOf('title="알림 설정"') > 0],
+  ['알림 설정: 서브 페이지(‹ 뒤로 + 스위치 + 지오펜스 반경 연결)', menuAlertsHtml191.indexOf('menu-sub-alerts') > 0 && menuAlertsHtml191.indexOf('menu-sub-back') > 0 && menuAlertsHtml191.indexOf('alerts-setting-toggle') > 0 && menuAlertsHtml191.indexOf('alerts-setting-radius') > 0],
+  ['알림 설정: 켜짐/꺼짐 문구와 스위치 상태가 같음', menuAlertsHtml191.indexOf('aria-checked="true"') > 0 && menuAlertsHtml191.indexOf('켜짐') > 0 && menuAlertsOffHtml191.indexOf('aria-checked="false"') > 0 && menuAlertsOffHtml191.indexOf('꺼짐') > 0],
+  ['알림 설정: 권한 상태를 사실대로 안내', profileSource191.indexOf('브라우저 알림이 꺼져 있어 앱 안 배너로만 알려드려요') > 0 && profileSource191.indexOf('이 브라우저에는 알림창이 없어 앱 안 배너로 알려드려요') > 0],
+  ['알림 설정: 값은 지도 알림과 하나(App → MapScreen)', appSource191.indexOf('alertsEnabled={alertsEnabled}') > 0 && appSource191.indexOf('onToggleAlerts={handleToggleAlerts}') > 0 && mapSource191.indexOf('const alertsOn = Boolean(alertsEnabled)') > 0],
+  ['알림 설정: 기기에 저장(reelpin.alerts.v1)', storageSource191.indexOf("'reelpin.alerts.v1'") > 0 && appSource191.indexOf('saveAlerts(alertsEnabled)') > 0 && appSource191.indexOf('loadAlerts()') > 0],
+  // ④ 내 정보 순서 — 저장한 장소 · 내 지도 공유하기가 설정 목록 위
+  ['내 정보 순서: 저장한 장소·지도 공유가 설정 목록 위', menuHtml219.indexOf('profile-summary') < menuHtml219.indexOf('profile-settings-rows') && menuHtml219.indexOf('menu-share') < menuHtml219.indexOf('profile-settings-rows')],
+  ['내 정보 순서: 계정 카드 → 저장 요약 → 공유 → 설정', menuHtml219.indexOf('profile-account-card') < menuHtml219.indexOf('profile-summary') && menuHtml219.indexOf('profile-summary') < menuHtml219.indexOf('menu-share')],
+  ['내 정보 설정 4행: 분류 관리 → 지오펜스 반경 → 알림 설정 → 앱 정보', menuHtml219.indexOf('profile-row-categories') < menuHtml219.indexOf('profile-row-radius') && menuHtml219.indexOf('profile-row-radius') < menuHtml219.indexOf('profile-row-alerts') && menuHtml219.indexOf('profile-row-alerts') < menuHtml219.indexOf('profile-row-about')],
+  // ⑤ 장소 검색 추천 = 시·군·구·동
+  ['시군구동: 시·도 이름은 짧게(인천광역시 → 인천)', placeAreaLabel({ area: '당하동', address: '인천광역시 서구 당하동 12-3' }) === '인천 서구 당하동'],
+  ['시군구동: `인천 서구 당하동`', placeAreaLabel(AREA_PINS_191[0]) === '인천 서구 당하동'],
+  ['시군구동: `서울 강남구 역삼동`', placeAreaLabel(AREA_PINS_191[1]) === '서울 강남구 역삼동'],
+  ['시군구동: `경기 고양시 일산서구 일산동`', placeAreaLabel(AREA_PINS_191[2]) === '경기 고양시 일산서구 일산동'],
+  ['시군구동: 주소가 없으면 지어내지 않고 동만', placeAreaLabel({ area: '당하동' }) === '당하동' && placeAreaLabel({ area: '검단', address: '인천 서구 아라뱃길 00' }) === '인천 서구 검단'],
+  ['시군구동: 주소에서 시·구·동 토큰만 뽑음', addressRegions('경기 고양시 일산서구 중앙로 1234').gu === '일산서구' && addressRegions('경기 고양시 일산서구 중앙로 1234').si === '고양시'],
+  // 추천은 '아직 안 가본 곳' — ap-3 은 visited 라 추천에 없고, 대신 라벨 자체는 위에서 확인합니다
+  ['시군구동: 검색 팝업 추천 카드에 그대로 보임', areaOverlayHtml191.indexOf('인천 서구 당하동') > 0 && areaOverlayHtml191.indexOf('서울 강남구 역삼동') > 0 && areaOverlayHtml191.indexOf('경기 고양시 일산서구 일산동') < 0],
+  ['시군구동: `분류 · 지역` 한 줄 표기', placeMetaLabel(AREA_PINS_191[0]) === '맛집 · 인천 서구 당하동' && placeMetaLabel({ name: 'x' }) === '내 지도'],
+  // ⑥ 버전
+  ['v2.19.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.19.1' && APP_INFO_VERSION === '릴스핀 v2.19.1' && pkg.version === '2.19.1' && expoConfig.version === '2.19.1'],
+];
+for (const [label, ok, extra] of v2191Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -1921,6 +2098,7 @@ const total =
   v2171Checks.length +
   v218Checks.length +
   v219Checks.length +
+  v2191Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

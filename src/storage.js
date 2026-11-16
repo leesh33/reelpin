@@ -125,3 +125,23 @@ export async function saveCollections(collections) {
 export function pinLimit() {
   return Infinity;
 }
+
+// ── v2.19.1 — 🔔 알림 설정 (반경 내 알림 ON/OFF) ─────────────────────
+const ALERTS_KEY = 'reelpin.alerts.v1';
+
+/** 반경 내 알림을 켜 둔 상태인가 (저장값 없음·실패 = 꺼짐) */
+export async function loadAlerts() {
+  try {
+    return (await AsyncStorage.getItem(ALERTS_KEY)) === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function saveAlerts(enabled) {
+  try {
+    await AsyncStorage.setItem(ALERTS_KEY, enabled ? 'true' : 'false');
+  } catch (e) {
+    // 저장 실패는 조용히 무시하고 화면 상태를 유지합니다.
+  }
+}

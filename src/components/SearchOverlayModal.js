@@ -1,17 +1,21 @@
 /**
- * src/components/SearchOverlayModal.js — v2.16
+ * src/components/SearchOverlayModal.js — v2.19.1
  * ─────────────────────────────────────────────────────────────
- * 🔍 헤더 돋보기 → **저장 화면과 같은 형태의 전체 레이어 팝업**.
+ * 🔍 헤더 돋보기 → **내 정보 시트와 같은 레이어 팝업**.
  *
- * 상훈 님 요청: "돋보기 버튼은 검색 역할을 하는 거고, 누르면 검색 텍스트 인풋 박스와 추천장소.
- *               그리고 검색 인기 장소 이게 저장 형태의 레이어 팝업으로 나오면 될 거 같아."
+ * 상훈 님 요청:
+ *   "돋보기 버튼은 검색 역할을 하는 거고, 누르면 검색 텍스트 인풋 박스와 추천장소.
+ *    그리고 검색 인기 장소 이게 저장 형태의 레이어 팝업으로 나오면 될 거 같아."
+ *   "1. 돋보기 버튼 클릭 시 & 알림모음 버튼 클릭 시 화면은 내정보 화면의 레이어팝업 형태와
+ *       동일하게 구현 (높이 및 배경 딤처리도 동일하게)"
  *
- *   · 위 : 저장 화면(PasteScreen)과 같은 다크 차콜(#1C1C1E) 헤더 — `🔍 장소 검색` + `✕`
+ *   · v2.19.1 부터 **내 정보·알림 모음·목록 보기와 같은 `LayerSheet` 틀**을 씁니다 —
+ *     높이 86% · 같은 딤 · 같은 둥근 모서리 · 다크 차콜 헤더(코랄 원 아이콘 + `장소 검색` + ✕) ·
+ *     바깥을 누르면 닫힘
  *   · ① 검색 인풋 … 내 핀(가게명·지역·주소·분류·메뉴·한줄 메모) 실시간 검색 + ✕ 지우기
- *                   행을 누르면 팝업이 닫히고 **지도 탭 + 그 핀 상세 시트**
  *   · ② 추천 장소 … 내 위치 기준 **가까운 저장 장소**, 위치를 모르면 **아직 안 가본(!visited)** 곳
- *   · ③ 검색 인기 장소 … `data/popularPlaces.js` 큐레이션 목록 (내 핀에 있으면 바로 그 핀으로,
- *                   없으면 검색어로 채워 [저장 탭에서 가게명으로 찾기] 로 이어집니다)
+ *                 (지역은 `인천 서구 당하동` 처럼 **시·군·구·동까지** 표기 — utils/areaLabel)
+ *   · ③ 검색 인기 장소 … `data/popularPlaces.js` 큐레이션 목록
  *
  * 화면(앱)은 이 컴포넌트를 **열려 있을 때만** 그립니다 — 닫혀 있으면 아무 것도 렌더하지 않습니다.
  */
@@ -38,7 +42,8 @@ import {
   popularPlaceQuery,
 } from '../data/popularPlaces';
 import { overlaySearchResults, popularPlaceRows, recommendPlaces } from '../utils/searchOverlay';
-import OverlayHeader from './OverlayHeader';
+import { placeMetaLabel } from '../utils/areaLabel';
+import LayerSheet from './LayerSheet';
 
 export const SEARCH_PLACEHOLDER = '가게명 · 동네 · 메뉴 · 메모';
 
@@ -88,22 +93,23 @@ export default function SearchOverlayModal({
   };
 
   return (
-    <View style={styles.overlay} testID="search-overlay">
-      {/* v2.18 — 저장 화면과 **같은** 헤더 컴포넌트(OverlayHeader)를 씁니다. */}
-      <OverlayHeader
-        icon="search"
-        title="장소 검색"
-        sub={
-          savedCount
-            ? '내 핀 ' + savedCount + '곳에서 찾기 · ' + SEARCH_PLACEHOLDER
-            : '아직 저장한 핀이 없어요'
-        }
-        onClose={onClose}
-        closeLabel={closeLabel}
-        testID="search-overlay-header"
-        closeTestID="search-overlay-close"
-      />
-
+    <LayerSheet
+      visible={visible}
+      onClose={onClose}
+      icon="search"
+      title="장소 검색"
+      sub={
+        savedCount
+          ? '내 핀 ' + savedCount + '곳에서 찾기 · ' + SEARCH_PLACEHOLDER
+          : '아직 저장한 핀이 없어요'
+      }
+      closeLabel={closeLabel}
+      overlayTestID="search-overlay"
+      testID="search-overlay-sheet"
+      headerTestID="search-overlay-header"
+      closeTestID="search-overlay-close"
+      zIndex={50}
+    >
       <ScrollView
         style={styles.body}
         contentContainerStyle={styles.bodyContent}
@@ -198,7 +204,7 @@ export default function SearchOverlayModal({
                       {item.pin.name}
                     </Text>
                     <Text style={styles.rowMeta} numberOfLines={1}>
-                      {[item.pin.category, item.pin.area].filter(Boolean).join(' · ') || '내 지도'}
+                      {placeMetaLabel(item.pin)}
                       {item.pin.visited === true ? ' · 가봤어요' : ''}
                     </Text>
                   </View>
@@ -258,7 +264,7 @@ export default function SearchOverlayModal({
                       {item.pin.name}
                     </Text>
                     <Text style={styles.rowMeta} numberOfLines={1}>
-                      {[item.pin.category, item.pin.area].filter(Boolean).join(' · ') || '내 지도'}
+                      {placeMetaLabel(item.pin)}
                     </Text>
                   </View>
                   {Number.isFinite(item.distanceMeters) ? (
@@ -311,59 +317,11 @@ export default function SearchOverlayModal({
 
         <Text style={styles.footNote}>핀을 누르면 지도 탭에서 그 장소가 열려요.</Text>
       </ScrollView>
-    </View>
+    </LayerSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.bg,
-    zIndex: 50,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    backgroundColor: colors.charcoal,
-    paddingHorizontal: 16,
-    paddingTop: 13,
-    paddingBottom: 13,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.charcoalLine,
-  },
-  headIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: colors.coral,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headText: {
-    flex: 1,
-    minWidth: 0,
-  },
-  title: {
-    color: colors.white,
-    fontSize: 15,
-    fontWeight: '800',
-    letterSpacing: -0.3,
-  },
-  sub: {
-    color: colors.charcoalSub,
-    fontSize: 11,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  closeBtn: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: colors.charcoalPill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   body: {
     flex: 1,
   },

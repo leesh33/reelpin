@@ -480,10 +480,12 @@ export function CategoryManager({
 export const SUB_PAGES = {
   categories: { title: '분류 관리', icon: 'pricetags-outline' },
   radius: { title: '지오펜스 알림 반경', icon: 'navigate-circle-outline' },
+  // v2.19.1 — 반경 내 알림 ON/OFF + 알림 반경 연결
+  alerts: { title: '알림 설정', icon: 'notifications-outline' },
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.19.0';
+export const APP_INFO_VERSION = '릴스핀 v2.19.1';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -548,6 +550,83 @@ export function RadiusSetting({ radiusMeters, onChangeRadius }) {
   );
 }
 
+/**
+ * v2.19.1 — 알림 설정 서브 페이지 본문.
+ *
+ * 상훈 님 요청: "4. 내정보 화면 안에 알림 설정 추가"
+ *
+ *   · 반경 내 알림 ON/OFF — 켜면 브라우저 알림 권한을 묻고, 저장한 곳 반경 안에 들어오면 알려드립니다
+ *   · 지오펜스 알림 반경 — 바로 아래에서 같은 반경 설정(300m/500m/1km)으로 이어집니다
+ *   · 권한이 없거나 알림창이 없는 환경은 **앱 안 배너로 알려드린다**는 사실을 그대로 적습니다
+ */
+export function AlertsSetting({
+  alertsOn = false,
+  onToggleAlerts,
+  radiusMeters = 300,
+  notifyPermission = 'default',
+  onOpenRadius,
+}) {
+  const radiusLabel = radiusMeters >= 1000 ? '1km' : radiusMeters + 'm';
+  const permissionNote =
+    notifyPermission === 'unsupported'
+      ? '이 브라우저에는 알림창이 없어 앱 안 배너로 알려드려요.'
+      : notifyPermission === 'denied'
+      ? '브라우저 알림이 꺼져 있어 앱 안 배너로만 알려드려요.'
+      : notifyPermission === 'granted'
+      ? '브라우저 알림창으로도 함께 알려드려요.'
+      : '켜면 브라우저에 알림 권한을 한 번 여쭤봐요.';
+
+  return (
+    <View style={styles.card} testID="alerts-setting">
+      <View style={styles.alertHead}>
+        <View style={styles.alertHeadText}>
+          <Text style={styles.cardTitle}>반경 내 알림</Text>
+          <Text style={styles.cardHint}>
+            저장한 곳 반경 {radiusLabel} 안에 들어오면 알려드려요.
+          </Text>
+        </View>
+        <Pressable
+          style={[styles.switchTrack, alertsOn && styles.switchTrackOn]}
+          onPress={() => onToggleAlerts && onToggleAlerts(!alertsOn)}
+          accessibilityRole="switch"
+          accessibilityLabel={'반경 내 알림 ' + (alertsOn ? '끄기' : '켜기')}
+          accessibilityState={{ checked: alertsOn }}
+          aria-checked={alertsOn}
+          testID="alerts-setting-toggle"
+        >
+          <View style={[styles.switchThumb, alertsOn && styles.switchThumbOn]} />
+        </Pressable>
+      </View>
+
+      <View style={[styles.alertState, alertsOn && styles.alertStateOn]}>
+        <Ionicons
+          name={alertsOn ? 'notifications' : 'notifications-off-outline'}
+          size={13}
+          color={alertsOn ? colors.visitDark : colors.textMuted}
+        />
+        <Text style={[styles.alertStateText, alertsOn && styles.alertStateTextOn]}>
+          {alertsOn ? '켜짐 · 반경 ' + radiusLabel + ' 안에서 알려드려요' : '꺼짐 · 반경 안에 들어와도 알리지 않아요'}
+        </Text>
+      </View>
+
+      <View style={styles.noticeRow}>
+        <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+        <Text style={styles.noticeText}>{permissionNote}</Text>
+      </View>
+
+      <View style={styles.rowDivider} />
+
+      <SettingsRow
+        icon="navigate-circle-outline"
+        title="지오펜스 알림 반경"
+        sub={'지금 반경 ' + radiusLabel + ' · 300m / 500m / 1km'}
+        onPress={onOpenRadius}
+        testID="alerts-setting-radius"
+      />
+    </View>
+  );
+}
+
 /** 앱 정보 — 서브 페이지 본문 (버전 · 번들 ID · 데이터 저장 위치) */
 export function AppInfoCard({ cloudUser }) {
   const cloud = !!(cloudUser && (cloudUser.email || cloudUser.id));
@@ -583,6 +662,10 @@ export default function ProfileScreen({
   onRemoveCategory,
   radiusMeters,
   onChangeRadius,
+  // v2.19.1 — 🔔 알림 설정 (반경 내 알림 ON/OFF)
+  alertsOn = false,
+  notifyPermission = 'default',
+  onToggleAlerts,
   isPro,
   onStartPro,
   onGoPaste,
@@ -752,34 +835,7 @@ export default function ProfileScreen({
           />
         </View>
 
-        {/* ── v2.18 설정 목록 3행 — 각각 별도 서브 페이지로 들어갑니다 ────── */}
-        <View style={styles.card} testID="profile-settings-rows">
-          <SettingsRow
-            icon="pricetags-outline"
-            title="분류 관리"
-            sub={allCategories(categories).length + '개 분류 · 만들기 · 이름 바꾸기 · 지우기'}
-            onPress={() => openSub('categories')}
-            testID="profile-row-categories"
-          />
-          <View style={styles.rowDivider} />
-          <SettingsRow
-            icon="navigate-circle-outline"
-            title="지오펜스 알림 반경"
-            sub={'지금 반경 ' + (radiusMeters >= 1000 ? '1km' : radiusMeters + 'm') + ' · 저장한 곳에 가까워지면 알림'}
-            onPress={() => openSub('radius')}
-            testID="profile-row-radius"
-          />
-          <View style={styles.rowDivider} />
-          <SettingsRow
-            icon="information-circle-outline"
-            title="앱 정보"
-            sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
-            onPress={() => openSub('about')}
-            testID="profile-row-about"
-          />
-        </View>
-
-        {/* ── v2.19 저장 요약 — 예전 ☰ 메뉴의 요약을 이 카드로 가져왔습니다 ───── */}
+        {/* ── v2.19.1 저장 요약 — 예전 ☰ 메뉴의 요약을 이 카드로 가져왔습니다 ───── */}
         <View style={styles.card} testID="profile-summary">
           <View style={styles.cardHead}>
             <Text style={styles.cardTitle}>저장한 장소</Text>
@@ -818,6 +874,43 @@ export default function ProfileScreen({
           </View>
           <Ionicons name="copy-outline" size={17} color={colors.textMuted} />
         </Pressable>
+
+        {/* ── v2.19.1 설정 4행 — 각각 별도 서브 페이지로 들어갑니다 ──────
+            상훈 님 요청: "저장한 장소 · 내지도 공유하기는 분류 관리 상단으로
+                          이동 · 내정보 화면 안에 알림 설정 추가" */}
+        <View style={styles.card} testID="profile-settings-rows">
+          <SettingsRow
+            icon="pricetags-outline"
+            title="분류 관리"
+            sub={allCategories(categories).length + '개 분류 · 만들기 · 이름 바꾸기 · 지우기'}
+            onPress={() => openSub('categories')}
+            testID="profile-row-categories"
+          />
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="navigate-circle-outline"
+            title="지오펜스 알림 반경"
+            sub={'지금 반경 ' + (radiusMeters >= 1000 ? '1km' : radiusMeters + 'm') + ' · 저장한 곳에 가까워지면 알림'}
+            onPress={() => openSub('radius')}
+            testID="profile-row-radius"
+          />
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="notifications-outline"
+            title="알림 설정"
+            sub={'반경 내 알림 ' + (alertsOn ? '켜짐' : '꺼짐') + ' · 반경 ' + (radiusMeters >= 1000 ? '1km' : radiusMeters + 'm')}
+            onPress={() => openSub('alerts')}
+            testID="profile-row-alerts"
+          />
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="information-circle-outline"
+            title="앱 정보"
+            sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
+            onPress={() => openSub('about')}
+            testID="profile-row-about"
+          />
+        </View>
 
         {/* 프로 안내 */}
         <View style={styles.proCard}>
@@ -889,6 +982,15 @@ export default function ProfileScreen({
             ) : null}
             {sub === 'radius' ? (
               <RadiusSetting radiusMeters={radiusMeters} onChangeRadius={onChangeRadius} />
+            ) : null}
+            {sub === 'alerts' ? (
+              <AlertsSetting
+                alertsOn={alertsOn}
+                onToggleAlerts={onToggleAlerts}
+                radiusMeters={radiusMeters}
+                notifyPermission={notifyPermission}
+                onOpenRadius={() => setSub('radius')}
+              />
             ) : null}
             {sub === 'about' ? <AppInfoCard cloudUser={cloudUser} /> : null}
           </ScrollView>
@@ -1097,6 +1199,62 @@ const styles = StyleSheet.create({
   },
   planChipTextPro: {
     color: colors.white,
+  },
+  // ── v2.19.1 알림 설정 서브 페이지 ───────────────────────
+  alertHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  alertHeadText: {
+    flex: 1,
+    gap: 4,
+  },
+  switchTrack: {
+    width: 48,
+    height: 28,
+    borderRadius: 999,
+    backgroundColor: colors.line,
+    padding: 3,
+    justifyContent: 'center',
+  },
+  switchTrackOn: {
+    backgroundColor: colors.visit,
+  },
+  switchThumb: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: colors.white,
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+  },
+  switchThumbOn: {
+    alignSelf: 'flex-end',
+  },
+  alertState: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.lineSoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  alertStateOn: {
+    backgroundColor: colors.visitSoft,
+  },
+  alertStateText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  alertStateTextOn: {
+    color: colors.visitDark,
   },
   card: {
     backgroundColor: colors.card,

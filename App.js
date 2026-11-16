@@ -21,6 +21,7 @@ import AlertInbox from './src/components/AlertInbox';
 import SearchOverlayModal from './src/components/SearchOverlayModal';
 import MenuDrawerModal from './src/components/MenuDrawerModal';
 import { buildAlertFeed } from './src/utils/alertFeed';
+import { notificationPermission, requestNotificationPermission } from './src/services/notifications';
 import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
   loadCategories,
@@ -28,11 +29,13 @@ import {
   loadPins,
   loadPro,
   loadRadius,
+  loadAlerts,
   saveCategories,
   saveCollections,
   savePins,
   savePro,
   saveRadius,
+  saveAlerts,
 } from './src/storage';
 import { findExistingPin, normalizePins, planPinAddition } from './src/utils/pins';
 import {
@@ -119,6 +122,13 @@ export default function App() {
   const [pasteRequest, setPasteRequest] = useState(null);
   const pasteRequestId = useRef(0);
 
+  // ── v2.19.1 · 🔔 알림 설정 (내 정보 › 알림 설정) ──────────────────
+  //   alertsEnabled … 반경 내 알림 ON/OFF — 지도 탭의 위치 추적 감시가 이 값을 그대로 따릅니다
+  //                   (지도 왼쪽 하단 메뉴의 `근처 알림` 스위치와 같은 스위치)
+  //   notifyPermission … 'granted' | 'denied' | 'default' | 'unsupported'
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [notifyPermission, setNotifyPermission] = useState(() => notificationPermission());
+
   // v2.1 — 계정 · 클라우드 동기화 상태
   const [cloudConfigured, setCloudConfigured] = useState(isSupabaseConfigured());
   const [cloudUser, setCloudUser] = useState(null);
@@ -135,12 +145,13 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections] = await Promise.all([
+      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections, storedAlerts] = await Promise.all([
         loadPins(),
         loadRadius(),
         loadPro(),
         loadCategories(),
         loadCollections(),
+        loadAlerts(),
       ]);
       if (cancelled) return;
       // v1.0에서 저장된 핀에 없던 필드(placeUrl·providers)를 채워 넣습니다.
@@ -149,6 +160,8 @@ export default function App() {
       setIsPro(storedPro);
       setCustomCategories(normalizeCustomCategories(storedCategories));
       setCollections(normalizeCollections(storedCollections));
+      setAlertsEnabled(storedAlerts === true);
+      setNotifyPermission(notificationPermission());
       setReady(true);
     })();
     return () => {
@@ -168,6 +181,11 @@ export default function App() {
   useEffect(() => {
     if (ready) savePro(isPro);
   }, [isPro, ready]);
+
+  // v2.19.1 — 반경 내 알림 설정도 기기에 저장합니다.
+  useEffect(() => {
+    if (ready) saveAlerts(alertsEnabled);
+  }, [alertsEnabled, ready]);
 
   useEffect(() => {
     if (ready) saveCategories(customCategories);
@@ -702,6 +720,38 @@ export default function App() {
     [showToast]
   );
 
+  /**
+   * v2.19.1 — 🔔 반경 내 알림 ON/OFF.
+   *
+   * 상훈 님 요청: "4. 내정보 화면 안에 알림 설정 추가"
+   *
+   *   · 내 정보 › 알림 설정 스위치와 지도 왼쪽 하단 `근처 알림` 이 **같은 상태**를 씁니다
+   *   · 켜면 브라우저/기기 알림 권한을 **누른 그 자리에서** 한 번 묻고, 결과를 문구로 알립니다
+   *   · 권한이 없으면 앱 안 배너로 알려드린다는 사실을 그대로 말합니다(알림이 온 척하지 않음)
+   */
+  const handleToggleAlerts = useCallback(
+    async (next) => {
+      if (!next) {
+        setAlertsEnabled(false);
+        showToast('반경 내 알림을 껐어요');
+        return { ok: true, enabled: false };
+      }
+      const permission = await requestNotificationPermission();
+      setNotifyPermission(permission);
+      setAlertsEnabled(true);
+      const radiusLabel = radius >= 1000 ? '1km' : radius + 'm';
+      if (permission === 'granted') {
+        showToast('반경 내 알림을 켰어요 · 반경 ' + radiusLabel + ' 안에서 알려드려요', 'pro');
+      } else if (permission === 'unsupported') {
+        showToast('이 브라우저에는 알림창이 없어 앱 안에서 알려드릴게요');
+      } else {
+        showToast('알림 권한이 꺼져 있어 앱 안 배너로 알려드릴게요');
+      }
+      return { ok: true, enabled: true, permission };
+    },
+    [radius, showToast]
+  );
+
   // ── v2.19 · 컬렉션 (테마·코스별로 묶고, 그 묶음만 지도에서 보기·공유) ─────────
   /** 새 컬렉션 — 성공하면 { ok, item } 을 돌려줘 화면이 상세로 들어갈 수 있게 합니다. */
   const handleCreateCollection = useCallback(
@@ -992,6 +1042,8 @@ export default function App() {
               onDismissShared={handleDismissShared}
               collectionFilter={collectionFilter}
               onClearCollectionFilter={clearCollectionFilter}
+              alertsEnabled={alertsEnabled}
+              onToggleAlerts={handleToggleAlerts}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
@@ -1071,6 +1123,9 @@ export default function App() {
           cloudSyncing={cloudSyncing}
           cloudMessage={cloudMessage}
           radiusMeters={radius}
+          alertsOn={alertsEnabled}
+          notifyPermission={notifyPermission}
+          onToggleAlerts={handleToggleAlerts}
           isPro={isPro}
           onSignIn={handleSignIn}
           onSignUp={handleSignUp}

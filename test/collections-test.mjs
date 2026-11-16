@@ -1,5 +1,5 @@
 /**
- * test/collections-test.mjs — v2.19.0
+ * test/collections-test.mjs — v2.19.0 (v2.19.1 에서 서브 페이지 4종으로 확장)
  * ─────────────────────────────────────────────────────────────
  * 「컬렉션」 = 저장한 핀을 테마·코스별로 묶어 보고, 그 묶음만 지도에서 보기·공유.
  *
@@ -8,7 +8,7 @@
  *                               핀 삭제 시 자동 정리(prune) · 공유 문구 · 지도 필터용 id 집합
  *   · src/storage.js           … 컬렉션 저장 키(reelpin.collections.v1) · 읽기/쓰기
  *   · 화면·앱 소스            … 탭 구성(지도 · 저장 · 컬렉션), 내 정보 제거, 지도 상단 📂 칩,
- *                               ☰ 시트의 설정 3행 → 서브 페이지, 버전 2.19.0
+ *                               ☰ 시트의 설정 행 → 서브 페이지, 버전 2.19.1
  *
  * 네트워크를 타지 않습니다. AsyncStorage 는 가짜 객체입니다.
  */
@@ -180,12 +180,12 @@ const mapSource = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScree
 check('지도: 컬렉션 필터(collectionFilter) + 해제 칩', mapSource.indexOf('collectionFilter') > 0 && mapSource.indexOf('map-collection-chip') > 0 && mapSource.indexOf('collectionIdSet') > 0);
 
 const menuSource = fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8');
-check('☰: 내 정보 머지(ProfileScreen panel) + 서브 3종', menuSource.indexOf('panel') > 0 && ['categories', 'radius', 'about'].every((k) => menuSource.indexOf("'" + k + "'") >= 0));
-check('☰: 버전 v2.19.0', menuSource.indexOf('릴스핀 v2.19.0') > 0);
+check('☰: 내 정보 머지(ProfileScreen panel) + 서브 4종(알림 설정 포함)', menuSource.indexOf('panel') > 0 && ['categories', 'radius', 'alerts', 'about'].every((k) => menuSource.indexOf("'" + k + "'") >= 0));
+check('☰: 버전 v2.19.1', menuSource.indexOf('릴스핀 v2.19.1') > 0);
 
 const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
 const expoConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'app.json'), 'utf8')).expo;
-check('버전: 2.19.0 (package.json · app.json)', pkg.version === '2.19.0' && expoConfig.version === '2.19.0', pkg.version + '/' + expoConfig.version);
+check('버전: 2.19.1 (package.json · app.json)', pkg.version === '2.19.1' && expoConfig.version === '2.19.1', pkg.version + '/' + expoConfig.version);
 
 if (failed) {
   console.log('\nCOLLECTIONS_FAILED=' + failed);

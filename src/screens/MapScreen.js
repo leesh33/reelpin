@@ -13,6 +13,7 @@ import FilterChips from '../components/FilterChips';
 //         **가본 곳만 보기 · 지도 공유하기** 를 왼쪽 하단 펼침 메뉴(MapToolsMenu)로 모았습니다.
 import PinListView from '../components/PinListView';
 import MapToolsMenu, { toolsSummary } from '../components/MapToolsMenu';
+import LayerSheet from '../components/LayerSheet';
 import {
   DEFAULT_CATEGORIES,
   countByCategory,
@@ -85,6 +86,9 @@ export default function MapScreen({
   // v2.19 — 컬렉션만 보기: { id, name, emoji, pinIds } · null 이면 전체
   collectionFilter = null,
   onClearCollectionFilter,
+  // v2.19.1 — 🔔 반경 내 알림 (내 정보 › 알림 설정 과 같은 상태) — App 이 갖고 있습니다
+  alertsEnabled = false,
+  onToggleAlerts,
 }) {
   /**
    * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
@@ -181,7 +185,9 @@ export default function MapScreen({
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [nearbyOpen, setNearbyOpen] = useState(false);
-  const [alertsOn, setAlertsOn] = useState(false);
+  // v2.19.1 — 반경 내 알림은 App(내 정보 › 알림 설정)이 가진 값 하나를 그대로 따릅니다.
+  //           (예전처럼 지도 안에서만 켜고 끄면 설정 화면과 어귯나는 일이 없음)
+  const alertsOn = Boolean(alertsEnabled);
   // v2.14.1 — 위로 스와이프로 닫은 배너의 키 (같은 상태면 다시 뜨지 않게)
   const [dismissedBannerKey, setDismissedBannerKey] = useState('');
   const [notifyPermission, setNotifyPermission] = useState(() => notificationPermission());
@@ -484,15 +490,22 @@ export default function MapScreen({
   }, [nearbyOpen, myCoords, locate]);
 
   const toggleAlerts = useCallback(async () => {
+    const next = !alertsOn;
+    // v2.19.1 — 앱이 알림 설정을 갖고 있으면 그 스위치를 그대로 누릅니다(권한·안내 문구도 거기서).
+    if (typeof onToggleAlerts === 'function') {
+      await onToggleAlerts(next);
+      setNotifyPermission(notificationPermission());
+      if (next && !myCoords) await locate({ announce: false });
+      return;
+    }
     if (alertsOn) {
-      setAlertsOn(false);
+      setNotifyPermission(notificationPermission());
       notifiedRef.current = new Set();
       showToast('근처 알림을 껐어요');
       return;
     }
     const permission = await requestNotificationPermission();
     setNotifyPermission(permission);
-    setAlertsOn(true);
     if (permission === 'granted') {
       showToast('근처 알림을 켰어요 · 반경 ' + NEARBY_RADIUS_M + 'm 안에 들어오면 알려드려요');
     } else if (permission === 'unsupported') {
@@ -501,7 +514,7 @@ export default function MapScreen({
       showToast('알림 권한이 꺼져 있어 앱 안 배너로 알려드릴게요');
     }
     if (!myCoords) await locate({ announce: false });
-  }, [alertsOn, myCoords, locate, showToast]);
+  }, [alertsOn, onToggleAlerts, myCoords, locate, showToast]);
 
   // 알림을 켠 동안 위치를 계속 따라가며 500m 진입을 감지합니다.
   useEffect(() => {
@@ -519,14 +532,15 @@ export default function MapScreen({
       },
       (err) => {
         setLocationError((err && err.message) || '');
-        setAlertsOn(false);
+        // v2.19.1 — 감시가 끊기면 알림 설정도 같이 꺼진 상태로 되돌립니다(App 과 같은 스위치).
+        if (typeof onToggleAlerts === 'function') onToggleAlerts(false);
         showToast((err && err.message) || '위치 추적을 멈췄어요');
       }
     );
     return () => {
       if (typeof stop === 'function') stop();
     };
-  }, [alertsOn, applyPosition, showToast]);
+  }, [alertsOn, applyPosition, showToast, onToggleAlerts]);
 
   // ── 배너 문구 (v2.1.3: 사실만 — 위치를 모를 때 가짜 거리·가게명을 지어내지 않음) ──
   //   v2.17 — `mode` 를 처음으로 명시합니다. 배너는 **mode === 'near'(반경 500m 안)** 때만 그립니다.
@@ -695,28 +709,6 @@ export default function MapScreen({
           categories={categories}
           hideNotice={toolsOpen}
         />
-
-        {/* v2.5 — 📋 목록 보기: 지도 위를 덮는 카드 목록 (검색·필터·가까운 순) */}
-        {view === 'list' && (
-          <PinListView
-            pins={filtered}
-            query={query}
-            onQueryChange={setQuery}
-            onClearQuery={clearSearch}
-            filter={filter}
-            onChangeFilter={setFilter}
-            counts={counts}
-            visitFilter={visitFilter}
-            onChangeVisitFilter={changeVisitFilter}
-            visitCounts={visitCounts}
-            categories={categories}
-            myCoords={myCoords}
-            onSelectPin={onSelectPin}
-            onOpenPin={openPinFromList}
-            onToggleView={toggleView}
-            onGoPaste={onGoPaste}
-          />
-        )}
 
         {/* 상단 오버레이(지도 보기): 분류 필터 칩 → (공유받은 지도 · 위치 오류) */}
         {view === 'map' && (
@@ -997,6 +989,44 @@ export default function MapScreen({
           </View>
         )}
       </View>
+
+      {/* v2.5 — 📋 목록 보기: v2.19.1 — 전체 화면을 갈아끼우지 않고 **내 정보·돋보기와 같은
+          레이어 팝업**(LayerSheet · 높이 86% · 같은 딤)으로 열립니다. ✕ 또는 바깥 탭 = 지도로 복귀. */}
+      {view === 'list' && (
+        <LayerSheet
+          visible
+          onClose={toggleView}
+          icon="list"
+          title="목록 보기"
+          sub={'저장한 곳 ' + filtered.length + '곳 · 눌러서 지도에서 바로 보기'}
+          closeLabel="목록 닫기"
+          overlayTestID="pin-list-overlay"
+          testID="pin-list-sheet"
+          headerTestID="pin-list-sheet-header"
+          closeTestID="pin-list-sheet-close"
+          zIndex={40}
+        >
+          <PinListView
+            embedded
+            pins={filtered}
+            query={query}
+            onQueryChange={setQuery}
+            onClearQuery={clearSearch}
+            filter={filter}
+            onChangeFilter={setFilter}
+            counts={counts}
+            visitFilter={visitFilter}
+            onChangeVisitFilter={changeVisitFilter}
+            visitCounts={visitCounts}
+            categories={categories}
+            myCoords={myCoords}
+            onSelectPin={onSelectPin}
+            onOpenPin={openPinFromList}
+            onToggleView={toggleView}
+            onGoPaste={onGoPaste}
+          />
+        </LayerSheet>
+      )}
 
       {/*
         v2.17.1 — 핀 상세는 **화면 최상위 레이어**로 띄웁니다 (상훈 님 요청:

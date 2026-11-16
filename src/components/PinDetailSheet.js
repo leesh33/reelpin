@@ -179,22 +179,27 @@ export default function PinDetailSheet({
         {/* 어느 지도에서 확인된 장소인지 — 두 곳 이상이면 배지가 나란히 붙습니다 */}
         <ProviderBadges item={pin} size="sm" style={styles.badgeRow} />
 
-        {/* v2.10 — ✅ 가봤어요: 탭 한 번으로 방문 완료 체크/해제 */}
+        {/* v2.10 — ✅ 가봤어요: 탭 한 번으로 방문 완료 체크/해제
+            v2.19.1 — 상훈 님 요청 "장소 상세 화면은 ‘가봤어요’ 체크로 변경 (지금과 반대로)"
+            → 미방문일 때도 **빈 체크박스 + `가봤어요`** 로 보이고(라벨이 '아직 안 가봤어요' 로
+              뒤집혀 보이지 않게), 체크하면 초록 박스 + `가봤어요 (방문 완료)`. 저장값은 그대로
+              `visited` true/false → 지도·목록의 ✓ 표시와 항상 같습니다. */}
         {!readOnly && (
           <Pressable
             style={[styles.visitBtn, visited && styles.visitBtnOn]}
             onPress={handleToggleVisited}
-            accessibilityRole="button"
-            accessibilityState={{ selected: visited }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: visited }}
+            aria-checked={visited}
             accessibilityLabel={visited ? '가봤어요 체크 해제' : '가봤어요로 체크'}
             testID="pin-visited-toggle"
           >
-            <View style={[styles.visitCheck, visited && styles.visitCheckOn]}>
+            <View style={[styles.visitCheck, visited && styles.visitCheckOn]} testID="pin-visited-box">
               {visited ? <Ionicons name="checkmark" size={13} color={colors.white} /> : null}
             </View>
             <View style={styles.visitTextWrap}>
               <Text style={[styles.visitText, visited && styles.visitTextOn]} testID="pin-visited-label">
-                {visited ? '가봤어요' : '아직 안 가봤어요'}
+                {visited ? '가봤어요 (방문 완료)' : '가봤어요'}
               </Text>
               <Text style={[styles.visitSub, visited && styles.visitSubOn]} numberOfLines={1}>
                 {visited
@@ -547,11 +552,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.visitSoft,
   },
   visitCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 6,
     borderWidth: 1.5,
-    borderColor: colors.line,
+    borderColor: '#C4CAD6',
     backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
