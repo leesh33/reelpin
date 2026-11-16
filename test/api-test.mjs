@@ -356,7 +356,11 @@ check(
   String(gBody.contents[0].parts[1].text).indexOf('storeName') > 0 && String(gBody.contents[0].parts[1].text).indexOf('"places"') > 0,
   String(gBody.contents[0].parts[1].text).slice(0, 160)
 );
-check('gemini: 첫 시도는 thinkingBudget 0(속도)', gBody.generationConfig.thinkingConfig.thinkingBudget === 0, JSON.stringify(gBody.generationConfig.thinkingConfig));
+check(
+  'gemini: 첫 시도는 생각 끄기(thinkingLevel LOW · Gemini 3 규격)',
+  gBody.generationConfig.thinkingConfig.thinkingLevel === 'LOW' && !gBody.generationConfig.thinkingConfig.thinkingBudget,
+  JSON.stringify(gBody.generationConfig.thinkingConfig)
+);
 check(
   'gemini: 응답 파싱(```json 울타리 제거)',
   r.status === 200 && r.body.storeName === '엄마손횟집' && r.body.area === '제주 연동' && r.body.category === '맛집',
@@ -395,8 +399,28 @@ handler = () => {
 };
 r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
 const retryBody = JSON.parse((calls[1] || { init: {} }).init.body || '{}');
-check('gemini: 400 이면 한 번 더 시도해 살림', calls.length === 2 && r.body.storeName === '엄마손횟집', calls.length + ' | ' + r.body.storeName);
-check('gemini: 재시도 본문엔 thinkingConfig 없음', !(retryBody.generationConfig || {}).thinkingConfig, JSON.stringify(retryBody.generationConfig && Object.keys(retryBody.generationConfig)));
+check('gemini: 400 이면 생각 옵션을 바꿔 한 번 더 시도', calls.length === 2 && r.body.storeName === '엄마손횟집', calls.length + ' | ' + r.body.storeName);
+check(
+  'gemini: 2번째 시도는 thinkingBudget 0 (2.5 규격)',
+  (retryBody.generationConfig || {}).thinkingConfig && retryBody.generationConfig.thinkingConfig.thinkingBudget === 0,
+  JSON.stringify(retryBody.generationConfig && retryBody.generationConfig.thinkingConfig)
+);
+
+// 400 이 계속되면 ③thinkingConfig 없이 한 번 더, 그래도 400 이면 중단(같은 요청 반복 금지)
+calls = [];
+handler = (url, init) => {
+  const b = JSON.parse((init && init.body) || '{}');
+  const gc = (b.generationConfig || {});
+  if (!gc.thinkingConfig) return errRes(400);
+  return errRes(400);
+};
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+const modes = calls.map((c) => {
+  const gc = (JSON.parse(c.init.body || '{}').generationConfig || {});
+  return gc.thinkingConfig ? (gc.thinkingConfig.thinkingLevel ? 'level' : 'budget') : 'off';
+});
+check('gemini: 400 이면 level → budget → off 순서로 시도', calls.length === 3 && JSON.stringify(modes) === JSON.stringify(['level', 'budget', 'off']), JSON.stringify(modes));
+check('gemini: 세 번 다 400 이면 빈 결과로 끝', r.body.storeName === '' && r.body.reason === 'gemini-upstream-400', r.body.reason);
 
 // 모델이 폐기·미제공(404)이면 다음 모델로 내려감
 calls = [];

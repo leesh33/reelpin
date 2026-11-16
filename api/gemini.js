@@ -27,9 +27,9 @@ const DEFAULT_MODEL = 'gemini-3.8-flash';
 /** 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. */
 const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
 /** 한 번의 영상 분석 응답 타임아웃 — Gemini 3 영상 분석은 30초를 넘기도 합니다(실측). */
-const GEMINI_TIMEOUT_MS = 45000;
+const GEMINI_TIMEOUT_MS = 50000;
 /** 모델 폴백까지 포함한 전체 예산 — Vercel maxDuration 60초 안 */
-const TOTAL_BUDGET_MS = 55000;
+const TOTAL_BUDGET_MS = 56000;
 /** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TITLE_CHARS = 200;
@@ -127,7 +127,7 @@ const SYSTEM_INSTRUCTION = [
 ].join('\n');
 
 /** 요청 본문 — 영상 + 참고용 메타데이터(제목·설명글) */
-function buildRequestBody({ videoUrl, title, description, withThinkingOff }) {
+function buildRequestBody({ videoUrl, title, description, thinking }) {
   const hints = [];
   if (title) hints.push('영상 제목: ' + title);
   if (description) hints.push('영상 설명글: ' + description);
@@ -143,9 +143,10 @@ function buildRequestBody({ videoUrl, title, description, withThinkingOff }) {
     //  타임아웃이 났습니다 — 형식은 시스템 프롬프트로 강제하고 앱에서 느슨하게 파싱합니다)
     responseMimeType: 'application/json',
   };
-  // 2.5 flash 는 기본적으로 '생각' 토큰을 씁니다 — 영상 분석 속도를 위해 끕니다.
-  // (모델이 이 옵션을 모르면 400 이 오므로, 호출부가 옵션 없이 한 번 더 시도합니다)
-  if (withThinkingOff) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  // '생각' 토큰은 영상 분석 지연의 가장 큰 몫입니다 — 모델 세대마다 옵션 이름이 달라서
+  // ① Gemini 3: thinkingLevel LOW ② Gemini 2.5: thinkingBudget 0 ③ 옵션 없음 순서로 시도합니다.
+  if (thinking === 'level') generationConfig.thinkingConfig = { thinkingLevel: 'LOW' };
+  else if (thinking === 'budget') generationConfig.thinkingConfig = { thinkingBudget: 0 };
   return {
     systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
     contents: [
@@ -289,30 +290,28 @@ module.exports = async function handler(req, res) {
   // 모델이 폐기·미제공(404/400)이면 다음 모델로 내려갑니다. 그 밖의 실패(429·5xx)는 바로 끝냅니다.
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const models = modelCandidates();
+  const THINKING_MODES = ['level', 'budget', 'off'];
   let attempt = { ok: false, status: 0, json: null };
   let usedModel = models[0];
-  for (const model of models) {
-    const left = deadline - Date.now();
-    if (left < 4000) break;
+  let usedThinking = THINKING_MODES[0];
+  // 모델(404/400) × 생각 옵션(400) 을 바꿔 가며 시도합니다. 그 밖의 실패(429·5xx)는 바로 끝냅니다.
+  modelLoop: for (const model of models) {
     usedModel = model;
-    const timeoutMs = Math.min(GEMINI_TIMEOUT_MS, left);
-    attempt = await callGemini({
-      apiKey,
-      model,
-      timeoutMs,
-      body: buildRequestBody({ videoUrl, title, description, withThinkingOff: true }),
-    });
-    // thinkingConfig 를 모르는 모델이면(400) 옵션을 빼고 한 번 더 — 기능이 통째로 죽지 않게.
-    if (!attempt.ok && attempt.status === 400 && deadline - Date.now() > 4000) {
+    for (const thinking of THINKING_MODES) {
+      const left = deadline - Date.now();
+      if (left < 4000) break modelLoop;
+      usedThinking = thinking;
       attempt = await callGemini({
         apiKey,
         model,
-        timeoutMs: Math.min(GEMINI_TIMEOUT_MS, deadline - Date.now()),
-        body: buildRequestBody({ videoUrl, title, description, withThinkingOff: false }),
+        timeoutMs: Math.min(GEMINI_TIMEOUT_MS, left),
+        body: buildRequestBody({ videoUrl, title, description, thinking }),
       });
+      if (attempt.ok) break modelLoop;
+      // 400 = 이 모델이 이 옵션을 모름 → 다음 옵션으로. 그 외(404·429·5xx·타임아웃)는 옵션 문제가 아님
+      if (attempt.status !== 400) break;
     }
-    if (attempt.ok) break;
-    if (attempt.status !== 404 && attempt.status !== 400) break;
+    if (attempt.status !== 404) break;
   }
 
   if (!attempt.ok) {
@@ -336,6 +335,7 @@ module.exports = async function handler(req, res) {
   return sendJson(res, 200, {
     ...analysis,
     model: usedModel,
+    thinking: usedThinking,
     source: 'gemini',
     elapsedMs: Date.now() - startedAt,
   });
