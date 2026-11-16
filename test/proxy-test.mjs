@@ -27,6 +27,20 @@ import {
   fetchGeminiAnalysis,
   geminiQueryList,
   geminiNoteOf,
+  // v2.13 — 📸 캡처·사진 AI 가게 추출 (이미지 분석 + 지도 파이프라인)
+  IMAGE_MAX_EDGE,
+  IMAGE_JPEG_QUALITY,
+  IMAGE_MAX_BASE64_CHARS,
+  IMAGE_ANALYSIS_TIMEOUT_MS,
+  scaledImageSize,
+  parseImageDataUri,
+  imageDataUrlOf,
+  resizeImageForUpload,
+  pickImageFile,
+  fetchGeminiImageAnalysis,
+  imageNoteOf,
+  imagePlaceItems,
+  extractFromImage,
 } from '../src/services/extractor.js';
 
 let fails = 0;
@@ -347,6 +361,274 @@ handler = (url) => {
 const webNaverPin = await extractPlaces('https://m.place.naver.com/place/1736095566');
 check('web/extract: 네이버 링크는 placeId 핀', webNaverPin.usedAdapter === 'naver-place-link' && (webNaverPin.candidates[0] || {}).naverPlaceId === '1736095566', JSON.stringify(webNaverPin.usedAdapter));
 check('web/extract: 좌표·전화까지 저장', (webNaverPin.candidates[0] || {}).phone === '0507-1375-1660' && Number.isFinite((webNaverPin.candidates[0] || {}).lat));
+
+
+// ── 10-1. v2.13 📸 캡처·사진 AI 가게 추출 — 클라이언트 ──────
+//   · 사진은 올리기 전에 긴 변 1280px · JPEG 0.82 로 줄입니다. (아이폰 스크린샷 수 MB → 300KB대)
+//   · `/api/gemini` 에 `{ imageBase64, mimeType }` 로 보내고, 읽은 상호를 지도 파이프라인으로 넘깁니다.
+//   · 업로드 사진은 `sourceThumbnail`(data URL)로 돌아와 저장 카드 배경이 됩니다.
+check('web/photo: 긴 변 상한 1280 · JPEG 0.82', IMAGE_MAX_EDGE === 1280 && IMAGE_JPEG_QUALITY === 0.82, IMAGE_MAX_EDGE + ' / ' + IMAGE_JPEG_QUALITY);
+check('web/photo: base64 상한이 서버(413)와 같은 값', IMAGE_MAX_BASE64_CHARS === 4000000, String(IMAGE_MAX_BASE64_CHARS));
+check('web/photo: 분석 타임아웃 30초 수준', IMAGE_ANALYSIS_TIMEOUT_MS >= 20000 && IMAGE_ANALYSIS_TIMEOUT_MS <= 59000, String(IMAGE_ANALYSIS_TIMEOUT_MS));
+
+const SHOT_W = 1170;
+const SHOT_H = 2532;
+const shotSize = scaledImageSize(SHOT_W, SHOT_H);
+check(
+  'web/photo: 아이폰 스크린샷(1170×2532) → 긴 변 1280',
+  Math.max(shotSize.width, shotSize.height) === 1280 && Math.abs(shotSize.width - 592) <= 1,
+  shotSize.width + '×' + shotSize.height
+);
+check(
+  'web/photo: 비율 유지(납작한 캡처)',
+  JSON.stringify(scaledImageSize(2000, 1000)) === JSON.stringify({ width: 1280, height: 640 }),
+  JSON.stringify(scaledImageSize(2000, 1000))
+);
+check(
+  'web/photo: 작은 사진은 늘리지 않음',
+  JSON.stringify(scaledImageSize(800, 600)) === JSON.stringify({ width: 800, height: 600 }),
+  JSON.stringify(scaledImageSize(800, 600))
+);
+check('web/photo: 크기를 못 읽으면 0', JSON.stringify(scaledImageSize(0, 0)) === JSON.stringify({ width: 0, height: 0 }));
+
+const IMG_B64 = 'A'.repeat(1200);
+const IMG_DATA_URL = 'data:image/jpeg;base64,' + IMG_B64;
+const parsedUri = parseImageDataUri(IMG_DATA_URL);
+check('web/photo: data URL 파싱', parsedUri && parsedUri.mimeType === 'image/jpeg' && parsedUri.base64 === IMG_B64, JSON.stringify(parsedUri && parsedUri.mimeType));
+check('web/photo: data URL 이 아니면 null', parseImageDataUri('hello') === null);
+check('web/photo: 공백 섞인 base64 정리', (parseImageDataUri('data:image/png;base64,AA\nBB CC') || {}).base64 === 'AABBCC');
+check('web/photo: base64 → data URL', imageDataUrlOf(IMG_B64, 'image/png') === 'data:image/png;base64,' + IMG_B64);
+
+// DOM 이 없는 환경(네이티브·SSR) — 조용히 null / 안내
+check('web/photo: pickImageFile 은 DOM 없으면 null', (await pickImageFile()) === null);
+const noDomResize = await resizeImageForUpload({ type: 'image/png', size: 1000 });
+check('web/photo: canvas 없는 런타임은 resize-unavailable', noDomResize.ok === false && noDomResize.reason === 'resize-unavailable', JSON.stringify(noDomResize));
+
+const IMAGE_ANALYSIS_OK = {
+  storeName: '베통',
+  area: '성수동',
+  menu: '소금빵, 크루아상',
+  category: '베이커리',
+  places: [{ name: '베통', area: '성수동', menu: '소금빵' }],
+};
+
+// ── 이미지 분석 프록시 호출 모양 ──
+calls = [];
+handler = (url) => {
+  if (String(url) === '/api/gemini') return jsonRes({ ...IMAGE_ANALYSIS_OK, kind: 'image', model: 'gemini-3.5-flash-lite', elapsedMs: 2100 });
+  return errRes(404);
+};
+const imageAnalysis = await fetchGeminiImageAnalysis({ base64: IMG_B64, mimeType: 'image/jpeg' });
+const imgCall = calls[0] || { url: '', init: {} };
+const imgPayload = JSON.parse(imgCall.init.body || '{}');
+check('web/photo: POST /api/gemini', imgCall.url === '/api/gemini' && imgCall.init.method === 'POST', imgCall.url);
+check(
+  'web/photo: imageBase64 · mimeType 전송',
+  imgPayload.imageBase64 === IMG_B64 && imgPayload.mimeType === 'image/jpeg',
+  JSON.stringify({ len: String(imgPayload.imageBase64 || '').length, mimeType: imgPayload.mimeType })
+);
+check('web/photo: 사진만 보냄(url 없음)', imgPayload.url == null, JSON.stringify(Object.keys(imgPayload)));
+check(
+  'web/photo: 분석 결과 매핑',
+  imageAnalysis.ok === true && imageAnalysis.analysis.storeName === '베통' && imageAnalysis.analysis.places.length === 1,
+  JSON.stringify(imageAnalysis.analysis)
+);
+check('web/photo: 근거 문구', imageNoteOf(imageAnalysis.analysis) === 'AI 사진 분석으로 찾았어요 · “베통” (성수동)', imageNoteOf(imageAnalysis.analysis));
+
+// places 6곳까지 유지
+calls = [];
+handler = () =>
+  jsonRes({
+    kind: 'image',
+    storeName: '베통',
+    area: '성수동',
+    menu: '',
+    category: '베이커리',
+    places: ['베통', '뚜레쥬르', '런던베이글', '카페 온도', '어니언', '누데이크', '일곱번째'].map((n) => ({ name: n, area: '성수동' })),
+  });
+const sixAnalysis = await fetchGeminiImageAnalysis(IMG_B64);
+check('web/photo: places 6곳 상한', sixAnalysis.ok === true && sixAnalysis.analysis.places.length === 6, String(sixAnalysis.analysis && sixAnalysis.analysis.places.length));
+
+// 실패 안내 — 서버가 준 문구를 그대로 씁니다
+calls = [];
+handler = (url) => (String(url) === '/api/gemini' ? { ok: false, status: 413, json: async () => ({ error: 'image-too-large', message: '사진이 너무 커요(약 3MB 이하). 다시 골라 주세요.' }) } : errRes(404));
+const tooBig = await fetchGeminiImageAnalysis({ base64: IMG_B64, mimeType: 'image/jpeg' });
+check(
+  'web/photo: 413 → 안내 문구 그대로',
+  tooBig.ok === false && tooBig.reason === 'image-too-large' && tooBig.message.indexOf('너무 커요') > 0,
+  JSON.stringify({ reason: tooBig.reason, message: tooBig.message })
+);
+
+calls = [];
+handler = (url) => (String(url) === '/api/gemini' ? { ok: false, status: 503, json: async () => ({ error: 'gemini-not-configured' }) } : errRes(404));
+const notConfigured = await fetchGeminiImageAnalysis(IMG_B64);
+check(
+  'web/photo: 미설정(503) → 연결 안 됨 안내',
+  notConfigured.ok === false && notConfigured.reason === 'gemini-not-configured' && String(notConfigured.message).indexOf('연결') > 0,
+  JSON.stringify(notConfigured)
+);
+
+calls = [];
+handler = (url) => (String(url) === '/api/gemini' ? jsonRes({ kind: 'image', storeName: '', places: [], reason: 'gemini-no-store' }) : errRes(404));
+const noStore = await fetchGeminiImageAnalysis(IMG_B64);
+check(
+  'web/photo: 가게 못 읽음 → 다시 올려 달라는 안내',
+  noStore.ok === false && String(noStore.message).indexOf('못 찾았어요') > 0,
+  JSON.stringify(noStore)
+);
+
+calls = [];
+const clientTooLarge = await fetchGeminiImageAnalysis({ base64: 'A'.repeat(IMAGE_MAX_BASE64_CHARS + 1), mimeType: 'image/jpeg' });
+check(
+  'web/photo: 4MB 넘는 사진은 서버에 보내지 않음',
+  clientTooLarge.ok === false && clientTooLarge.reason === 'image-too-large' && calls.length === 0,
+  String(calls.length)
+);
+
+// ── 사진 한 장 → 후보 (단일) ──
+const BEOTONG_DOC = {
+  id: 'beotong',
+  place_name: '베통',
+  category_name: '음식점 > 간식 > 제과,베이커리',
+  category_group_code: 'FD6',
+  phone: '02-111-2222',
+  address_name: '서울 성동구 성수동2가 100',
+  road_address_name: '서울 성동구 연무장길 100',
+  x: '127.0557',
+  y: '37.5445',
+  place_url: 'http://place.map.kakao.com/beotong',
+};
+const BEOTONG_NAVER = {
+  title: '베통',
+  link: 'http://map.naver.com/p/entry/place/beotong',
+  category: '음식점>간식>제과,베이커리',
+  address: '서울 성동구 성수동2가 100',
+  roadAddress: '서울 성동구 연무장길 100',
+  mapx: '1270557000',
+  mapy: '375445000',
+};
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u === '/api/gemini') return jsonRes({ ...IMAGE_ANALYSIS_OK, kind: 'image', model: 'gemini-3.5-flash-lite', elapsedMs: 1900 });
+  if (u.indexOf('/api/kakao-local') === 0) return jsonRes({ documents: [BEOTONG_DOC] });
+  if (u.indexOf('/api/naver-local') === 0) return jsonRes({ items: [BEOTONG_NAVER] });
+  return errRes(404);
+};
+const photoOne = await extractFromImage({ base64: IMG_B64, mimeType: 'image/jpeg' });
+const photoOneUrls = calls.map((c) => c.url);
+check('web/photo 흐름: 사진 → /api/gemini 호출', photoOneUrls[0] === '/api/gemini', photoOneUrls.slice(0, 3).join(' | '));
+check('web/photo 흐름: 사진에서 읽은 지역+상호로 지도 조회', photoOneUrls.some((u) => u.indexOf('/api/kakao-local?query=' + encodeURIComponent('성수동 베통')) === 0), photoOneUrls.join(' | '));
+check('web/photo 흐름: 단일 후보', photoOne.ok === true && photoOne.mode === 'single' && photoOne.candidates.length === 1 && photoOne.candidates[0].name === '베통', JSON.stringify(photoOne.candidates && photoOne.candidates.map((c) => c.name)));
+check(
+  'web/photo 흐름: 카카오·네이버 배지',
+  JSON.stringify((photoOne.candidates[0] || {}).providers) === JSON.stringify(['kakao', 'naver']),
+  JSON.stringify((photoOne.candidates[0] || {}).providers)
+);
+check('web/photo 흐름: usedAdapter 가 gemini-photo 로 시작', String(photoOne.usedAdapter).indexOf('gemini-photo') === 0, String(photoOne.usedAdapter));
+check('web/photo 흐름: 업로드 사진이 sourceThumbnail', photoOne.sourceThumbnail === IMG_DATA_URL, String(photoOne.sourceThumbnail).slice(0, 40));
+check('web/photo 흐름: 한 줄 근거(aiNote)', String(photoOne.aiNote).indexOf('AI 사진 분석으로 찾았어요') === 0, photoOne.aiNote);
+check('web/photo 흐름: 플랫폼은 사진', photoOne.platform === 'photo' && photoOne.platformLabel === '사진', photoOne.platform + '/' + photoOne.platformLabel);
+check('web/photo 흐름: 메뉴 → menuTags', JSON.stringify(photoOne.candidates[0].menuTags) === JSON.stringify(['소금빵', '크루아상']), JSON.stringify(photoOne.candidates[0].menuTags));
+check('web/photo 흐름: 지도 분류가 우선', photoOne.candidates[0].category === '베이커리', photoOne.candidates[0].category);
+check('web/photo 흐름: 좌표 채움', Number.isFinite(photoOne.candidates[0].lat) && Number.isFinite(photoOne.candidates[0].lng), String(photoOne.candidates[0].lat));
+
+// data URL 을 그대로 넘겨도 같은 흐름 (화면 미리보기·재분석 공용)
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u === '/api/gemini') return jsonRes({ ...IMAGE_ANALYSIS_OK, kind: 'image' });
+  if (u.indexOf('/api/kakao-local') === 0) return jsonRes({ documents: [BEOTONG_DOC] });
+  return jsonRes({ items: [] });
+};
+const photoFromDataUrl = await extractFromImage(IMG_DATA_URL);
+check(
+  'web/photo: data URL 입력도 분석·후보까지',
+  photoFromDataUrl.ok === true && photoFromDataUrl.candidates.length === 1 && photoFromDataUrl.sourceThumbnail === IMG_DATA_URL,
+  String(photoFromDataUrl.usedAdapter)
+);
+
+// ── 목록형 캡처 → 여러 곳 한 번에 ──
+const TTL_DOC = {
+  id: 'ttl',
+  place_name: '뚜레쥬르',
+  category_name: '음식점 > 간식 > 제과,베이커리',
+  category_group_code: 'FD6',
+  phone: '',
+  address_name: '서울 마포구 연남동 200',
+  road_address_name: '서울 마포구 동교로 200',
+  x: '126.9230',
+  y: '37.5620',
+  place_url: 'http://place.map.kakao.com/ttl',
+};
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u === '/api/gemini')
+    return jsonRes({
+      kind: 'image',
+      storeName: '베통',
+      area: '성수동',
+      menu: '소금빵',
+      category: '베이커리',
+      places: [
+        { name: '베통', area: '성수동', menu: '소금빵, 크루아상' },
+        { name: '뚜레쥬르', area: '연남동', menu: '생크림 카스텔라' },
+      ],
+    });
+  if (u.indexOf('/api/kakao-local') === 0) {
+    const q = decodeURIComponent(u);
+    if (q.indexOf('뚜레쥬르') >= 0) return jsonRes({ documents: [TTL_DOC] });
+    if (q.indexOf('베통') >= 0) return jsonRes({ documents: [BEOTONG_DOC] });
+    return jsonRes({ documents: [] });
+  }
+  return jsonRes({ items: [] });
+};
+const photoMulti = await extractFromImage({ base64: IMG_B64, mimeType: 'image/jpeg' });
+check('web/photo 목록: mode=multi', photoMulti.ok === true && photoMulti.mode === 'multi', String(photoMulti.mode));
+check(
+  'web/photo 목록: 두 가게가 각각 후보',
+  photoMulti.candidates.length === 2 && photoMulti.candidates.map((c) => c.name).join(',') === '베통,뚜레쥬르',
+  JSON.stringify(photoMulti.candidates.map((c) => c.name))
+);
+check(
+  'web/photo 목록: 가게마다 자기 메뉴',
+  JSON.stringify(photoMulti.candidates[1].menuTags) === JSON.stringify(['생크림 카스텔라']),
+  JSON.stringify(photoMulti.candidates[1].menuTags)
+);
+check('web/photo 목록: 사진이 sourceThumbnail', photoMulti.sourceThumbnail === IMG_DATA_URL, String(photoMulti.sourceThumbnail).slice(0, 30));
+check('web/photo 목록: usedAdapter 에 multi', String(photoMulti.usedAdapter).indexOf('multi') > 0, String(photoMulti.usedAdapter));
+
+// ── 지도가 못 찾으면 사진에서 읽은 상호는 남김(좌표 없음) ──
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u === '/api/gemini') return jsonRes({ kind: 'image', storeName: '모리식당', area: '성수동', menu: '규동', category: '맛집', places: [] });
+  return jsonRes({ documents: [], items: [] });
+};
+const photoManual = await extractFromImage({ base64: IMG_B64, mimeType: 'image/jpeg' });
+check('web/photo 수동: 상호·동네 유지', photoManual.candidates[0].name === '모리식당' && photoManual.candidates[0].area === '성수동', JSON.stringify(photoManual.candidates[0]));
+check('web/photo 수동: 좌표를 지어내지 않음', photoManual.candidates[0].lat === null && photoManual.candidates[0].lng === null, JSON.stringify([photoManual.candidates[0].lat, photoManual.candidates[0].lng]));
+check('web/photo 수동: 주소 확인 필요 표시', String(photoManual.candidates[0].address).indexOf('주소 확인 필요') >= 0, photoManual.candidates[0].address);
+
+// ── 사진 분석 실패 → 앱은 안내 문구 (§ 상태) ──
+calls = [];
+handler = (url) => (String(url) === '/api/gemini' ? { ok: false, status: 413, json: async () => ({ error: 'image-too-large', message: '사진이 너무 커요(약 3MB 이하). 다시 골라 주세요.' }) } : errRes(404));
+const photoFailed = await extractFromImage({ base64: IMG_B64, mimeType: 'image/jpeg' });
+check(
+  'web/photo 실패: ok=false · 안내 문구 · 지도 조회 없음',
+  photoFailed.ok === false && photoFailed.reason === 'image-too-large' && String(photoFailed.message).indexOf('너무 커요') > 0 && calls.length === 1,
+  JSON.stringify({ ok: photoFailed.ok, reason: photoFailed.reason, calls: calls.length })
+);
+
+// 사진 분석의 places → 지도 검색어 모양
+const placeItemsOfPhoto = imagePlaceItems({ places: [{ name: '베통', area: '성수동', menu: '소금빵' }, { name: '어니언', area: '', menu: '' }] });
+check(
+  'web/photo: 가게별 검색어(지역+상호 → 상호)',
+  placeItemsOfPhoto.length === 2 && JSON.stringify(placeItemsOfPhoto[0].queries) === JSON.stringify(['성수동 베통', '베통']) && JSON.stringify(placeItemsOfPhoto[1].queries) === JSON.stringify(['어니언']),
+  JSON.stringify(placeItemsOfPhoto.map((i) => i.queries))
+);
+check('web/photo: 이름 없는 항목은 버림', imagePlaceItems({ places: [{ name: '', area: '성수동' }] }).length === 0);
 
 
 // ── 9. 네트워크 예외도 앱을 멈추지 않음 ─────────────────────

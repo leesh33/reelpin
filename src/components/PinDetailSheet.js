@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
@@ -16,6 +16,8 @@ const PLATFORM_LABEL = {
   tiktok: '틱톡',
   naver: '네이버 블로그',
   search: '가게명으로 찾기',
+  // v2.13 — 📸 사진에서 저장 (원본 링크가 없습니다)
+  photo: '사진에서 저장',
   unknown: '원본 링크',
 };
 
@@ -134,7 +136,16 @@ export default function PinDetailSheet({
         </View>
       </View>
 
-      <View style={styles.body}>
+      {/* v2.13 — 높아진 시트(가봤어요·한줄 메모·분류·버튼들)가 화면 위로 넘치면
+          다크 헤더의 ✕ 닫기 버튼이 아이폰 사파리 상태바 밖으로 잘려 나갔습니다.
+          → 헤더는 시트 **상단에 고정**하고, 본문만 스크롤되게 감쌉니다. (sheet maxHeight 86%) */}
+      <ScrollView
+        style={styles.bodyScroll}
+        contentContainerStyle={styles.body}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator
+        testID="pin-sheet-scroll"
+      >
         <View style={styles.chipRow}>
           <View
             style={[
@@ -373,7 +384,7 @@ export default function PinDetailSheet({
         {readOnly && (
           <Text style={styles.sharedNote}>공유받은 맛집이에요 · 내 지도에 추가하면 저장할 수 있어요</Text>
         )}
-      </View>
+      </ScrollView>
 
       {placeModalOpen && (
         <InAppPlaceModal
@@ -392,10 +403,12 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
+    // v2.13 — 화면 높이의 86% 를 넘지 않게 (아이폰 사파리 상태바·주소창 위로 헤더가 밀려나 ✕ 를 못 누르던 문제)
+    maxHeight: '86%',
+    overflow: 'hidden',
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
-    paddingBottom: 16,
     ...sheetShadow,
   },
   // 다크 차콜 헤더 바 — 시트 위쪽 둥근 모서리를 그대로 물려받습니다.
@@ -426,9 +439,15 @@ const styles = StyleSheet.create({
     fontSize: 19,
     color: colors.white,
   },
+  // 헤더(고정) 아래에서 본문만 스크롤 — maxHeight 안에서 줄어들 수 있게 flexShrink
+  bodyScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   body: {
     paddingHorizontal: 20,
     paddingTop: 12,
+    paddingBottom: 16,
   },
   chipRow: {
     flexDirection: 'row',

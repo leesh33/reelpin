@@ -502,6 +502,173 @@ check(
 );
 check('gemini normalize: 유튜브 사칭 주소 거부', geminiHandler.normalizeYouTubeUrl('https://youtube.com.evil.com/shorts/LPLE_SH2b9U') === '');
 check('gemini parse: 잡담 섞인 JSON 도 파싱', geminiHandler.parseJsonLoose('결과: {"storeName":"A","places":[]} 입니다').storeName === 'A');
+// ── 6-2. v2.13 📸 사진 분석 (/api/gemini { imageBase64, mimeType }) ──
+//   · `inlineData { mimeType, data }` 로 보냅니다. (영상의 fileData 자리)
+//   · data URL(`data:image/png;base64,…`)도 받아 접두사를 떼어 냅니다.
+//   · 너무 큰 사진은 업스트림을 부르지 않고 413, 형식이 틀리면 400.
+//   · 목록형 캡처는 places 를 최대 6곳까지 그대로 돌려줍니다 (영상은 3곳).
+process.env.GEMINI_API_KEY = GEMINI_SECRET;
+const IMAGE_B64 = 'A'.repeat(2000);
+const IMAGE_OK = {
+  storeName: '베통',
+  area: '성수동',
+  menu: '소금빵, 크루아상',
+  category: '베이커리',
+  places: [{ name: '베통', area: '성수동', menu: '소금빵' }],
+};
+
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ imageBase64: IMAGE_B64, mimeType: 'image/jpeg' });
+const iReq = calls[0] || { url: '', init: {} };
+const iBody = JSON.parse(iReq.init.body || '{}');
+const iPart = ((iBody.contents || [{}])[0].parts || [{}])[0];
+check(
+  'gemini 사진: 업스트림 inlineData { mimeType, data }',
+  iPart.inlineData && iPart.inlineData.mimeType === 'image/jpeg' && iPart.inlineData.data === IMAGE_B64,
+  JSON.stringify(iPart).slice(0, 120)
+);
+check('gemini 사진: fileData(영상) 없음', JSON.stringify(iBody).indexOf('fileData') < 0);
+check(
+  'gemini 사진: 사진용 지시문(캡처·스크린샷·위치 태그)',
+  String(iBody.systemInstruction.parts[0].text).indexOf('스크린샷') > 0 &&
+    String(iBody.systemInstruction.parts[0].text).indexOf('위치 태그') > 0,
+  String(iBody.systemInstruction.parts[0].text).slice(0, 80)
+);
+check(
+  'gemini 사진: 프롬프트가 JSON 키(storeName·places)를 지정',
+  String(iPart.text || (iBody.contents[0].parts[1] || {}).text).indexOf('storeName') > 0 &&
+    String((iBody.contents[0].parts[1] || {}).text).indexOf('"places"') > 0,
+  String((iBody.contents[0].parts[1] || {}).text).slice(0, 120)
+);
+check(
+  'gemini 사진: 응답 kind=image · 상호·지역·메뉴·분류',
+  r.status === 200 && r.body.kind === 'image' && r.body.storeName === '베통' && r.body.area === '성수동' && r.body.menu === '소금빵, 크루아상' && r.body.category === '베이커리',
+  JSON.stringify(r.body)
+);
+check(
+  'gemini 사진: 원본 바이트 수(imageBytes) 반환',
+  typeof r.body.imageBytes === 'number' && r.body.imageBytes > 1000,
+  String(r.body.imageBytes)
+);
+check('gemini 사진: 키 노출 없음', !leaksSecret(r.raw), r.raw.slice(0, 100));
+
+// data URL — 접두사에서 mimeType 을 읽고 데이터만 보냅니다
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ imageBase64: 'data:image/png;base64,' + IMAGE_B64 });
+const dPart = ((JSON.parse((calls[0] || { init: {} }).init.body || '{}').contents || [{}])[0].parts || [{}])[0];
+check(
+  'gemini 사진: data URL → mimeType 추출·접두사 제거',
+  dPart.inlineData && dPart.inlineData.mimeType === 'image/png' && dPart.inlineData.data === IMAGE_B64,
+  JSON.stringify(dPart).slice(0, 100)
+);
+
+// image 별칭 + mimeType 생략 → jpeg 기본
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ image: IMAGE_B64 });
+const aPart = ((JSON.parse((calls[0] || { init: {} }).init.body || '{}').contents || [{}])[0].parts || [{}])[0];
+check(
+  'gemini 사진: image 별칭 · mimeType 생략 시 image/jpeg',
+  aPart.inlineData && aPart.inlineData.mimeType === 'image/jpeg' && aPart.inlineData.data === IMAGE_B64,
+  JSON.stringify(aPart && aPart.inlineData && aPart.inlineData.mimeType)
+);
+
+// 사진이 있으면 url 보다 우선 (인스타 주소를 함께 보내도 사진만 분석)
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ url: 'https://www.instagram.com/reel/C8xSg2pQ1K/', imageBase64: IMAGE_B64, mimeType: 'image/jpeg' });
+check(
+  'gemini 사진: 사진이 있으면 인스타 url 보다 사진 우선',
+  calls.length === 1 && JSON.parse(calls[0].init.body).contents[0].parts[0].inlineData && r.body.kind === 'image',
+  calls.map((c) => c.url).join(' | ')
+);
+
+// 사용자가 함께 적은 메모(hint)는 프롬프트에만 붙습니다
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ imageBase64: IMAGE_B64, mimeType: 'image/jpeg', hint: '성수동 소금빵' });
+check(
+  'gemini 사진: hint 는 참고 메모로만 전달',
+  String(JSON.parse(calls[0].init.body).contents[0].parts[1].text).indexOf('성수동 소금빵') > 0,
+  String(JSON.parse(calls[0].init.body).contents[0].parts[1].text).slice(-80)
+);
+
+// 목록형 캡처 — places 6곳까지 (영상 모드는 3곳)
+const SIX_PLACES = ['베통', '뚜레쥬르', '런던베이글', '카페 온도', '어니언', '누데이크'].map((n, i) => ({
+  name: n,
+  area: '성수동',
+  menu: '메뉴' + (i + 1),
+}));
+calls = [];
+handler = () => jsonRes(geminiText({ storeName: '베통', area: '성수동', menu: '', category: '베이커리', places: SIX_PLACES }));
+r = await callGemini({ imageBase64: IMAGE_B64, mimeType: 'image/jpeg' });
+check('gemini 사진: 목록형 캡처 places 6곳 유지', r.body.places.length === 6 && r.body.places[5].name === '누데이크', JSON.stringify(r.body.places.map((p) => p.name)));
+
+calls = [];
+handler = () => jsonRes(geminiText({ storeName: '베통', area: '성수동', menu: '', category: '베이커리', places: SIX_PLACES }));
+r = await callGemini({ url: 'https://www.youtube.com/shorts/LPLE_SH2b9U' });
+check('gemini 영상: places 는 그대로 3곳 상한', r.body.places.length === 3, String(r.body.places.length));
+
+// 형식·크기 검증 — 업스트림을 부르지 않습니다
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ imageBase64: IMAGE_B64, mimeType: 'image/gif' });
+check(
+  'gemini 사진: 지원하지 않는 형식 → 400 unsupported-image-type',
+  r.status === 400 && r.body.error === 'unsupported-image-type' && calls.length === 0,
+  r.status + ' | ' + calls.length
+);
+check('gemini 사진: 안내 문구는 한국어', String(r.body.message || '').indexOf('사진') >= 0, String(r.body.message));
+
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ imageBase64: 'not base64 !!' });
+check(
+  'gemini 사진: base64 아님 → 400 invalid-image',
+  r.status === 400 && r.body.error === 'invalid-image' && calls.length === 0,
+  r.status + ' | ' + r.body.error
+);
+
+calls = [];
+handler = () => jsonRes(geminiText(IMAGE_OK));
+r = await callGemini({ imageBase64: 'A'.repeat(geminiHandler.MAX_IMAGE_BASE64_CHARS + 1), mimeType: 'image/jpeg' });
+check(
+  'gemini 사진: 너무 큰 사진 → 413 image-too-large (업스트림 호출 0)',
+  r.status === 413 && r.body.error === 'image-too-large' && calls.length === 0,
+  r.status + ' | ' + r.body.error + ' | ' + calls.length
+);
+check('gemini 사진: 413 안내 문구', String(r.body.message || '').indexOf('너무 커요') >= 0, String(r.body.message));
+check(
+  'gemini 사진: base64 상한이 Vercel 본문 한도(4.5MB) 안',
+  geminiHandler.MAX_IMAGE_BASE64_CHARS <= 4200000 && geminiHandler.MAX_IMAGE_BODY_BYTES <= 4.5 * 1024 * 1024,
+  String(geminiHandler.MAX_IMAGE_BASE64_CHARS) + ' / ' + String(geminiHandler.MAX_IMAGE_BODY_BYTES)
+);
+
+// 사진 모드 실패·미확인도 200 빈 결과 (앱은 안내 문구로 이어짐)
+calls = [];
+handler = () => jsonRes(geminiText({ storeName: '', area: '', menu: '', category: '', places: [] }));
+r = await callGemini({ imageBase64: IMAGE_B64, mimeType: 'image/jpeg' });
+check(
+  'gemini 사진: 가게 못 읽음 → 200 빈 결과 + kind=image',
+  r.status === 200 && r.body.storeName === '' && r.body.kind === 'image' && r.body.places.length === 0,
+  JSON.stringify({ status: r.status, storeName: r.body.storeName, kind: r.body.kind })
+);
+
+calls = [];
+handler = () => errRes(500);
+r = await callGemini({ imageBase64: IMAGE_B64, mimeType: 'image/jpeg' });
+check(
+  'gemini 사진: 업스트림 500 → 200 빈 결과 · 키 노출 없음',
+  r.status === 200 && r.body.storeName === '' && r.body.reason === 'gemini-upstream-500' && !leaksSecret(r.raw),
+  r.body.reason
+);
+
+// 파서 단위 — 사진이 없으면 기존 영상 모드 그대로
+check('gemini 사진 파서: 사진 없음 → present=false', geminiHandler.parseImageInput({ url: 'https://youtube.com/shorts/x' }).present === false);
+check('gemini 사진 파서: 빈 문자열 → present=false', geminiHandler.parseImageInput({ imageBase64: '   ' }).present === false);
+check('gemini 사진 파서: data URL mimeType', geminiHandler.parseImageInput({ imageBase64: 'data:image/webp;base64,' + 'A'.repeat(80) }).mimeType === 'image/webp');
 delete process.env.GEMINI_API_KEY;
 
 // ── 7. 4초 타임아웃 (응답이 영영 안 오는 업스트림) ──────────

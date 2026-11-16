@@ -36,6 +36,11 @@ import {
   // v2.0 — 여러 가게 한 번에 + 네이버 지도 링크 직행
   MAX_MULTI_CANDIDATES,
   extractCandidatesFromText,
+  // v2.13 — 📸 사진은 웹(프록시) 전용. 네이티브에서는 조용히 안내만 합니다.
+  extractFromImage,
+  fetchGeminiImageAnalysis,
+  scaledImageSize,
+  parseImageDataUri,
   parseListItem,
   looksLikeListLine,
   searchMultiPlaces,
@@ -2098,6 +2103,23 @@ check('v2.12 직접 검색: usedAdapter 에 naver', String(younghwaDirect.usedAd
 check('v2.12 직접 검색: 보강 내역 반환', younghwaDirect.naverBackfill && younghwaDirect.naverBackfill.matched === 1, JSON.stringify(younghwaDirect.naverBackfill));
 
 setKeys({});
+
+// ── v2.13 · 📸 사진 분석은 네이티브에서도 앱을 깨지 않습니다 (웹 프록시 전용) ──
+//   키(GEMINI_API_KEY)가 앱 번들에 없으므로 네이티브는 요청 자체를 보내지 않고 안내 문구만 돌려줍니다.
+const callsBeforePhoto = calls.length;
+const nativePhoto = await fetchGeminiImageAnalysis({ base64: 'A'.repeat(200), mimeType: 'image/jpeg' });
+check('v2.13 네이티브: 사진 분석은 web-only 안내', nativePhoto.ok === false && nativePhoto.reason === 'web-only', JSON.stringify(nativePhoto));
+check('v2.13 네이티브: 안내 문구는 사파리(웹)', String(nativePhoto.message).indexOf('웹') > 0, nativePhoto.message);
+const nativePhotoFlow = await extractFromImage({ base64: 'A'.repeat(200), mimeType: 'image/jpeg' });
+check('v2.13 네이티브: extractFromImage 도 안내만', nativePhotoFlow.ok === false && nativePhotoFlow.reason === 'web-only', JSON.stringify(nativePhotoFlow));
+check('v2.13 네이티브: 네트워크 요청 0건', calls.length === callsBeforePhoto, String(calls.length - callsBeforePhoto));
+check(
+  'v2.13 네이티브: 크기 계산·data URL 파싱은 공통 동작',
+  Math.max(scaledImageSize(2532, 1170).width, scaledImageSize(2532, 1170).height) === 1280 &&
+    Math.abs(scaledImageSize(2532, 1170).height - 591) <= 1 &&
+    (parseImageDataUri('data:image/jpeg;base64,AAEC') || {}).base64 === 'AAEC',
+  JSON.stringify(scaledImageSize(2532, 1170))
+);
 
 // ── 원복 ─────────────────────────────────────────────────────
 globalThis.fetch = realFetch;

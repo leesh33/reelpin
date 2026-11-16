@@ -158,7 +158,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 ```bash
 npx expo export --platform web && node scripts/patch-web-html.mjs   # = npm run export:web · 번들 빌드 + PWA 메타 주입 (에러 0건)
-npm test                           # 단위·통합 1282건 + 화면 렌더 스모크 283/283 = 1565건 통과 (추출기·딥링크 + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 가봤어요·메모·한도 + 헤더 색 통일 + v2.12 네이버 주소 보강) — 네트워크 안 타는 테스트
+npm test                           # 단위·통합 1357건 + 화면 렌더 스모크 311/311 = 1668건 통과 (추출기·딥링크 + 웹 프록시 + API 핸들러 + 위치·거리 + 클라우드 로그인·동기화 + 분류 + 검색·클러스터링 + 검색 이동 + 가봤어요·메모·한도 + 헤더 색 통일 + v2.12 네이버 주소 보강 + v2.13 사진 AI 추출·핀 시트 높이) — 네트워크 안 타는 테스트
 npm run test:extract               # 추출기 테스트만
 npm run test:proxy                 # 웹 프록시 경로만 (Platform.OS='web')
 npm run test:api                   # api/*.js 핸들러만 (fetch 스텁)
@@ -174,6 +174,51 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 
 > 소스가 ESM + `react-native` import 를 쓰므로 `test/run-tests.mjs` 가 esbuild 로
 > react-native 를 테스트 스텁(또는 react-native-web)으로 치환해 번들한 뒤 node 로 실행합니다.
+
+## v2.13에서 달라진 점 (2026-11-16) — 📸 인스타 캡처·사진으로 AI 가게 추출 (Gemini 무료) · ✕ 가 잘리던 핀 시트
+
+상훈 님 요청 두 가지를 한 번에 담았습니다.
+
+1. **"인스타 캡처·사진을 올리면 AI 가 사진 속 가게를 읽어서 핀으로 저장"** — 링크를 못 긁어오는 릴스도 사진 한 장이면 저장됩니다.
+2. 아이폰 사파리 실사용 캡처(`IMG_9058`) 제보 — **핀 상세 시트의 다크 헤더 `✕` 닫기 버튼이 화면(상태바) 위로 밀려나 눌리지 않던 문제**.
+
+### 1. 📸 사진 한 장 → 저장 후보 (전체 흐름)
+
+| 단계 | 하는 일 | 어디 |
+|---|---|---|
+| ① 사진 고르기 | `📸 캡처·사진으로 찾기` → 사진 보관함/파일 선택창 (iOS 는 사용자가 누른 그 순간에만 열립니다) | `PasteScreen.js` · `pickImageFile()` |
+| ② 줄이기 | `<canvas>` 로 **긴 변 1280px · JPEG 0.82** (아이폰 스크린샷 1170×2532·수 MB → 1280×591·300KB대) | `resizeImageForUpload()` |
+| ③ 읽기 | `POST /api/gemini { imageBase64, mimeType }` → Gemini `inlineData` 로 사진을 직접 봅니다 | `fetchGeminiImageAnalysis()` → `api/gemini.js` |
+| ④ 찾기 | 읽은 상호로 **카카오·네이버**(+v2.12 주소 보강) 조회. 가게가 2곳 이상이면 각각 조회 | `extractFromImage()` → `searchMultiPlaces()`/`searchPlaceProviders()` |
+| ⑤ 저장 | 링크로 찾은 것과 **같은 카드**: 올린 사진이 히어로 배경 · 분류 칩 · 한줄 메모 · [선택한 N곳 저장] | `PasteScreen.js` |
+
+- 진행 표시는 `사진 확인 → AI 사진 분석 → 지도 좌표 매칭` 이고, 버튼 자체가 **`AI 사진 분석 중…`** 으로 바뀝니다. 그동안 다른 버튼도 잠깁니다.
+- 결과 카드 근거 한 줄: **`AI 사진 분석으로 찾았어요 · “베통” (성수동)`**, 목록형 캡처는 **`사진에서 찾은 가게 N곳`**.
+- 사진으로 저장한 핀은 원본 링크가 없어 상세 시트에 **`사진에서 저장`** 으로 표시됩니다.
+- **키 노출 0건 원칙 그대로** — Gemini 키는 Vercel 환경변수에만 있고, 앱은 프록시(`/api/gemini`)만 부릅니다. 그래서 사진 분석은 **웹(배포 앱)에서만** 동작하고, 네이티브에서는 요청을 보내지 않고 안내 문구만 돌려줍니다(`reason:'web-only'`).
+
+### 2. 🔌 `api/gemini.js` — 사진 모드 추가
+
+| 항목 | 값 · 동작 |
+|---|---|
+| 입력 | `{ imageBase64, mimeType }` · `{ image, mimeType }` · `{ imageBase64: 'data:image/jpeg;base64,…' }` (접두사 자동 제거) |
+| 업스트림 | `contents[0].parts[0] = { inlineData: { mimeType, data } }` + 사진용 프롬프트 (`gemini-3.5-flash-lite` · `responseMimeType: application/json`) |
+| 크기 상한 | base64 **4,000,000자**(원본 약 3MB) — 넘으면 업스트림을 부르지 않고 **413 `image-too-large`** + 한국어 안내 (Vercel 요청 본문 4.5MB 안) |
+| 형식 | `image/jpeg`·`png`·`webp`·`heic`·`heif` 만 (그 밖은 **400 `unsupported-image-type`**), base64 형태가 아니면 **400 `invalid-image`** |
+| 결과 | 영상과 같은 모양 `{ storeName, area, menu, category, places }` + **`kind:'image'`** + `imageBytes` |
+| 목록형 캡처 | `places` **최대 6곳** (영상 모드는 기존대로 3곳) |
+| 실패 | 사진에서 가게를 못 읽거나 업스트림이 실패해도 **200 빈 결과** — 화면은 "사진에서 가게를 못 찾았어요. 가게 이름이 보이는 부분만 캡처해 다시 올려 주세요." 로 안내 |
+
+### 3. ✕ 가 화면 밖으로 밀리던 핀 상세 시트 (`PinDetailSheet.js`)
+
+- **원인**: v2.10 이후 `가봤어요`·`한줄 메모`·`분류`·지도 버튼이 더해지며 시트가 길어졌는데, `styles.sheet` 에 높이 상한이 없어 `bottom: 0` 기준으로 **위로 넘쳤습니다**. 아이폰 사파리에서는 그 윗부분이 상태바/주소창 밑으로 들어가 **다크 헤더의 `✕` 가 잘려 닫을 수 없었습니다.**
+- **수정**: `sheet` 에 **`maxHeight: '86%'` + `overflow: 'hidden'`**, 헤더(`headerBar` — 가게 이름 + `✕`)는 **시트 상단 고정**, 그 아래 본문만 `<ScrollView>`(style `bodyScroll` · `contentContainerStyle body`)로 스크롤. 본문 아래 여백도 스크롤 안쪽으로 옮겼습니다.
+- 390×844 에서 86% ≈ 726px, 375×640(주소창 뜬 상태와 비슷)에서는 ≈ 550px — 헤더 70px 안팎이 항상 화면 안에 남습니다.
+
+### 4. ✅ 검증
+
+- 테스트 **76건 추가**: 서버 사진 모드 23건(inlineData·data URL·413·400·우선순위·hint·places 6곳·`kind:image`·키 노출 0) · 클라이언트 47건(1280px 축소 계산·data URL 파싱·프록시 요청 모양·413/503 안내·단일/목록/수동 후보 흐름·사진=sourceThumbnail) · 네이티브 6건(웹 전용 안내·요청 0건) · 화면·소스 26건(사진 버튼·AI 사진 분석 문구·시트 maxHeight·헤더 고정·본문 스크롤). 기존 1565건 → **1668건**.
+- `npm test` — **ALL_TESTS_OK**(1668건 · 화면 렌더 스모크 311/311) · `npm run export:web` — 에러 0건.
 
 ## v2.12에서 달라진 점 (2026-11-16) — 🔗 카카오만 찾고 네이버가 빈 결과일 때, 주소로 네이버 교차 확인
 

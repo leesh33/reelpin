@@ -2,8 +2,9 @@
  * api/gemini.js — Vercel Serverless Function
  * ─────────────────────────────────────────────────────────────
  * POST /api/gemini
- *   body: { url: "https://youtube.com/shorts/…", title?: "…", description?: "…" }
- *   응답: { storeName, area, menu, category, places: [{ name, area, menu }] }
+ *   ① 영상 모드:  body { url: "https://youtube.com/shorts/…", title?, description? }
+ *   ② 사진 모드:  body { imageBase64: "…" | "data:image/jpeg;base64,…", mimeType?: "image/jpeg", hint? }
+ *   응답: { storeName, area, menu, category, places: [{ name, area, menu }], kind: 'video'|'image' }
  *
  * 왜 서버를 거치나
  *   · Gemini 키는 **서버 환경변수(`GEMINI_API_KEY`)에만** 둡니다.
@@ -20,6 +21,10 @@
  *   5. CORS 헤더를 열지 않아 우리 사이트에서만 호출됩니다.
  *   6. Gemini 영상 분석은 모델에 따라 오래 걸립니다 — 기본 `gemini-3.5-flash-lite` 는 실측 4초대,
  *      무거운 모델은 24~50초+. 타임아웃 55초 + `maxDuration` 60초 안에서만 기다립니다.
+ *   7. (v2.13) 사진 모드는 `inlineData { mimeType, data }` 로 보냅니다. Vercel 요청 본문 한도가
+ *      4.5MB 라, base64 가 4,000,000자(원본 약 3MB)를 넘으면 업스트림을 부르지 않고
+ *      **413 `image-too-large`** 로 안내합니다. (앱은 업로드 전에 1280px·JPEG 0.82 로 줄입니다)
+ *   8. (v2.13) 사진 모드에서도 가게를 못 읽으면 200 빈 결과 — 앱은 "사진에서 가게를 못 찾았어요"로 안내합니다.
  */
 const { fetchWithTimeout, sendJson, warn } = require('../server/http.js');
 
@@ -42,11 +47,17 @@ const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.
 const GEMINI_TIMEOUT_MS = 55000;
 /** 모델 폴백까지 포함한 전체 예산 — Vercel maxDuration 60초 안 */
 const TOTAL_BUDGET_MS = 57000;
-/** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
-const MAX_BODY_BYTES = 16 * 1024;
+/** 요청 본문 상한 — URL 모드(제목·설명글 몇 줄)에도 넉넉하고, 사진 모드 base64 도 담을 수 있게 4.4MB */
+const MAX_BODY_BYTES = 4.4 * 1024 * 1024;
+/** 사진 모드 base64 상한 — Vercel 요청 본문 4.5MB 안 (base64 4,000,000자 ≈ 원본 3MB) */
+const MAX_IMAGE_BASE64_CHARS = 4000000;
+/** Gemini 가 받는 사진 형식 (앱은 항상 jpeg 로 변환해 보냅니다) */
+const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
 const MAX_TITLE_CHARS = 200;
 const MAX_DESCRIPTION_CHARS = 1800;
 const MAX_PLACES = 3;
+/** 사진 모드는 목록형 캡처(여러 가게)를 담아야 해서 조금 더 뽑습니다. */
+const MAX_IMAGE_PLACES = 6;
 
 /** 실패·미확인 시 돌려주는 빈 결과 — 앱은 이 모양만 보고 폴백합니다. */
 function emptyResult(reason) {
@@ -179,6 +190,107 @@ function buildRequestBody({ videoUrl, title, description, thinking }) {
   };
 }
 
+/**
+ * 사진(인스타 캡처·스크린샷·매장 사진) 분석용 지시문 (v2.13)
+ *   영상 지시문과 달리 **화면 글자(캡션·위치 태그·해시태그)** 를 근거로 삼고,
+ *   앱 UI 글자(팔로우·좋아요·조회수)를 상호로 오인하지 않게 못 박습니다.
+ *   목록형 캡처는 places 로 여러 곳을 뽑습니다.
+ */
+const IMAGE_SYSTEM_INSTRUCTION = [
+  '너는 인스타그램 릴스·피드 캡처, 스크린샷, 매장 사진에서 "실제로 나온 가게"를 찾아내는 도우미다.',
+  '사진에 적힌 글자(상호·간판·메뉴판·캡션·위치 태그·해시태그)를 읽어 판단한다.',
+  '규칙:',
+  '1) 사진에 실제로 적힌 이름만 적는다. 추측·창작·일반화 금지. 확실하지 않으면 빈 문자열.',
+  '2) storeName: 사진에서 확인되는 가게 상호. "맛집", "릴스", "카페" 같은 일반 명사와 앱 UI 글자(팔로우·좋아요·댓글·조회수·더보기)는 쓰지 않는다.',
+  '3) area: 동네·지역 단위 (예: 성수동, 연남동, 제주 연동). 모르면 "".',
+  '4) menu: 사진에 나온 대표 메뉴 1~3개를 쉼표로 구분한 한 줄.',
+  '5) category: 맛집|카페|디저트|베이커리|가볼곳|기타 중 하나.',
+  '6) places: 사진에 서로 다른 가게가 여러 곳(목록형 캡처)이면 최대 6곳까지 [{name, area, menu}].',
+  '7) 가게를 하나도 특정할 수 없으면 storeName 을 "" 로, places 를 [] 로 둔다.',
+].join('\n');
+
+/** 사진 모드 요청 본문 — inlineData(사진) + 프롬프트 */
+function buildImageRequestBody({ mimeType, data, hint, thinking }) {
+  const ask =
+    '이 사진(인스타 캡처·스크린샷)을 보고, 사진에 적힌 가게 정보를 아래 키만 가진 JSON 하나로 답해줘(설명·코드블록 없이).\n' +
+    '{"storeName":"가게 상호","area":"동네","menu":"대표 메뉴 1~3개(쉼표)","category":"맛집|카페|디저트|베이커리|가볼곳|기타","places":[{"name":"","area":"","menu":""}]}\n' +
+    '사진 속 캡션·간판·메뉴판·위치 태그에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.' +
+    (hint ? '\n\n[참고 — 사용자가 함께 적은 메모]\n' + hint : '');
+  const generationConfig = {
+    temperature: 0.2,
+    maxOutputTokens: 4096,
+    responseMimeType: 'application/json',
+  };
+  if (thinking === 'level') generationConfig.thinkingConfig = { thinkingLevel: 'LOW' };
+  else if (thinking === 'budget') generationConfig.thinkingConfig = { thinkingBudget: 0 };
+  return {
+    systemInstruction: { parts: [{ text: IMAGE_SYSTEM_INSTRUCTION }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [{ inlineData: { mimeType, data } }, { text: ask }],
+      },
+    ],
+    generationConfig,
+  };
+}
+
+/**
+ * 요청 본문 → 사진 입력. (v2.13)
+ *   · `{ imageBase64, mimeType }` · `{ image, mimeType }` · `{ imageBase64: 'data:image/jpeg;base64,…' }` 모두 허용
+ *   · 사진이 없으면 `{ present: false }` — 호출부는 기존 영상 모드로 이어집니다.
+ *   · 너무 큰 사진은 업스트림을 부르지 않고 413 으로 안내합니다. (Vercel 4.5MB 한도)
+ * @returns {{present:boolean, mimeType?:string, data?:string, bytes?:number,
+ *            status?:number, error?:string, message?:string}}
+ */
+function parseImageInput(body) {
+  const raw =
+    body == null
+      ? null
+      : body.imageBase64 != null
+      ? body.imageBase64
+      : body.image != null
+      ? body.image
+      : body.dataUrl;
+  if (raw == null || typeof raw !== 'string' || !raw.trim()) return { present: false };
+
+  let text = String(raw).trim();
+  let mimeType = cleanText(body && body.mimeType, 40).toLowerCase();
+  const dataUri = /^data:([A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+)?(?:;[^,]*)*;base64,/i.exec(text);
+  if (dataUri) {
+    if (!mimeType && dataUri[1]) mimeType = dataUri[1].toLowerCase();
+    text = text.slice(dataUri[0].length);
+  }
+  text = text.replace(/\s+/g, '');
+  if (!mimeType) mimeType = 'image/jpeg';
+  if (IMAGE_MIME_TYPES.indexOf(mimeType) < 0) {
+    return {
+      present: true,
+      status: 400,
+      error: 'unsupported-image-type',
+      message: 'JPG · PNG · WEBP 사진만 분석할 수 있어요. 다시 골라 주세요.',
+    };
+  }
+  if (!/^[A-Za-z0-9+/=]+$/.test(text) || text.length < 64) {
+    return {
+      present: true,
+      status: 400,
+      error: 'invalid-image',
+      message: '사진 데이터를 읽지 못했어요. 다시 골라 주세요.',
+    };
+  }
+  if (text.length > MAX_IMAGE_BASE64_CHARS) {
+    return {
+      present: true,
+      status: 413,
+      error: 'image-too-large',
+      message: '사진이 너무 커요(약 3MB 이하). 다시 고르거나 조금 작게 캡처해 주세요.',
+    };
+  }
+  const bytes = Math.floor((text.length * 3) / 4) - (text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0);
+  return { present: true, mimeType, data: text, bytes };
+}
+
 /** 응답 → 후보 텍스트(여러 파트 합치기) */
 function responseTextOf(json) {
   const candidates = (json && json.candidates) || [];
@@ -212,8 +324,9 @@ function parseJsonLoose(text) {
 const CATEGORY_WHITELIST = ['맛집', '카페', '디저트', '베이커리', '가볼곳'];
 
 /** 모델 응답(모양이 흔들릴 수 있음) → 고정된 응답 모양으로 다듬습니다. */
-function coerceAnalysis(obj) {
+function coerceAnalysis(obj, options = {}) {
   if (!obj || typeof obj !== 'object') return emptyResult('gemini-unparsed');
+  const maxPlaces = Math.max(1, Number(options.maxPlaces) || MAX_PLACES);
   const pick = (...keys) => {
     for (const key of keys) {
       const value = obj[key];
@@ -224,7 +337,7 @@ function coerceAnalysis(obj) {
   const places = [];
   const rawPlaces = Array.isArray(obj.places) ? obj.places : [];
   for (const item of rawPlaces) {
-    if (places.length >= MAX_PLACES) break;
+    if (places.length >= maxPlaces) break;
     const name = cleanText(item && (item.name || item.storeName || item.store_name), 60);
     if (!name) continue;
     places.push({
@@ -298,31 +411,13 @@ function modelCandidates() {
   return list;
 }
 
-module.exports = async function handler(req, res) {
-  if (String((req && req.method) || '').toUpperCase() !== 'POST') {
-    return sendJson(res, 405, { error: 'method-not-allowed' });
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY || '';
-  if (!apiKey) return sendJson(res, 503, { error: 'gemini-not-configured' });
-
-  const startedAt = Date.now();
-  const body = await readBody(req);
-  if (!body || typeof body !== 'object' || Array.isArray(body)) {
-    return sendJson(res, 400, { error: 'invalid-body' });
-  }
-
-  const rawUrl = String(body.url == null ? '' : body.url).slice(0, 500).trim();
-  if (!rawUrl) return sendJson(res, 400, { error: 'missing-url' });
-
-  // 유튜브가 아니면(인스타·틱톡 등) 조용히 빈 결과 — Gemini 키를 쓰지 않습니다.
-  const videoUrl = normalizeYouTubeUrl(rawUrl);
-  if (!videoUrl) return sendJson(res, 200, emptyResult('not-youtube'));
-
-  const title = cleanText(body.title, MAX_TITLE_CHARS);
-  const description = cleanText(body.description, MAX_DESCRIPTION_CHARS);
-
-  // 모델이 폐기·미제공(404/400)이면 다음 모델로 내려갑니다. 그 밖의 실패(429·5xx)는 바로 끝냅니다.
+/**
+ * 모델(404/400 폴백) × 생각 옵션(400 재시도) 을 바꿔 가며 Gemini 를 부릅니다. — 영상·사진 공통 (v2.13)
+ *   · 요청 본문은 `buildBody(thinking)` 이 매번 새로 만듭니다. (사진 inlineData·영상 fileData)
+ *   · 바깥 코드가 응답 모양을 다듬을 수 있게 시도 결과와 마지막 모델·옵션을 그대로 돌려줍니다.
+ * @returns {Promise<{attempt:object, usedModel:string, usedThinking:string}>}
+ */
+async function runModelLoop({ apiKey, buildBody }) {
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   const models = modelCandidates();
   let attempt = { ok: false, status: 0, json: null };
@@ -342,7 +437,7 @@ module.exports = async function handler(req, res) {
           apiKey,
           model,
           timeoutMs: Math.min(GEMINI_TIMEOUT_MS, remain),
-          body: buildRequestBody({ videoUrl, title, description, thinking }),
+          body: buildBody(thinking),
         });
         if (attempt.ok) break;
         const retryable = attempt.status === 503 || attempt.status === 502;
@@ -358,12 +453,58 @@ module.exports = async function handler(req, res) {
     }
     if (attempt.status !== 404) break;
   }
+  return { attempt, usedModel, usedThinking };
+}
+
+module.exports = async function handler(req, res) {
+  if (String((req && req.method) || '').toUpperCase() !== 'POST') {
+    return sendJson(res, 405, { error: 'method-not-allowed' });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY || '';
+  if (!apiKey) return sendJson(res, 503, { error: 'gemini-not-configured' });
+
+  const startedAt = Date.now();
+  const body = await readBody(req);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return sendJson(res, 400, { error: 'invalid-body' });
+  }
+
+  // ── v2.13 · 사진 모드 — 인스타 캡처·스크린샷을 inlineData 로 보냅니다 ──
+  //   너무 큰 사진은 업스트림을 부르지 않고 413 으로 안내합니다. (Vercel 요청 본문 4.5MB)
+  const image = parseImageInput(body);
+  if (image.present && image.error) {
+    warn('gemini: image rejected ' + image.error);
+    return sendJson(res, image.status, { error: image.error, message: image.message });
+  }
+  const isImage = Boolean(image.present);
+
+  const rawUrl = String(body.url == null ? '' : body.url).slice(0, 500).trim();
+  if (!isImage && !rawUrl) return sendJson(res, 400, { error: 'missing-url' });
+
+  // 사진 모드가 아니면 지금처럼 유튜브만 통과 — 인스타·틱톡은 조용히 빈 결과(키를 쓰지 않음)
+  let videoUrl = '';
+  if (!isImage) {
+    videoUrl = normalizeYouTubeUrl(rawUrl);
+    if (!videoUrl) return sendJson(res, 200, emptyResult('not-youtube'));
+  }
+
+  const title = cleanText(body.title, MAX_TITLE_CHARS);
+  const description = cleanText(body.description, MAX_DESCRIPTION_CHARS);
+  const hint = cleanText(body.hint || body.caption, MAX_TITLE_CHARS);
+
+  const buildBody = isImage
+    ? (thinking) => buildImageRequestBody({ mimeType: image.mimeType, data: image.data, hint, thinking })
+    : (thinking) => buildRequestBody({ videoUrl, title, description, thinking });
+
+  const { attempt, usedModel, usedThinking } = await runModelLoop({ apiKey, buildBody });
 
   if (!attempt.ok) {
     // 업스트림 본문·키는 절대 돌려주지 않습니다. (상태 코드만 로그)
     warn('gemini: upstream failed status=' + attempt.status + ' model=' + usedModel);
     return sendJson(res, 200, {
       ...emptyResult(attempt.status ? 'gemini-upstream-' + attempt.status : 'gemini-timeout'),
+      kind: isImage ? 'image' : 'video',
       model: usedModel,
       thinking: usedThinking,
       elapsedMs: Date.now() - startedAt,
@@ -375,16 +516,19 @@ module.exports = async function handler(req, res) {
   const parsed = parseJsonLoose(text);
   if (!parsed) {
     warn('gemini: unparsed response (finishReason=' + finishReasonOf(attempt.json) + ')');
-    return sendJson(res, 200, emptyResult('gemini-unparsed'));
+    return sendJson(res, 200, { ...emptyResult('gemini-unparsed'), kind: isImage ? 'image' : 'video' });
   }
 
-  const analysis = coerceAnalysis(parsed);
+  // 사진은 목록형 캡처(여러 가게)를 담아야 해서 places 상한이 조금 더 큽니다.
+  const analysis = coerceAnalysis(parsed, isImage ? { maxPlaces: MAX_IMAGE_PLACES } : undefined);
   return sendJson(res, 200, {
     ...analysis,
+    kind: isImage ? 'image' : 'video',
     model: usedModel,
     thinking: usedThinking,
     source: 'gemini',
     elapsedMs: Date.now() - startedAt,
+    ...(isImage ? { imageBytes: image.bytes } : {}),
   });
 };
 
@@ -397,6 +541,13 @@ function finishReasonOf(json) {
 }
 
 module.exports.normalizeYouTubeUrl = normalizeYouTubeUrl;
+module.exports.parseImageInput = parseImageInput;
+module.exports.buildImageRequestBody = buildImageRequestBody;
+module.exports.IMAGE_SYSTEM_INSTRUCTION = IMAGE_SYSTEM_INSTRUCTION;
+module.exports.runModelLoop = runModelLoop;
+module.exports.MAX_IMAGE_BASE64_CHARS = MAX_IMAGE_BASE64_CHARS;
+module.exports.MAX_IMAGE_BODY_BYTES = MAX_BODY_BYTES;
+module.exports.MAX_IMAGE_PLACES = MAX_IMAGE_PLACES;
 module.exports.parseJsonLoose = parseJsonLoose;
 module.exports.coerceAnalysis = coerceAnalysis;
 module.exports.modelCandidates = modelCandidates;

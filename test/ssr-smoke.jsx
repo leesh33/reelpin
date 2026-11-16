@@ -196,6 +196,8 @@ const contentCases = [
   // v2.1.1 — 클립보드는 사용자가 버튼을 눌렀을 때만 (아이폰 사파리 붙여넣기 팝업 방지)
   ['PasteScreen: [클립보드에서 붙여넣기] 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['클립보드에서 붙여넣기']],
   ['PasteScreen: 링크 입력 + 붙여넣기 버튼 렌더', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['릴스 · 쇼츠 링크', '클립보드에서 붙여넣기']],
+  // v2.13 — 📸 캡처·사진으로 찾기 (웹 = react-native-web 렌더에서 버튼이 보입니다)
+  ['PasteScreen: 📸 캡처·사진으로 찾기 버튼', <PasteScreen pinCount={4} isPro={false} onSaved={noop} onSavedMany={noop} onClose={noop} onGoProfile={noop} onToast={noop} />, ['📸 캡처·사진으로 찾기', 'AI 가 사진 속 가게 이름을 읽어']],
   // v2.2 — 분류 직접 고르기 · 만들기 · 관리
   ['CategoryPicker: 기본 3개 + 내 분류 + [분류 추가]', <CategoryPicker value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} onAddCategory={noop} label="저장할 분류" hint="고른 분류로 저장해요" />, ['맛집', '카페', '가볼곳', '아이랑', '분류 추가', '저장할 분류', '고른 분류로 저장해요']],
   ['FilterChips: 커스텀 분류가 이어서 + 개수', <FilterChips value="아이랑" onChange={noop} categories={['맛집', '카페', '가볼곳', '아이랑']} counts={{ '전체': 6, '맛집': 3, '아이랑': 1 }} />, ['아이랑 1', '아이랑 필터']],
@@ -597,8 +599,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.12.0', pkg.version === '2.12.0', pkg.version],
-  ['버전: app.json 2.12.0', expoConfig.version === '2.12.0', expoConfig.version],
+  ['버전: package.json 2.13.0', pkg.version === '2.13.0', pkg.version],
+  ['버전: app.json 2.13.0', expoConfig.version === '2.13.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -902,6 +904,75 @@ for (const [label, ok, extra] of v211HeaderChecks) {
   }
 }
 
+// ── v2.13 📸 캡처·사진 AI 가게 추출 ──────────────────────────
+const pinDetailSource = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
+const extractorSource = fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8');
+const geminiSource = fs.readFileSync(path.join(process.cwd(), 'api', 'gemini.js'), 'utf8');
+const v213PhotoChecks = [
+  ['저장 화면: 사진 버튼은 웹에서만(canUsePhoto)', pasteSource.indexOf('const canUsePhoto = isWebPlatform()') > 0 && pasteSource.indexOf('{canUsePhoto ?') > 0],
+  ['저장 화면: 사진 버튼이 pickImageFile 을 부름', pasteSource.indexOf('pickImageFile()') > 0 && pasteSource.indexOf('extractFromImage(file') > 0],
+  ['저장 화면: 진행 중 AI 사진 분석 문구', pasteSource.indexOf('AI 사진 분석') > 0 && pasteSource.indexOf('중…') > 0],
+  ['저장 화면: 사진 읽는 동안 다른 버튼도 잠금', /disabled=\{extracting \|\| photoBusy\}/.test(pasteSource)],
+  ['저장 화면: 올린 사진을 히어로 카드 배경으로', /thumbnail: result\.sourceThumbnail/.test(pasteSource)],
+  ['저장 화면: 사진에서 찾은 가게 N곳', pasteSource.indexOf("'사진에서 찾은 가게 '") > 0],
+  ['저장 화면: 사진 핀은 platform=photo · 링크 없음', /photoMode/.test(pasteSource) && pasteSource.indexOf("? 'photo'") > 0],
+  ['저장 화면: 결과 후보·분류·메모·저장 버튼은 그대로', pasteSource.indexOf('CategoryPicker') > 0 && pasteSource.indexOf('paste-memo-input') > 0 && pasteSource.indexOf('paste-save-button') > 0],
+  ['상세 시트: 사진에서 저장 라벨', pinDetailSource.indexOf("photo: '사진에서 저장'") > 0],
+  ['추출기: 긴 변 1280 · JPEG 0.82', /IMAGE_MAX_EDGE = 1280/.test(extractorSource) && /IMAGE_JPEG_QUALITY = 0\.82/.test(extractorSource)],
+  ['추출기: canvas 로 줄여 JPEG 로 인코딩', extractorSource.indexOf("toDataURL('image/jpeg', quality)") > 0],
+  ['추출기: 아이폰 스크린샷도 줄인다(주석 근거)', extractorSource.indexOf('아이폰 스크린샷') > 0 && extractorSource.indexOf('1280px') > 0],
+  ['추출기: 이미지 분석은 웹에서만(키는 서버)', /reason: 'web-only'/.test(extractorSource) && extractorSource.indexOf("source: 'gemini'") > 0],
+  ['추출기: resizeImageForUpload 는 canvas·Image 없으면 안내', /reason: 'resize-unavailable'/.test(extractorSource)],
+  ['추출기: 4MB 넘는 사진은 서버에 보내지 않음', /IMAGE_MAX_BASE64_CHARS/.test(extractorSource) && /reason: 'image-too-large'/.test(extractorSource)],
+  ['추출기: 사진도 지도 파이프라인 + 네이버 주소 보강', /export async function extractFromImage/.test(extractorSource) && /searchMultiPlaces\(placeItems/.test(extractorSource) && extractorSource.indexOf('naverBackfill') > 0],
+  ['추출기: 업로드 사진이 sourceThumbnail', /sourceThumbnail: thumbnail/.test(extractorSource)],
+  ['서버: inlineData 로 사진 전송', geminiSource.indexOf('inlineData: { mimeType, data }') > 0],
+  ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
+  ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
+  ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
+];
+for (const [label, ok, extra] of v213PhotoChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.13 · 핀 상세 시트 높이 상한 (아이폰 사파리에서 ✕ 가 화면 밖으로 밀리던 문제) ──
+const v213SheetChecks = [
+  [
+    '핀 시트: 이제 ScrollView 를 씁니다',
+    /import \{[^}]*ScrollView[^}]*\} from 'react-native'/.test(pinDetailSource),
+  ],
+  [
+    '핀 시트: 높이 상한 86% + overflow hidden',
+    /sheet: \{[\s\S]{0,260}?maxHeight: '86%'/.test(pinDetailSource) && /sheet: \{[\s\S]{0,320}?overflow: 'hidden'/.test(pinDetailSource),
+  ],
+  [
+    '핀 시트: 헤더(가게 이름·✕)는 스크롤 밖 상단 고정',
+    pinDetailSource.indexOf('<View style={styles.headerBar}>') > 0 &&
+      pinDetailSource.indexOf('<View style={styles.headerBar}>') < pinDetailSource.indexOf('<ScrollView'),
+  ],
+  [
+    '핀 시트: 본문만 스크롤(style=bodyScroll · contentContainerStyle=body)',
+    pinDetailSource.indexOf('contentContainerStyle={styles.body}') > 0 &&
+      /bodyScroll: \{[\s\S]{0,80}?flexShrink: 1/.test(pinDetailSource),
+  ],
+  [
+    '핀 시트: 본문 아래 여백은 스크롤 안쪽으로',
+    /body: \{[\s\S]{0,120}?paddingBottom: 16/.test(pinDetailSource) && !/sheet: \{[\s\S]{0,300}?paddingBottom: 16/.test(pinDetailSource),
+  ],
+  ['핀 시트: ✕ 닫기 버튼은 그대로', pinDetailSource.indexOf('accessibilityLabel="상세 닫기"') > 0],
+];
+for (const [label, ok, extra] of v213SheetChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -923,6 +994,8 @@ const total =
   brandChecks.length +
   v210Checks.length +
   v211HeaderChecks.length +
+  v213PhotoChecks.length +
+  v213SheetChecks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

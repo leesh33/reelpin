@@ -681,6 +681,609 @@ function menuTagsOfGemini(analysis) {
     .slice(0, 3);
 }
 
+// ─────────────────────────────────────────────────────────────
+// v2.13 · 📸 인스타 캡처·사진 → AI 가게 추출 (Gemini 이미지 분석)
+//   · 아이폰 스크린샷은 수 MB 라 그대로 올리면 Vercel 4.5MB 한도에 걸립니다.
+//     → 웹에서 <canvas> 로 **긴 변 1280px · JPEG 0.82** 로 줄인 뒤 `/api/gemini` 로 보냅니다.
+//   · Gemini 키는 서버에만 있으므로 **웹(프록시)에서만** 동작합니다. 네이티브는 조용히 안내만 합니다.
+//   · 결과는 기존 파이프라인(`searchPlacesDirect`/`searchMultiPlaces` + v2.12 네이버 주소 보강)을
+//     그대로 타서, 링크로 찾은 가게와 **같은 후보·같은 배지**가 됩니다.
+// ─────────────────────────────────────────────────────────────
+/** 사진 긴 변 상한(px) — 인스타 캡처 글자가 읽히면서 300KB 안쪽으로 들어오는 값 */
+export const IMAGE_MAX_EDGE = 1280;
+/** canvas JPEG 품질 — 글자 경계가 뭉개지지 않는 선 */
+export const IMAGE_JPEG_QUALITY = 0.82;
+/** 서버(api/gemini.js)와 같은 상한 — 넘으면 서버가 413 으로 안내합니다. */
+export const IMAGE_MAX_BASE64_CHARS = 4000000;
+/** 사진 분석 응답 대기 (lite 모델 실측 2~4초 · 느릴 때 여유) */
+export const IMAGE_ANALYSIS_TIMEOUT_MS = 30000;
+/** 화면에 보여 줄 입력 이름 */
+export const IMAGE_PLATFORM_LABEL = '사진';
+/** Gemini 가 받는 사진 형식 */
+export const IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+
+/**
+ * 긴 변을 `maxEdge` 로 줄인 크기 (비율 유지 · **원본이 작으면 늘리지 않음**)
+ * @returns {{width:number, height:number}}
+ */
+export function scaledImageSize(width, height, maxEdge = IMAGE_MAX_EDGE) {
+  const w = Math.max(0, Math.round(Number(width) || 0));
+  const h = Math.max(0, Math.round(Number(height) || 0));
+  const edge = Math.max(64, Math.round(Number(maxEdge) || IMAGE_MAX_EDGE));
+  if (!w || !h) return { width: 0, height: 0 };
+  const longest = Math.max(w, h);
+  if (longest <= edge) return { width: w, height: h };
+  const ratio = edge / longest;
+  return { width: Math.max(1, Math.round(w * ratio)), height: Math.max(1, Math.round(h * ratio)) };
+}
+
+/**
+ * `data:image/jpeg;base64,…` → `{ mimeType, base64 }` (아니면 null)
+ * @returns {{mimeType:string, base64:string}|null}
+ */
+export function parseImageDataUri(raw) {
+  const text = String(raw == null ? '' : raw).trim();
+  if (!text) return null;
+  const m = /^data:([A-Za-z0-9.+-]+\/[A-Za-z0-9.+-]+)?(?:;[^,]*)*;base64,([\s\S]*)$/i.exec(text);
+  if (!m) return null;
+  const base64 = String(m[2] || '').replace(/\s+/g, '');
+  if (!base64) return null;
+  const mimeType = String(m[1] || 'image/jpeg').toLowerCase();
+  return { mimeType, base64 };
+}
+
+/** base64 + mimeType → `data:` URL (미리보기·sourceThumbnail 공용) */
+export function imageDataUrlOf(base64, mimeType = 'image/jpeg') {
+  const data = String(base64 == null ? '' : base64).replace(/\s+/g, '');
+  if (!data) return '';
+  return 'data:' + (mimeType || 'image/jpeg') + ';base64,' + data;
+}
+
+/** base64 문자열의 원본 바이트 수(대략) */
+function base64Bytes(base64) {
+  const text = String(base64 == null ? '' : base64);
+  if (!text) return 0;
+  const padding = text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((text.length * 3) / 4) - padding);
+}
+
+/** File/Blob 처럼 생겼는지 (웹·네이티브 공통 판별) */
+function isBlobLike(value) {
+  return Boolean(
+    value && typeof value === 'object' && typeof value.type === 'string' && typeof value.size === 'number'
+  );
+}
+
+/** 이미지 원소 로딩 (objectURL) */
+function loadImageElement(src) {
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = src;
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
+/** File/Blob → dataURL (canvas 를 못 쓸 때의 마지막 수단) */
+function readFileAsDataUrl(file) {
+  return new Promise((resolve) => {
+    try {
+      if (typeof FileReader === 'undefined') return resolve('');
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    } catch (e) {
+      resolve('');
+    }
+  });
+}
+
+/**
+ * 업로드 사진을 **긴 변 1280px · JPEG 0.82** 로 줄입니다. (브라우저 canvas)
+ *   · 아이폰 스크린샷(1170×2532 · 수 MB) → 1280×… · 200~400KB
+ *   · canvas·Image 가 없는 환경(네이티브·SSR)에서는 `{ ok:false, reason:'resize-unavailable' }`
+ * @param {File|Blob} file
+ * @param {{maxEdge?:number, quality?:number}} [options]
+ * @returns {Promise<{ok:boolean, base64?:string, mimeType?:string, dataUrl?:string,
+ *                    width?:number, height?:number, bytes?:number, resized?:boolean,
+ *                    originalWidth?:number, originalHeight?:number, reason?:string}>}
+ */
+export async function resizeImageForUpload(file, options = {}) {
+  const maxEdge = Number(options.maxEdge) || IMAGE_MAX_EDGE;
+  const quality = options.quality == null ? IMAGE_JPEG_QUALITY : Number(options.quality);
+  const hasDom =
+    typeof document !== 'undefined' &&
+    typeof document.createElement === 'function' &&
+    typeof Image !== 'undefined' &&
+    typeof URL !== 'undefined' &&
+    typeof URL.createObjectURL === 'function';
+  if (!hasDom) return { ok: false, reason: 'resize-unavailable' };
+
+  let objectUrl = '';
+  try {
+    objectUrl = URL.createObjectURL(file);
+  } catch (e) {
+    return { ok: false, reason: 'resize-unavailable' };
+  }
+  try {
+    const img = await loadImageElement(objectUrl);
+    const originalWidth = Number((img && (img.naturalWidth || img.width)) || 0);
+    const originalHeight = Number((img && (img.naturalHeight || img.height)) || 0);
+    if (!img || !originalWidth || !originalHeight) return { ok: false, reason: 'decode-failed' };
+    const size = scaledImageSize(originalWidth, originalHeight, maxEdge);
+    const canvas = document.createElement('canvas');
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const ctx = canvas.getContext && canvas.getContext('2d');
+    if (!ctx) return { ok: false, reason: 'no-canvas' };
+    ctx.fillStyle = '#FFFFFF'; // 투명 PNG 캡처도 JPEG 에서 검게 나오지 않게
+    ctx.fillRect(0, 0, size.width, size.height);
+    ctx.drawImage(img, 0, 0, size.width, size.height);
+    const dataUrl = String(canvas.toDataURL('image/jpeg', quality) || '');
+    const parsed = parseImageDataUri(dataUrl);
+    if (!parsed) return { ok: false, reason: 'encode-failed' };
+    return {
+      ok: true,
+      base64: parsed.base64,
+      mimeType: 'image/jpeg',
+      dataUrl: dataUrl,
+      width: size.width,
+      height: size.height,
+      bytes: base64Bytes(parsed.base64),
+      resized: size.width !== originalWidth || size.height !== originalHeight,
+      originalWidth,
+      originalHeight,
+    };
+  } catch (e) {
+    return { ok: false, reason: 'resize-failed' };
+  } finally {
+    try {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      /* 해제 실패는 무시 */
+    }
+  }
+}
+
+/**
+ * 📸 사진 보관함/파일 선택창을 엽니다. (웹 전용 — 아이폰 사파리에서는 사진 보관함이 바로 뜹니다)
+ *   · 사용자가 **버튼을 누른 그 순간** 불러야 iOS 가 허용합니다. (자동 호출 금지)
+ *   · 취소하면 `null`. 네이티브·SSR 에서는 `null` — 화면은 조용히 아무 일도 하지 않습니다.
+ * @param {{accept?:string}} [options]
+ * @returns {Promise<File|null>}
+ */
+export function pickImageFile(options = {}) {
+  if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    let input = null;
+    let settled = false;
+    const finish = (file) => {
+      if (settled) return;
+      settled = true;
+      try {
+        if (input && input.parentNode) input.parentNode.removeChild(input);
+      } catch (e) {
+        /* 정리 실패는 무시 */
+      }
+      resolve(file || null);
+    };
+    try {
+      input = document.createElement('input');
+      input.type = 'file';
+      input.accept = String(options.accept || 'image/*');
+      input.setAttribute('data-reelpin', 'photo-input');
+      input.style.position = 'fixed';
+      input.style.left = '-9999px';
+      input.style.top = '0';
+      input.style.opacity = '0';
+      input.addEventListener('change', () => {
+        const files = input && input.files;
+        finish(files && files[0] ? files[0] : null);
+      });
+      // iOS 16.4+ · Chrome 은 취소도 알려 줍니다. (없는 브라우저는 change 만 기다림)
+      input.addEventListener('cancel', () => finish(null));
+      if (typeof document.body !== 'undefined' && document.body && document.body.appendChild) {
+        document.body.appendChild(input);
+      }
+      input.click();
+    } catch (e) {
+      finish(null);
+    }
+  });
+}
+
+/** 업로드 사진을 분석 가능한 `{ base64, mimeType, dataUrl }` 로 준비합니다. */
+async function prepareImageInput(input, options = {}) {
+  const tooLarge = {
+    ok: false,
+    reason: 'image-too-large',
+    message: '사진이 너무 커요. 다시 고르거나 조금 작게 캡처해 주세요.',
+  };
+  const noImage = {
+    ok: false,
+    reason: 'no-image',
+    message: '사진을 읽지 못했어요. 다시 골라 주세요.',
+  };
+  const wrap = (base64, mimeType, extra = {}) => {
+    const data = String(base64 || '').replace(/\s+/g, '');
+    if (!data) return noImage;
+    if (data.length > IMAGE_MAX_BASE64_CHARS) return tooLarge;
+    const type = IMAGE_MIME_TYPES.indexOf(String(mimeType || '').toLowerCase()) >= 0 ? mimeType : 'image/jpeg';
+    return { ok: true, base64: data, mimeType: type, dataUrl: imageDataUrlOf(data, type), bytes: base64Bytes(data), ...extra };
+  };
+
+  // ① 이미 dataURL / base64 로 준 경우 (테스트·재사용)
+  if (typeof input === 'string') {
+    const parsed = parseImageDataUri(input);
+    if (parsed) return wrap(parsed.base64, parsed.mimeType);
+    return wrap(input, 'image/jpeg');
+  }
+  if (input && typeof input === 'object' && !isBlobLike(input)) {
+    if (input.dataUrl) {
+      const parsed = parseImageDataUri(input.dataUrl);
+      if (parsed) return wrap(parsed.base64, input.mimeType || parsed.mimeType, { width: input.width, height: input.height });
+    }
+    if (input.base64) {
+      return wrap(input.base64, input.mimeType || 'image/jpeg', { width: input.width, height: input.height });
+    }
+    return noImage;
+  }
+
+  // ② 브라우저가 준 File/Blob → 1280px · JPEG 0.82
+  if (isBlobLike(input)) {
+    // 아주 큰 원본은 canvas 가 실패했을 때를 대비해 미리 걸러 둡니다(30MB 넘는 사진).
+    if (Number(input.size) > 30 * 1024 * 1024) return tooLarge;
+    const resized = await resizeImageForUpload(input, {
+      maxEdge: options.maxEdge,
+      quality: options.quality,
+    });
+    if (resized.ok) return resized;
+    const dataUrl = await readFileAsDataUrl(input);
+    const parsed = parseImageDataUri(dataUrl);
+    if (parsed) return wrap(parsed.base64, parsed.mimeType || input.type || 'image/jpeg');
+    return {
+      ok: false,
+      reason: resized.reason || 'decode-failed',
+      message: '이 사진은 열지 못했어요. 다른 사진으로 다시 시도해 주세요.',
+    };
+  }
+  return noImage;
+}
+
+/**
+ * `/api/gemini` 로 사진을 보내 가게 정보를 받아 옵니다. (v2.13)
+ *   · 성공: `{ ok:true, analysis:{ storeName, area, menu, category, places }, elapsedMs, model }`
+ *   · 실패: `{ ok:false, reason, message }` — 화면은 `message` 를 그대로 보여 줍니다.
+ * @param {{base64:string, mimeType?:string}|string} image base64, data URL, 또는 `{ base64, mimeType }`
+ * @param {{hint?:string, timeoutMs?:number}} [options]
+ */
+export async function fetchGeminiImageAnalysis(image, options = {}) {
+  if (!isWebPlatform()) {
+    return {
+      ok: false,
+      reason: 'web-only',
+      message: '사진 분석은 배포된 웹 앱(아이폰 사파리)에서만 쓸 수 있어요.',
+    };
+  }
+  const fromString = typeof image === 'string' ? parseImageDataUri(image) : null;
+  const base64 = String(
+    (fromString && fromString.base64) ||
+      (image && image.base64) ||
+      (typeof image === 'string' ? image : '')
+  )
+    .replace(/\s+/g, '');
+  const mimeType = String(
+    (fromString && fromString.mimeType) || (image && image.mimeType) || 'image/jpeg'
+  ).toLowerCase();
+  if (!base64) return { ok: false, reason: 'no-image', message: '사진을 읽지 못했어요. 다시 골라 주세요.' };
+  if (base64.length > IMAGE_MAX_BASE64_CHARS) {
+    return {
+      ok: false,
+      reason: 'image-too-large',
+      message: '사진이 너무 커요. 다시 고르거나 조금 작게 캡처해 주세요.',
+    };
+  }
+  const hint = String(options.hint || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+  const timeoutMs =
+    options.timeoutMs == null
+      ? IMAGE_ANALYSIS_TIMEOUT_MS
+      : Number(options.timeoutMs) || IMAGE_ANALYSIS_TIMEOUT_MS;
+  const res = await fetchWithTimeout(
+    API_PROXY.gemini,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mimeType, ...(hint ? { hint } : {}) }),
+    },
+    timeoutMs
+  );
+  if (!res) {
+    return {
+      ok: false,
+      reason: 'network',
+      message: '사진 분석 서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.',
+    };
+  }
+  let json = null;
+  try {
+    json = typeof res.json === 'function' ? await res.json() : null;
+  } catch (e) {
+    json = null;
+  }
+  if (!res.ok) {
+    const code = String((json && json.error) || '') || 'http-' + (Number(res.status) || 0);
+    const fallback =
+      code === 'image-too-large'
+        ? '사진이 너무 커요. 다시 고르거나 조금 작게 캡처해 주세요.'
+        : code === 'gemini-not-configured'
+        ? '사진 분석 기능이 아직 연결되지 않았어요. 잠시 후 다시 시도해 주세요.'
+        : '사진을 분석하지 못했어요. 잠시 후 다시 시도해 주세요.';
+    return {
+      ok: false,
+      reason: code,
+      status: Number(res.status) || 0,
+      message: String((json && json.message) || '').trim() || fallback,
+    };
+  }
+  if (!json || typeof json !== 'object') {
+    return { ok: false, reason: 'bad-response', message: '사진 분석 결과를 읽지 못했어요. 다시 시도해 주세요.' };
+  }
+  const storeName = String(json.storeName || '').trim().slice(0, 60);
+  const places = (Array.isArray(json.places) ? json.places : [])
+    .map((p) => ({
+      name: String((p && p.name) || '').trim().slice(0, 60),
+      area: String((p && p.area) || '').trim().slice(0, 30),
+      menu: String((p && p.menu) || '').trim().slice(0, 80),
+    }))
+    .filter((p) => p.name)
+    .slice(0, 6);
+  if (!storeName) {
+    return {
+      ok: false,
+      reason: String(json.reason || 'gemini-no-store') || 'gemini-no-store',
+      message: '사진에서 가게를 못 찾았어요. 가게 이름이나 위치 태그가 보이는 부분만 캡처해 다시 올려 주세요.',
+      elapsedMs: Number(json.elapsedMs) || 0,
+    };
+  }
+  return {
+    ok: true,
+    analysis: {
+      storeName,
+      area: String(json.area || '').trim().slice(0, 30),
+      menu: String(json.menu || '').trim().slice(0, 80),
+      category: String(json.category || '').trim(),
+      places,
+      source: 'gemini',
+      kind: 'image',
+    },
+    model: String(json.model || ''),
+    elapsedMs: Number(json.elapsedMs) || 0,
+  };
+}
+
+/** 화면 한 줄 근거 — "AI 사진 분석으로 찾았어요 · “가게명” (동네)" */
+export function imageNoteOf(analysis) {
+  const name = String((analysis && analysis.storeName) || '').trim();
+  if (!name) return '';
+  const area = String((analysis && analysis.area) || '').trim();
+  return 'AI 사진 분석으로 찾았어요 · “' + name + '”' + (area ? ' (' + area + ')' : '');
+}
+
+/** 사진 분석의 places → `searchMultiPlaces` 가 먹는 후보 모양 (지역+상호 → 상호 순서) */
+export function imagePlaceItems(analysis, max = 6) {
+  const places = Array.isArray(analysis && analysis.places) ? analysis.places : [];
+  const items = [];
+  places.forEach((place) => {
+    const name = String((place && place.name) || '').trim();
+    if (!name) return;
+    const area = String((place && place.area) || '').trim();
+    const queries = [];
+    const push = (q) => {
+      const v = String(q || '').replace(/\s+/g, ' ').trim();
+      if (v.length >= 2 && queries.indexOf(v) < 0) queries.push(v);
+    };
+    if (area) push(area + ' ' + name);
+    push(name);
+    if (!queries.length) return;
+    items.push({
+      index: items.length + 1,
+      label: (area ? area + ' ' : '') + name,
+      name,
+      area,
+      menu: String((place && place.menu) || '').trim(),
+      queries: queries.slice(0, 3),
+    });
+  });
+  return items.slice(0, Math.max(1, Number(max) || 6));
+}
+
+/**
+ * 📸 사진·캡처 한 장 → 저장 후보. (v2.13)
+ *   1) 사진을 1280px · JPEG 0.82 로 줄여 `/api/gemini` 에 보냅니다. (AI 가게 읽기)
+ *   2) 가게가 2곳 이상이면 각각을 지도에서 찾고(`searchMultiPlaces`), 한 곳이면 `searchPlaceProviders` 로
+ *      지역+상호 → 상호 순서로 조회합니다. (v2.12 네이버 주소 보강 포함)
+ *   3) 지도가 좌표를 못 채워도 **사진에서 읽은 상호**는 좌표 없는 수동 후보로 남깁니다.
+ *   4) 업로드 사진(data URL)을 `sourceThumbnail` 로 돌려줘 저장 화면 히어로 카드 배경이 됩니다.
+ *
+ * @param {File|Blob|string|{base64?:string, dataUrl?:string, mimeType?:string}} input
+ * @param {{hint?:string, maxEdge?:number, quality?:number, geminiTimeoutMs?:number,
+ *          providers?:string[], onStage?:(stage:number)=>void}} [options]
+ * @returns {Promise<object>} `extractPlaces` 와 같은 모양(+ `mode:'single'|'multi'`, `platform:'photo'`)
+ */
+export async function extractFromImage(input, options = {}) {
+  const prepared = await prepareImageInput(input, options);
+  if (!prepared.ok) return { ok: false, reason: prepared.reason, message: prepared.message };
+  const thumbnail = prepared.dataUrl;
+  const stage = (n) => {
+    if (typeof options.onStage === 'function') {
+      try {
+        options.onStage(n);
+      } catch (e) {
+        /* 화면 콜백 오류는 추출을 막지 않습니다 */
+      }
+    }
+  };
+
+  stage(1); // 'AI 사진 분석'
+  const analyzed = await fetchGeminiImageAnalysis(
+    { base64: prepared.base64, mimeType: prepared.mimeType },
+    { hint: options.hint, timeoutMs: options.geminiTimeoutMs }
+  );
+  if (!analyzed.ok) {
+    return {
+      ok: false,
+      reason: analyzed.reason,
+      message: analyzed.message,
+      status: analyzed.status || 0,
+      sourceThumbnail: thumbnail,
+    };
+  }
+  const analysis = analyzed.analysis;
+  stage(2); // '지도 좌표 매칭'
+
+  const baseInfo = {
+    ok: true,
+    mode: 'single',
+    kind: 'image',
+    platform: 'photo',
+    platformLabel: IMAGE_PLATFORM_LABEL,
+    sourceTitle: analysis.storeName,
+    sourceDescription: '',
+    sourceComments: '',
+    sourceThumbnail: thumbnail,
+    titleStatus: 'photo',
+    titleNotice: '',
+    suggestedQuery: geminiQueryList(analysis, 3)[0] || analysis.storeName,
+    aiNote: imageNoteOf(analysis),
+    aiAnalysis: analysis,
+  };
+
+  // ── 목록형 캡처(가게 2곳 이상) → 각 가게를 따로 지도 조회 ──
+  const placeItems = imagePlaceItems(analysis);
+  if (placeItems.length >= 2) {
+    const multi = await searchMultiPlaces(placeItems, { limit: 3, providers: options.providers });
+    if (multi.candidates.length) {
+      const candidates = multi.candidates.map((c) => {
+        const place = analysis.places[(Number(c.multiIndex) || 1) - 1] || null;
+        const menuTags = place ? menuTagsOfGemini(place) : menuTagsOfGemini(analysis);
+        return {
+          ...c,
+          // 지도사가 준 분류가 우선, 없을 때만 AI 분류
+          category: c.rawCategory ? c.category : analysis.category || c.category || '맛집',
+          menuTags: menuTags.length ? menuTags : c.menuTags || [],
+        };
+      });
+      return {
+        ...baseInfo,
+        mode: 'multi',
+        title: candidates[0].name,
+        candidates,
+        items: multi.items,
+        unmatched: multi.unmatched,
+        duplicates: multi.duplicates,
+        query: placeItems.map((i) => i.queries[0]).filter(Boolean).join(' / '),
+        queryList: placeItems.map((i) => i.queries[0]).filter(Boolean),
+        usedAdapter: ['gemini-photo', 'multi'].concat(multi.providersUsed || []).join('+'),
+        providersTried: multi.providersTried || [],
+        providersUsed: multi.providersUsed || [],
+        failures: multi.failures || [],
+      };
+    }
+  }
+
+  // ── 한 곳(또는 목록을 못 찾음) → 지역+상호 → 상호 순서로 조회 ──
+  const queryList = geminiQueryList(analysis, 3);
+  let chain = { candidates: [], providersTried: [], providersUsed: [], failures: [], reason: 'empty-query' };
+  const attempts = [];
+  let usedQuery = '';
+  let naverBackfill = { queries: [], matched: 0 };
+  for (const q of queryList) {
+    const res = await searchPlaceProviders({ query: q, limit: 3, providers: options.providers });
+    attempts.push({
+      query: q,
+      resultCount: (res.candidates || []).length,
+      providersUsed: res.providersUsed || [],
+      failures: res.failures || [],
+      naverBackfill: res.naverBackfill && res.naverBackfill.matched ? res.naverBackfill : undefined,
+      reason: res.reason,
+    });
+    if (res.naverBackfill && res.naverBackfill.matched) {
+      naverBackfill = {
+        queries: naverBackfill.queries.concat(res.naverBackfill.queries),
+        matched: naverBackfill.matched + res.naverBackfill.matched,
+      };
+    }
+    chain = {
+      candidates: res.candidates || [],
+      providersTried: Array.from(new Set([...(chain.providersTried || []), ...(res.providersTried || [])])),
+      providersUsed: Array.from(new Set([...(chain.providersUsed || []), ...(res.providersUsed || [])])),
+      failures: [...(chain.failures || []), ...(res.failures || [])],
+      reason: res.reason,
+    };
+    if (chain.candidates.length) {
+      usedQuery = q;
+      break;
+    }
+  }
+
+  const base = {
+    ...baseInfo,
+    query: usedQuery || queryList[0] || analysis.storeName,
+    queryList,
+    attempts,
+    naverBackfill,
+  };
+  const menuTags = menuTagsOfGemini(analysis);
+
+  if (chain.candidates.length) {
+    return {
+      ...base,
+      title: chain.candidates[0].name,
+      candidates: chain.candidates.map((c) => ({
+        ...c,
+        category: c.rawCategory ? c.category : analysis.category || c.category || '맛집',
+        menuTags: menuTags.length ? menuTags : c.menuTags || [],
+      })),
+      usedAdapter: ['gemini-photo'].concat(chain.providersUsed || []).join('+'),
+      providersTried: chain.providersTried,
+      providersUsed: chain.providersUsed,
+      failures: chain.failures,
+    };
+  }
+
+  // 지도에서 좌표를 못 채워도 사진에서 읽은 **실제 상호**는 버리지 않습니다.
+  return {
+    ...base,
+    title: analysis.storeName,
+    candidates: [
+      {
+        id: 'gemini-photo-1',
+        name: analysis.storeName,
+        area: analysis.area || '',
+        category: analysis.category || '맛집',
+        menuTags,
+        address: analysis.area ? analysis.area + ' 일대 (주소 확인 필요)' : '주소 확인 필요',
+        lat: null,
+        lng: null,
+        confidence: 0.62,
+        provider: 'gemini',
+        manual: true,
+      },
+    ],
+    usedAdapter: ['gemini-photo'].concat(chain.providersUsed || []).join('+'),
+    providersTried: chain.providersTried,
+    providersUsed: chain.providersUsed,
+    failures: chain.failures,
+  };
+}
+
 /**
  * 페이지의 OG 메타를 짧은 타임아웃으로 읽어 옵니다. (v1.2)
  * - 네이티브에서만 시도합니다. 웹은 CORS 로 막혀 있어 조용히 건너뜁니다.

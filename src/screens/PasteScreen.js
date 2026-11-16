@@ -14,9 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   DIRECT_PRESETS,
   PRESETS,
+  extractFromImage,
   extractPlaces,
   isSupportedUrl,
+  isWebPlatform,
   parseUrl,
+  pickImageFile,
   searchPlacesDirect,
   splitSharedText,
 } from '../services/extractor';
@@ -40,6 +43,8 @@ const TILE_BG = ['#FFF0EA', '#EDF6F2', '#F2F1FA', '#FFF7E6'];
 // v2.9 — 마지막 단계는 Gemini 영상 분석(음성·화면 자막). 실제로 그 단계로 갈 때만 문구가 바뀝니다.
 const LINK_STAGES = ['링크 확인', '캡션 분석', '좌표 매칭', 'AI 영상 분석'];
 const SEARCH_STAGES = ['지도 조회', '중복 정리', '후보 정렬'];
+// v2.13 — 📸 사진은 올린 뒤 'AI 사진 분석 중…' 이 곧바로 보입니다.
+const PHOTO_STAGES = ['사진 확인', 'AI 사진 분석', '지도 좌표 매칭'];
 
 export default function PasteScreen({
   pinCount,
@@ -66,10 +71,14 @@ export default function PasteScreen({
   const [categoryTouched, setCategoryTouched] = useState(false);
   // v2.10 — 📝 저장 전에 미리 적어 두는 한줄 메모 (선택)
   const [memo, setMemo] = useState('');
+  // v2.13 — 📸 사진을 읽고 있는 동안 (버튼 자체가 'AI 사진 분석 중…' 으로 바뀝니다)
+  const [photoBusy, setPhotoBusy] = useState(false);
   const scrollRef = useRef(null);
 
   const isSearch = mode === 'search';
-  const stageLabels = isSearch ? SEARCH_STAGES : LINK_STAGES;
+  const stageLabels = photoBusy ? PHOTO_STAGES : isSearch ? SEARCH_STAGES : LINK_STAGES;
+  // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
+  const canUsePhoto = isWebPlatform();
 
   /**
    * v2.1.1 — 클립보드는 **사용자가 [클립보드에서 붙여넣기] 를 눌렀을 때만** 읽습니다.
@@ -245,6 +254,61 @@ export default function PasteScreen({
     }
   };
 
+  /**
+   * v2.13 — 📸 캡처·사진으로 찾기.
+   *   · 버튼을 누른 **그 순간** 사진 보관함/파일 선택창을 엽니다. (iOS 는 사용자 동작에서만 허용)
+   *   · 사진은 웹에서 1280px · JPEG 0.82 로 줄여 `/api/gemini` 로 보내고(Gemini 키는 서버에만),
+   *     AI 가 읽은 상호를 기존 지도 파이프라인(카카오·네이버 · v2.12 주소 보강)으로 다시 찾습니다.
+   *   · 결과는 링크로 찾은 것과 같은 카드·썸네일(올린 사진)·분류·한줄 메모·저장 버튼으로 이어집니다.
+   */
+  const runPhoto = async () => {
+    if (extracting || photoBusy) return;
+    const file = await pickImageFile();
+    if (!file) return; // 사용자가 취소 — 화면은 그대로 둡니다
+    setError('');
+    setCandidates([]);
+    setSelectedIds([]);
+    setMeta(null);
+    setCategoryTouched(false);
+    setPickedCategory('');
+    setMemo('');
+    setStage(1); // 'AI 사진 분석'
+    setPhotoBusy(true);
+    try {
+      const result = await extractFromImage(file, { onStage: (s) => setStage(s) });
+      if (!result.ok) {
+        setError(result.message || '사진에서 가게를 찾지 못했어요. 다시 시도해 주세요.');
+        return;
+      }
+      const list = result.candidates || [];
+      setCandidates(list);
+      // 여러 곳(목록형 캡처)이면 모두 선택, 한 곳이면 1순위만 — 링크 추출과 같은 규칙
+      setSelectedIds(result.mode === 'multi' ? list.map((c) => c.id) : list[0] ? [list[0].id] : []);
+      setMeta({
+        mode: 'photo',
+        multi: result.mode === 'multi',
+        unmatched: result.unmatched || [],
+        platform: '사진',
+        platformKey: 'photo',
+        usedAdapter: result.usedAdapter,
+        query: result.query || '',
+        sources: result.providersUsed || [],
+        sourceTitle: '',
+        // 올린 사진을 히어로 카드 배경으로 — 링크의 영상 썸네일과 같은 자리
+        thumbnail: result.sourceThumbnail || '',
+        titleStatus: 'photo',
+        titleNotice: '',
+        suggestedQuery: result.suggestedQuery || '',
+        aiNote: result.aiNote || '',
+      });
+      setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
+    } catch (e) {
+      setError('사진을 분석하는 중 문제가 생겼어요. 다시 시도해 주세요.');
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
   const runPrimary = () => (isSearch ? runSearch() : runExtract());
 
   /**
@@ -320,9 +384,15 @@ export default function PasteScreen({
   const savePins = () => {
     if (!selectedCandidates.length) return;
     const searchMode = meta ? meta.mode === 'search' : isSearch;
+    // v2.13 — 📸 사진으로 저장한 핀은 원본 링크가 없습니다. (상세 시트에 [원본 열기] 대신 '사진에서 저장')
+    const photoMode = meta ? meta.mode === 'photo' : false;
     // 붙여넣은 게 '문구 + 링크' 덩어리여도 핀에는 링크만 저장합니다. (상세 시트의 [원본 열기]가 깨지지 않게)
-    const sourceUrl = searchMode ? '' : splitSharedText(url).url;
-    const platform = searchMode ? 'search' : parseUrl(sourceUrl).platform || 'instagram';
+    const sourceUrl = searchMode || photoMode ? '' : splitSharedText(url).url;
+    const platform = photoMode
+      ? 'photo'
+      : searchMode
+      ? 'search'
+      : parseUrl(sourceUrl).platform || 'instagram';
     const built = selectedCandidates
       .map((candidate) =>
         buildPin({ ...candidate, category: saveCategory }, { sourceUrl, platform, memo })
@@ -453,27 +523,55 @@ export default function PasteScreen({
                 <Ionicons name="clipboard-outline" size={18} color={colors.coral} />
               </Pressable>
             </View>
-            {/* v2.1.1 — 클립보드는 사용자가 이 버튼을 눌렀을 때만 읽습니다. */}
-            <Pressable
-              style={styles.pasteBtn}
-              onPress={applyPaste}
-              accessibilityRole="button"
-              accessibilityLabel="클립보드에서 붙여넣기"
-            >
-              <Ionicons name="clipboard-outline" size={15} color={colors.coralDark} />
-              <Text style={styles.pasteBtnText}>클립보드에서 붙여넣기</Text>
-            </Pressable>
+            <View style={styles.linkActionRow}>
+              {/* v2.1.1 — 클립보드는 사용자가 이 버튼을 눌렀을 때만 읽습니다. */}
+              <Pressable
+                style={styles.pasteBtn}
+                onPress={applyPaste}
+                accessibilityRole="button"
+                accessibilityLabel="클립보드에서 붙여넣기"
+              >
+                <Ionicons name="clipboard-outline" size={15} color={colors.coralDark} />
+                <Text style={styles.pasteBtnText}>클립보드에서 붙여넣기</Text>
+              </Pressable>
+              {/* v2.13 — 📸 캡처·사진으로 찾기. 누르면 사진 보관함/파일 선택창이 바로 열립니다.
+                  (Gemini 키가 서버에만 있어 웹에서만 동작 → 네이티브에서는 숨깁니다) */}
+              {canUsePhoto ? (
+                <Pressable
+                  style={[styles.photoBtn, photoBusy && styles.photoBtnBusy]}
+                  onPress={runPhoto}
+                  disabled={extracting || photoBusy}
+                  accessibilityRole="button"
+                  accessibilityLabel="캡처·사진으로 찾기"
+                  testID="paste-photo-button"
+                >
+                  {photoBusy ? (
+                    <ActivityIndicator color={colors.white} size="small" />
+                  ) : (
+                    <Ionicons name="image-outline" size={15} color={colors.white} />
+                  )}
+                  <Text style={styles.photoBtnText}>
+                    {photoBusy ? (PHOTO_STAGES[stage] || 'AI 사진 분석') + ' 중…' : '📸 캡처·사진으로 찾기'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
             <Text style={styles.helper}>
               공유할 때 복사된 문구를 통째로 붙여넣어도 돼요. (예: “성수동 소금빵 맛집 베통
               https://...”) 유튜브는 제목을, 네이버 블로그는 페이지 제목을 읽어 가게를 찾아요.
             </Text>
+            {canUsePhoto ? (
+              <Text style={styles.helper}>
+                📸 인스타 캡처·스크린샷을 고르면 AI 가 사진 속 가게 이름을 읽어 지도에서 찾아요.
+              </Text>
+            ) : null}
           </>
         )}
 
         <Pressable
-          style={[styles.primaryBtn, extracting && styles.primaryBtnDisabled]}
+          style={[styles.primaryBtn, (extracting || photoBusy) && styles.primaryBtnDisabled]}
           onPress={runPrimary}
-          disabled={extracting}
+          disabled={extracting || photoBusy}
           accessibilityRole="button"
         >
           {extracting ? (
@@ -553,7 +651,7 @@ export default function PasteScreen({
             <View style={styles.resultHead}>
               <Text style={styles.sectionTitle}>
                 {meta && meta.multi
-                  ? '설명글에서 찾은 가게 ' + candidates.length + '곳'
+                  ? (meta.mode === 'photo' ? '사진에서 찾은 가게 ' : '설명글에서 찾은 가게 ') + candidates.length + '곳'
                   : (meta && meta.mode === 'search' ? '찾은 가게 ' : '추출된 장소 ') + candidates.length + '곳'}
               </Text>
               <View style={styles.platformChip}>
@@ -858,6 +956,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: colors.coralDark,
+  },
+  // v2.13 — [클립보드에서 붙여넣기] 와 한 줄에 나란히 (좁은 화면에서는 줄바꿈)
+  linkActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 8,
+  },
+  photoBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 9,
+    backgroundColor: colors.coral,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: radius.sm,
+  },
+  photoBtnBusy: {
+    backgroundColor: colors.coralDark,
+  },
+  photoBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.white,
   },
   label: {
     ...typography.sub,
