@@ -27,12 +27,24 @@ import { isSamePin, normalizePin } from '../utils/pins';
 export const PIN_TABLE = 'pins';
 /** 한 번에 올리는 최대 행 수 (요청 본문이 너무 커지지 않게) */
 export const UPSERT_CHUNK = 100;
-/** 매직링크·로그인 안내에서 쓰는 소셜 로그인 목록 */
+/** 매직링크·로그인 안내에서 쓰는 소셜 로그인 목록
+ *  v2.20.1 — Apple 은 유료 Apple Developer 계정(연 129,000원)이 필요해 **준비 중**입니다.
+ *  `pending: true` 인 제공자는 Supabase 로 넘기지 않고 안내만 합니다(오류 페이지 방지). */
 export const OAUTH_PROVIDERS = [
   { id: 'kakao', label: '카카오', icon: 'chatbubble-ellipses', color: '#FEE500' },
   { id: 'google', label: '구글', icon: 'logo-google', color: '#FFFFFF' },
-  { id: 'apple', label: 'Apple', icon: 'logo-apple', color: '#111111' },
+  { id: 'apple', label: 'Apple', icon: 'logo-apple', color: '#111111', pending: true },
 ];
+
+/** 준비 중인 소셜 로그인을 눌렀을 때의 안내 문구 (화면·토스트 공통) */
+export const OAUTH_PENDING_MESSAGE = 'Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.';
+
+/** 그 제공자로 지금 로그인할 수 있는가 — 준비 중(pending)이면 false */
+export function oauthProviderReady(provider) {
+  const id = String(provider || '').toLowerCase();
+  const item = OAUTH_PROVIDERS.find((p) => p.id === id);
+  return Boolean(item) && item.pending !== true;
+}
 /** 로그인·회원가입 최소 비밀번호 (Supabase 기본 6자와 맞춤) */
 export const MIN_PASSWORD_LENGTH = 6;
 /** 핀 한 개를 클라우드에서 읽을 때 쓰는 컬럼 (schema.sql 과 일치) */
@@ -396,12 +408,14 @@ export async function signInWithMagicLink(email) {
  * 소셜 로그인 — `google` · `kakao` · `apple`.
  *   · 웹: Supabase 가 페이지를 그 Provider 로 넘깁니다. (`skipBrowserRedirect:false`)
  *   · 앱: 로그인 URL 만 받아 `Linking.openURL` 로 엽니다. (돌아올 때는 `reelpin://auth-callback`)
+ *   · v2.20.1 — 준비 중(`pending`)인 Apple 은 **Supabase 를 부르지 않고** 안내만 돌려줍니다.
  */
 export async function signInWithOAuth(provider, options = {}) {
   const client = guardClient();
   if (!client) return { ...NOT_CONFIGURED };
   const id = String(provider || '').toLowerCase();
   if (!OAUTH_PROVIDERS.some((p) => p.id === id)) return fail('unsupported-provider', '지원하지 않는 로그인이에요');
+  if (!oauthProviderReady(id)) return fail('provider-pending', OAUTH_PENDING_MESSAGE);
   try {
     const web = typeof window !== 'undefined' && !!window;
     const { data, error } = await client.auth.signInWithOAuth({

@@ -30,9 +30,11 @@ import ProfileScreen, {
   SUB_PAGES,
 } from '../screens/ProfileScreen';
 import { colors } from '../theme';
+// v2.20.1 — 로그아웃 상태에 '이상훈 / @odol' 이 뜨지 않도록 이름은 계정에서만 가져옵니다
+import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.20.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.20.1';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
@@ -49,8 +51,8 @@ export default function MenuDrawerModal({
   visible,
   onClose,
   pins = [],
-  name = '이상훈',
-  handle = 'odol',
+  name = '',
+  handle = '',
   categories = [],
   cloudConfigured = false,
   cloudPinCount = 0,
@@ -83,6 +85,12 @@ export default function MenuDrawerModal({
 }) {
   // null | 'categories' | 'radius' | 'alerts' | 'about'
   const [sub, setSub] = useState(() => (SUB_PAGES[initialSub] ? initialSub : null));
+
+  // v2.20.1 — 넘겨받은 이름이 없으면 **로그인한 계정**에서만 만듭니다.
+  //   로그아웃이면 둘 다 '' → ProfileScreen 이 `게스트` 로 그립니다.
+  const identity = profileIdentity(cloudUser);
+  const profileName = String(name || '').trim() || identity.name;
+  const profileHandle = String(handle || '').trim().replace(/^@+/, '') || identity.handle;
 
   // 시트를 닫으면 다음에 열 때는 항상 목록(내 정보)부터 보여 줍니다.
   useEffect(() => {
@@ -154,8 +162,8 @@ export default function MenuDrawerModal({
     body = (
       <ProfileScreen
         panel
-        name={name}
-        handle={handle}
+        name={profileName}
+        handle={profileHandle}
         pins={pins}
         categories={categories}
         onAddCategory={onAddCategory}

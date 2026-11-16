@@ -208,12 +208,7 @@ export default function MapCanvas({ pins, selectedId, onSelect, radius, categori
                     ]}
                   />
                 </View>
-                {/* v2.10 — ✅ 가봤어요 핀은 오른쪽 위에 작은 초록 체크 */}
-                {pin.visited === true && (
-                  <View style={[styles.visitBadge, { left: 22 + head / 2 - 8 }]}>
-                    <Text style={styles.visitBadgeText}>✓</Text>
-                  </View>
-                )}
+                {/* v2.20.1 — 핀 머리 위 초록 원형 체크 배지 없음. 가봤어요 표시는 아래 라벨의 `✓ ` 글씨로만. */}
                 <View style={[styles.pinTail, { borderTopColor: color, borderTopWidth: isOn ? 10 : 8 }]} />
               </Pressable>
 
@@ -358,25 +353,6 @@ const styles = StyleSheet.create({
     borderColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  // v2.10 — ✅ 가봤어요 체크 배지 (핀 머리 오른쪽 위)
-  visitBadge: {
-    position: 'absolute',
-    top: -1,
-    width: 13,
-    height: 13,
-    borderRadius: 7,
-    backgroundColor: colors.visit,
-    borderWidth: 1.5,
-    borderColor: colors.white,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  visitBadgeText: {
-    color: colors.white,
-    fontSize: 7.5,
-    fontWeight: '900',
-    lineHeight: 9,
   },
   pinHeadOn: {
     shadowColor: '#000',

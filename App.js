@@ -21,6 +21,8 @@ import AlertInbox from './src/components/AlertInbox';
 import SearchOverlayModal from './src/components/SearchOverlayModal';
 import MenuDrawerModal from './src/components/MenuDrawerModal';
 import { buildAlertFeed } from './src/utils/alertFeed';
+// v2.20.1 — 프로필 이름의 출처는 **로그인한 계정 하나** (로그아웃 = 게스트)
+import { profileIdentity } from './src/utils/profileIdentity';
 import { notificationPermission, requestNotificationPermission } from './src/services/notifications';
 import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
@@ -62,7 +64,9 @@ import {
 } from './src/utils/collections';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
 import {
+  OAUTH_PENDING_MESSAGE,
   OAUTH_PROVIDERS,
+  oauthProviderReady,
   deleteCloudPin,
   fetchCloudPins,
   getSession,
@@ -352,7 +356,7 @@ export default function App() {
       const known =
         sessionRef.current && sessionRef.current.user && sessionRef.current.user.id === user.id;
       sessionRef.current = session;
-      setCloudUser({ id: user.id, email: user.email || '' });
+      setCloudUser({ id: user.id, email: user.email || '', user_metadata: user.user_metadata || {} });
       if (known && options.fromEvent) return;
       syncWithCloud({ silent: !!options.silent });
     },
@@ -460,6 +464,12 @@ export default function App() {
 
   const handleOAuth = useCallback(
     async (provider) => {
+      // v2.20.1 — 준비 중인 Apple 은 Supabase 로 넘기지 않습니다(오류 페이지 방지)
+      if (!oauthProviderReady(provider)) {
+        setCloudMessage(OAUTH_PENDING_MESSAGE);
+        showToast(OAUTH_PENDING_MESSAGE);
+        return;
+      }
       setCloudBusy(true);
       setCloudMessage('');
       const res = await signInWithOAuth(provider);
@@ -1006,6 +1016,8 @@ export default function App() {
   }, [pins, showToast]);
 
   const signedIn = Boolean(cloudUser && (cloudUser.email || cloudUser.id));
+  // v2.20.1 — 로그아웃 상태에서는 이름 · 핸들을 넘기지 않습니다(예전 기본값 '이상훈'/'odol' 제거)
+  const profile = useMemo(() => profileIdentity(cloudUser), [cloudUser]);
   /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 — v2.16 `🔍 · 🔔 · ☰` */
   const headerProps = useMemo(
     () => ({
@@ -1133,8 +1145,8 @@ export default function App() {
           visible={menuOpen}
           onClose={closeMenu}
           pins={pins}
-          name="이상훈"
-          handle="odol"
+          name={profile.name}
+          handle={profile.handle}
           categories={categories}
           cloudConfigured={cloudConfigured}
           cloudUser={cloudUser}

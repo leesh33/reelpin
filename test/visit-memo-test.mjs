@@ -313,9 +313,13 @@ check('배선: 목록 행에 방문 배지 + 메모 미리보기', list.indexOf(
 check('배선: 상세 시트에 가봤어요 토글 + 메모 입력', sheet.indexOf('pin-visited-toggle') > 0 && sheet.indexOf('pin-memo-input') > 0);
 check('배선: 저장 화면에 선택 메모 입력', paste.indexOf('paste-memo-input') > 0);
 check('배선: seedPins 의 한도 값은 무제한', /FREE_PIN_LIMIT\s*=\s*Infinity/.test(seed));
-check('배선: 지도 마커에 방문 체크 배지', read('src/components/RealMapView.web.js').indexOf('pinVisitedBadgeHtml') > 0);
+check(
+  'v2.20.1 배선: 지도 마커에 방문 체크 원형 배지 없음 (초록 텍스트 라벨만)',
+  read('src/components/RealMapView.web.js').indexOf('pinVisitedBadgeHtml') < 0 &&
+    read('src/components/MapCanvas.js').indexOf('visitBadge') < 0
+);
 check('배선: 네이티브 지도 라벨에도 ✓', read('src/components/MapCanvas.js').indexOf("(pin.visited === true ? '✓ ' : '')") > 0);
-check('배선: 웹 지도 라벨에도 ✓ (초록 배지와 같은 뜻)', read('src/components/RealMapView.web.js').indexOf("(visited ? '✓ ' : '')") > 0);
+check('배선: 웹 지도 라벨에도 ✓ (초록 글씨로 가봤어요)', read('src/components/RealMapView.web.js').indexOf("(visited ? '✓ ' : '')") > 0);
 
 if (fails) {
   console.log('\nVISIT_MEMO_TEST_FAILED (' + fails + ')');

@@ -3,8 +3,10 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
-import { OAUTH_PROVIDERS } from '../services/cloudSync';
+import { OAUTH_PENDING_MESSAGE, OAUTH_PROVIDERS, oauthProviderReady } from '../services/cloudSync';
 import { SUPABASE_SETUP_HINT } from '../services/supabase';
+// v2.20.1 — 로그아웃 상태의 상단 카드는 `게스트` (예전 기본 이름 '이상훈' 대신)
+import { GUEST_HINT, GUEST_NAME } from '../utils/profileIdentity';
 import {
   CATEGORY_MAX_LENGTH,
   allCategories,
@@ -89,6 +91,12 @@ function AccountCard({
 
   const social = (provider) => {
     if (busy) return;
+    // v2.20.1 — Apple 은 준비 중: Supabase 오류 페이지로 넘기지 않고 안내만
+    //   (Supabase 설정 여부와 상관없이 Apple 은 아직 쓸 수 없으므로 이 안내가 먼저입니다)
+    if (!oauthProviderReady(provider)) {
+      toast(OAUTH_PENDING_MESSAGE);
+      return;
+    }
     if (guardOffline()) return;
     if (onOAuth) onOAuth(provider);
   };
@@ -221,31 +229,46 @@ function AccountCard({
           </View>
 
           <View style={styles.socialRow}>
-            {OAUTH_PROVIDERS.map((p) => (
-              <Pressable
-                key={p.id}
-                style={[styles.socialBtn, { backgroundColor: p.color }]}
-                onPress={() => social(p.id)}
-                accessibilityRole="button"
-                accessibilityLabel={p.label + ' 로 로그인'}
-              >
-                <Ionicons
-                  name={p.icon}
-                  size={15}
-                  color={p.id === 'kakao' ? colors.kakaoText : p.id === 'apple' ? colors.white : colors.textSub}
-                />
-                <Text
-                  style={[
-                    styles.socialLabel,
-                    p.id === 'kakao' && { color: colors.kakaoText },
-                    p.id === 'apple' && { color: colors.white },
-                  ]}
+            {OAUTH_PROVIDERS.map((p) => {
+              const pending = p.pending === true;
+              return (
+                <Pressable
+                  key={p.id}
+                  style={[styles.socialBtn, { backgroundColor: p.color }, pending && styles.socialBtnPending]}
+                  onPress={() => social(p.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel={p.label + ' 로 로그인' + (pending ? ' (준비 중)' : '')}
+                  accessibilityState={{ disabled: pending }}
+                  testID={pending ? 'social-' + p.id + '-pending' : 'social-' + p.id}
                 >
-                  {p.label}
-                </Text>
-              </Pressable>
-            ))}
+                  <Ionicons
+                    name={p.icon}
+                    size={15}
+                    color={p.id === 'kakao' ? colors.kakaoText : p.id === 'apple' ? colors.white : colors.textSub}
+                  />
+                  <Text
+                    style={[
+                      styles.socialLabel,
+                      p.id === 'kakao' && { color: colors.kakaoText },
+                      p.id === 'apple' && { color: colors.white },
+                    ]}
+                  >
+                    {p.label}
+                  </Text>
+                  {pending ? (
+                    <Text style={[styles.socialPendingBadge, p.id === 'apple' && { color: colors.white }]}>준비 중</Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
           </View>
+
+          {/* v2.20.1 — Apple 은 유료 개발자 계정 준비 후 열립니다 (준비 중) */}
+          {OAUTH_PROVIDERS.some((p) => p.pending === true) ? (
+            <Text style={styles.socialPendingLine} testID="social-pending-line">
+              Apple 로그인은 준비 중이에요 · 카카오나 구글로 로그인해 주세요
+            </Text>
+          ) : null}
 
           <Text style={styles.cardHint}>
             {cloudConfigured
@@ -485,7 +508,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.20.0';
+export const APP_INFO_VERSION = '릴스핀 v2.20.1';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -708,6 +731,14 @@ export default function ProfileScreen({
     setSub(key);
   };
   const count = pins.length;
+  // v2.20.1 — 이름은 **로그인한 계정에서 온 값**만 씁니다. 없으면 게스트(비로그인) 카드.
+  const accountName = String(name || '').trim();
+  const signedInProfile = Boolean(accountName);
+  const accountHandle = String(handle || '').trim().replace(/^@+/, '');
+  const profileName = signedInProfile ? accountName : GUEST_NAME;
+  const profileSubline = signedInProfile
+    ? [accountHandle ? '@' + accountHandle : '', isPro ? '프로 플랜' : '무료 플랜'].filter(Boolean).join(' · ')
+    : GUEST_HINT;
   /**
    * v2.15 — 헤더의 👤(로그인/계정) 아이콘을 누르면 '내 정보' 탭의 계정 카드로 바로 내려갑니다.
    * (상위 App 이 `accountFocus` 를 1씩 올려 요청합니다.)
@@ -796,23 +827,34 @@ export default function ProfileScreen({
           }}
         >
           <View style={styles.profileRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{name ? name.slice(0, 1) : '나'}</Text>
+            <View style={[styles.avatar, !signedInProfile && styles.avatarGuest]}>
+              {signedInProfile ? (
+                <Text style={styles.avatarText}>{profileName.slice(0, 1)}</Text>
+              ) : (
+                <Ionicons name="person-outline" size={22} color={colors.textMuted} />
+              )}
             </View>
             <View style={styles.profileText}>
-              <Text style={styles.profileName}>{name || '사용자'}</Text>
-              <Text style={styles.profileHandle}>@{handle} · {isPro ? '프로 플랜' : '무료 플랜'}</Text>
-            </View>
-            <View style={[styles.planChip, isPro && styles.planChipPro]}>
-              <Ionicons
-                name={isPro ? 'sparkles' : 'leaf-outline'}
-                size={12}
-                color={isPro ? colors.white : colors.textSub}
-              />
-              <Text style={[styles.planChipText, isPro && styles.planChipTextPro]}>
-                {isPro ? 'PRO' : 'FREE'}
+              <Text style={styles.profileName} numberOfLines={1} testID="profile-display-name">
+                {profileName}
+              </Text>
+              {/* v2.20.1 — 로그아웃이면 안내 문장이 한 줄에 다 들어가게 두 줄까지 · 플랜 칩은 숨김 */}
+              <Text style={styles.profileHandle} numberOfLines={signedInProfile ? 1 : 2} testID="profile-display-sub">
+                {profileSubline}
               </Text>
             </View>
+            {signedInProfile && (
+              <View style={[styles.planChip, isPro && styles.planChipPro]}>
+                <Ionicons
+                  name={isPro ? 'sparkles' : 'leaf-outline'}
+                  size={12}
+                  color={isPro ? colors.white : colors.textSub}
+                />
+                <Text style={[styles.planChipText, isPro && styles.planChipTextPro]}>
+                  {isPro ? 'PRO' : 'FREE'}
+                </Text>
+              </View>
+            )}
           </View>
 
           <View style={styles.cardDivider} />
@@ -1158,6 +1200,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.coral,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // v2.20.1 — 로그아웃(게스트) 아바타는 코랄 대신 차분한 회색 + 사람 아이콘
+  avatarGuest: {
+    backgroundColor: colors.lineSoft,
   },
   avatarText: {
     color: colors.white,
@@ -1674,6 +1720,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     color: colors.textSub,
+  },
+  // v2.20.1 — 준비 중(Apple) 버튼은 흐리게 + `준비 중` 꼬리표
+  socialBtnPending: {
+    opacity: 0.45,
+  },
+  socialPendingBadge: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: colors.textSub,
+    opacity: 0.9,
+  },
+  socialPendingLine: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: colors.textMuted,
+    marginTop: 6,
+    lineHeight: 15,
   },
   cloudMessage: {
     fontSize: 11,

@@ -11,6 +11,7 @@ export default function Toast({ message, tone = 'dark', bottomOffset = 96, place
     <View
       style={[styles.wrap, isTop ? { top: 152 } : { bottom: bottomOffset }]}
       pointerEvents="none"
+      testID="toast"
     >
       <View style={[styles.pill, isPro && styles.pillPro]}>
         <Text style={styles.text}>{message}</Text>

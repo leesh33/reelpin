@@ -38,6 +38,10 @@ import LayerSheet, {
 // v2.19.1 — 장소 검색 추천의 `시·군·구·동` 지역 라벨
 import { addressRegions, placeAreaLabel, placeMetaLabel } from '../src/utils/areaLabel';
 import { APP_INFO_BUNDLE, APP_INFO_VERSION } from '../src/screens/ProfileScreen';
+// v2.20.1 — 프로필 이름은 로그인한 계정에서만 (로그아웃 = 게스트)
+import { GUEST_HINT, GUEST_NAME, profileIdentity } from '../src/utils/profileIdentity';
+// v2.20.1 — Apple 로그인은 준비 중 (카카오·구글만 Supabase 로)
+import { OAUTH_PENDING_MESSAGE, OAUTH_PROVIDERS as OAUTH_PROVIDERS_2201, oauthProviderReady } from '../src/services/cloudSync';
 import {
   OVERLAY_RESULT_MAX,
   RECOMMEND_MAX,
@@ -643,8 +647,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.20.0', pkg.version === '2.20.0', pkg.version],
-  ['버전: app.json 2.20.0', expoConfig.version === '2.20.0', expoConfig.version],
+  ['버전: package.json 2.20.1', pkg.version === '2.20.1', pkg.version],
+  ['버전: app.json 2.20.1', expoConfig.version === '2.20.1', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -1004,7 +1008,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.20.0") > 0],
+  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.20.1") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1516,7 +1520,7 @@ const v216Checks = [
   // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
   ['메뉴(v2.19): 분류 관리 → 시트 안 서브 페이지', appSource215.indexOf('setCategoriesFocus(') < 0 && profileSource215.indexOf("openSub('categories')") > 0 && menuSource216.indexOf('onOpenSub={setSub}') > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
   ['메뉴(v2.19): 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && profileSource215.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.20.0 표기', menuHtml216.indexOf('릴스핀 v2.20.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.20.0', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.20.1 표기', menuHtml216.indexOf('릴스핀 v2.20.1') > 0 && APP_VERSION_LABEL === '릴스핀 v2.20.1', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1632,7 +1636,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.20.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.20.0") > 0],
+  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.20.1' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.20.1") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1713,7 +1717,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.20.0'],
+  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.20.1'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1771,7 +1775,7 @@ const v218Checks = [
   ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
   ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
   ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
-  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.20.0') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.20.1') > 0],
   ['v2.19: ☰ 시트가 분류 관리 서브 페이지를 직접 연다', profileSource218.indexOf("openSub('categories')") > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
 ];
 for (const [label, ok, extra] of v218Checks) {
@@ -1892,7 +1896,7 @@ const v219Checks = [
   ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
-  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.20.0') > 0],
+  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.20.1') > 0],
   ['v2.19 앱: 내 정보 탭 제거 · ☰ 시트가 ProfileScreen(panel) 사용', appSource219.indexOf("tab !== 'profile'") < 0 && appSource219.indexOf('<MenuDrawerModal') > 0 && appSource219.indexOf('panel') < 0 && menuSource219.indexOf('panel') > 0],
   // ③ 📂 컬렉션 탭
   ['v2.19 컬렉션: 목록 머리(내 컬렉션 · N개 · M곳 · 새 컬렉션)', collectionsListHtml219.indexOf('내 컬렉션') > 0 && collectionsListHtml219.indexOf('2개 컬렉션 · 2곳 담김') > 0 && collectionsListHtml219.indexOf('collection-new') > 0],
@@ -1907,7 +1911,7 @@ const v219Checks = [
   ['v2.19 저장: 컬렉션은 기기에 저장(reelpin.collections.v1)', storageSource219.indexOf("'reelpin.collections.v1'") > 0 && appSource219.indexOf('saveCollections(collections)') > 0],
   ['v2.19 저장: 핀을 지우면 컬렉션에서도 정리(prune)', appSource219.indexOf('pruneCollections(prev, pins)') > 0],
   ['v2.19: 하단바 탭은 App 이 collections 를 그림', appSource219.indexOf('<CollectionsScreen') > 0 && appSource219.indexOf("tab !== 'collections'") > 0],
-  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.0', APP_VERSION_LABEL === '릴스핀 v2.20.0' && profileSource219.indexOf("'릴스핀 v2.20.0'") > 0 && pkg.version === '2.20.0'],
+  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.20.1' && profileSource219.indexOf("'릴스핀 v2.20.1'") > 0 && pkg.version === '2.20.1'],
 ];
 for (const [label, ok, extra] of v219Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2064,7 +2068,7 @@ const v2191Checks = [
   ['시군구동: 검색 팝업 추천 카드에 그대로 보임', areaOverlayHtml191.indexOf('인천 서구 당하동') > 0 && areaOverlayHtml191.indexOf('서울 강남구 역삼동') > 0 && areaOverlayHtml191.indexOf('경기 고양시 일산서구 일산동') < 0],
   ['시군구동: `분류 · 지역` 한 줄 표기', placeMetaLabel(AREA_PINS_191[0]) === '맛집 · 인천 서구 당하동' && placeMetaLabel({ name: 'x' }) === '내 지도'],
   // ⑥ 버전
-  ['v2.20.0 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.20.0' && APP_INFO_VERSION === '릴스핀 v2.20.0' && pkg.version === '2.20.0' && expoConfig.version === '2.20.0'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.20.1' && APP_INFO_VERSION === '릴스핀 v2.20.1' && pkg.version === '2.20.1' && expoConfig.version === '2.20.1'],
 ];
 for (const [label, ok, extra] of v2191Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2212,7 +2216,7 @@ const v2192Checks = [
     mapControls.rightInset === 12 && mapSource2192.indexOf('right: mapControls.rightInset') > 0 && webMapSource2192.indexOf('right: mapControls.rightInset') > 0,
   ],
   // ④ 버전
-  ['v2.20.0 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.20.0' && APP_INFO_VERSION === '릴스핀 v2.20.0' && pkg.version === '2.20.0' && expoConfig.version === '2.20.0'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.20.1' && APP_INFO_VERSION === '릴스핀 v2.20.1' && pkg.version === '2.20.1' && expoConfig.version === '2.20.1'],
 ];
 for (const [label, ok, extra] of v2192Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2311,6 +2315,147 @@ for (const [label, ok, extra] of v220Checks) {
   }
 }
 
+// ── v2.20.1 — ✅ 핀 위 초록 체크 배지 제거 · 로그아웃 = 게스트 프로필 ──────────
+// 상훈 님: "가본 곳 Y일 경우, 초록색 체크 핀은 없애고 텍스트만 지금처럼 초록색으로"
+//          "그리고 로그아웃 했는데 어떻게 상단에 이상훈이라고 뜨는지 모르겠어"
+const VISITED_PIN_2201 = { ...SAMPLE_PIN, visited: true };
+const visitedIcon2201 = pinIconHtml(VISITED_PIN_2201, false);
+const plainIcon2201 = pinIconHtml(SAMPLE_PIN, false);
+const visitedLabel2201 = pinLabelHtml(VISITED_PIN_2201, false);
+const plainLabel2201 = pinLabelHtml(SAMPLE_PIN, false);
+const countOf2201 = (hay, needle) => String(hay || '').split(needle).length - 1;
+const mapWebSource2201 = fs.readFileSync(path.join(process.cwd(), 'src/components/RealMapView.web.js'), 'utf8');
+const canvasSource2201 = fs.readFileSync(path.join(process.cwd(), 'src/components/MapCanvas.js'), 'utf8');
+const menuSource2201 = fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8');
+const appSource2201 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+const profileSource2201 = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const cloudSyncSource2201 = fs.readFileSync(path.join(process.cwd(), 'src/services/cloudSync.js'), 'utf8');
+/** 렌더된 HTML 에서 data-testid 요소의 글자만 */
+const textOfTestId2201 = (html, id) => {
+  const at = String(html || '').indexOf('data-testid="' + id + '"');
+  if (at < 0) return '';
+  const start = html.indexOf('>', at) + 1;
+  const end = html.indexOf('</', start);
+  return html.slice(start, end).replace(/<[^>]*>/g, '').trim();
+};
+const identityGuest2201 = profileIdentity(null);
+const identitySigned2201 = profileIdentity({
+  id: 'u-1',
+  email: 'andy.lee@example.com',
+  user_metadata: { full_name: '이상훈' },
+});
+const identityEmail2201 = profileIdentity({ id: 'u-2', email: 'andy.lee@example.com' });
+const guestProfileHtml2201 = renderToString(
+  <ProfileScreen
+    pins={SEED_PINS}
+    categories={['맛집', '카페', '가볼곳']}
+    radiusMeters={300}
+    onChangeRadius={noop}
+    isPro={false}
+    onStartPro={noop}
+    onGoPaste={noop}
+    onToast={noop}
+    cloudConfigured
+    cloudUser={null}
+    cloudPinCount={0}
+    onSignIn={noop}
+    onSignUp={noop}
+    onMagicLink={noop}
+    onOAuth={noop}
+    onSignOut={noop}
+    onSyncNow={noop}
+  />
+);
+const guestMenuHtml2201 = renderToString(
+  <MenuDrawerModal visible pins={COL_PINS_219} onClose={noop} cloudConfigured cloudUser={null} />
+);
+const signedMenuHtml2201 = renderToString(
+  <MenuDrawerModal
+    visible
+    pins={COL_PINS_219}
+    onClose={noop}
+    cloudConfigured
+    cloudUser={{ id: 'u-1', email: 'andy.lee@example.com', user_metadata: { full_name: '이상훈' } }}
+  />
+);
+const v2201Checks = [
+  // ① ✅ 핀 위 초록 원형 체크 배지 제거 — 초록 글씨 라벨만
+  ['v2.20.1 핀: 가봤어요 동그라미에 초록 체크 배지 없음',
+    visitedIcon2201.indexOf('position:absolute;right:-4px') < 0 && visitedIcon2201.indexOf('>✓</div>') < 0,
+    visitedIcon2201.length + ' bytes'],
+  ['v2.20.1 핀: 가봤어요/안 가봤어요 동그라미 구조가 같음 (배지 몫 0)',
+    countOf2201(visitedIcon2201, 'border-radius:50%') === countOf2201(plainIcon2201, 'border-radius:50%') &&
+      countOf2201(visitedIcon2201, 'border-radius:50%') === 1,
+    countOf2201(visitedIcon2201, 'border-radius:50%') + ' vs ' + countOf2201(plainIcon2201, 'border-radius:50%')],
+  ['v2.20.1 핀: 라벨은 ✓ + 초록 글씨 그대로',
+    visitedIcon2201.indexOf('✓ ') > 0 && visitedLabel2201.indexOf('color:' + colors.visitDark) > 0 &&
+      plainLabel2201.indexOf(colors.visitDark) < 0,
+    colors.visitDark],
+  ['v2.20.1 핀: 라벨은 흰 알약 + 초록 테두리 유지',
+    visitedLabel2201.indexOf('background:rgba(255,255,255,0.96)') > 0 &&
+      visitedLabel2201.indexOf('border:1px solid rgba(15,169,104,0.7)') > 0,
+    'rgba(15,169,104,0.7)'],
+  ['v2.20.1 핀: 웹 지도 소스에 pinVisitedBadgeHtml 없음 (죽은 코드 0)',
+    mapWebSource2201.indexOf('pinVisitedBadgeHtml') < 0],
+  ['v2.20.1 핀: 네이티브 지도(MapCanvas) 초록 배지 제거 · 라벨 ✓ 유지',
+    canvasSource2201.indexOf('visitBadge') < 0 && canvasSource2201.indexOf("(pin.visited === true ? '✓ ' : '')") > 0],
+  // ② 로그아웃 = 게스트
+  ['v2.20.1 프로필: 로그아웃이면 이름·핸들 없음',
+    identityGuest2201.signedIn === false && identityGuest2201.name === '' && identityGuest2201.handle === '',
+    identityGuest2201.displayName],
+  ['v2.20.1 프로필: 게스트 표시 = `게스트` + 동기화 안내',
+    GUEST_NAME === '게스트' && identityGuest2201.displayName === GUEST_NAME &&
+      GUEST_HINT === '로그인하면 핀이 클라우드에 동기화돼요' && identityGuest2201.subline === GUEST_HINT],
+  ['v2.20.1 프로필: 로그인하면 계정 이름·핸들',
+    identitySigned2201.signedIn === true && identitySigned2201.name === '이상훈' &&
+      identitySigned2201.handle === 'andy.lee' && identitySigned2201.initial === '이',
+    identitySigned2201.name + ' / @' + identitySigned2201.handle],
+  ['v2.20.1 프로필: 이름이 없으면 이메일 앞자리 (지어내지 않음)',
+    identityEmail2201.name === 'andy.lee' && identityEmail2201.handle === 'andy.lee',
+    identityEmail2201.name],
+  ['v2.20.1 프로필: 로그아웃 상단 카드 = 게스트',
+    textOfTestId2201(guestProfileHtml2201, 'profile-display-name') === '게스트' &&
+      textOfTestId2201(guestProfileHtml2201, 'profile-display-sub') === GUEST_HINT,
+    textOfTestId2201(guestProfileHtml2201, 'profile-display-name') + ' / ' + textOfTestId2201(guestProfileHtml2201, 'profile-display-sub')],
+  ['v2.20.1 프로필: 로그아웃 카드에 이상훈·@odol 없음',
+    guestProfileHtml2201.indexOf('@odol') < 0 && textOfTestId2201(guestProfileHtml2201, 'profile-display-name').indexOf('이상훈') < 0],
+  ['v2.20.1 ☰ 메뉴: 로그아웃 시트도 게스트',
+    textOfTestId2201(guestMenuHtml2201, 'profile-display-name') === '게스트' &&
+      guestMenuHtml2201.indexOf('@odol') < 0,
+    textOfTestId2201(guestMenuHtml2201, 'profile-display-name')],
+  ['v2.20.1 ☰ 메뉴: 로그인 시트에는 실제 계정',
+    textOfTestId2201(signedMenuHtml2201, 'profile-display-name') === '이상훈' &&
+      textOfTestId2201(signedMenuHtml2201, 'profile-display-sub').indexOf('@andy.lee') >= 0,
+    textOfTestId2201(signedMenuHtml2201, 'profile-display-name') + ' / ' + textOfTestId2201(signedMenuHtml2201, 'profile-display-sub')],
+  // ③ Apple 로그인은 준비 중 — 카카오·구글은 그대로
+  ['v2.20.1 소셜: 카카오·구글은 준비됨 · Apple 은 준비 중',
+    oauthProviderReady('kakao') === true && oauthProviderReady('google') === true &&
+      oauthProviderReady('apple') === false && oauthProviderReady('naver') === false,
+    OAUTH_PROVIDERS_2201.map((p) => p.id + ':' + (p.pending === true ? '준비중' : 'ok')).join(' ')],
+  ['v2.20.1 소셜: 안내 문구 그대로',
+    OAUTH_PENDING_MESSAGE === 'Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.',
+    OAUTH_PENDING_MESSAGE],
+  ['v2.20.1 소셜: 로그인 카드에 Apple `준비 중` · 카카오/구글 버튼 유지',
+    guestProfileHtml2201.indexOf('social-apple-pending') > 0 &&
+      guestProfileHtml2201.indexOf('social-kakao') > 0 && guestProfileHtml2201.indexOf('social-google') > 0 &&
+      guestProfileHtml2201.indexOf('준비 중') > 0 && guestProfileHtml2201.indexOf('social-pending-line') > 0],
+  ['v2.20.1 소셜: cloudSync 가 Apple 을 Supabase 로 보내지 않음',
+    cloudSyncSource2201.indexOf('if (!oauthProviderReady(id)) return fail(\'provider-pending\', OAUTH_PENDING_MESSAGE);') > 0 &&
+      cloudSyncSource2201.indexOf("pending: true") > 0,
+  ],
+  ['v2.20.1 소셜: App·ProfileScreen 모두 준비 중 가드 + 토스트',
+    appSource2201.indexOf('!oauthProviderReady(provider)') > 0 &&
+      profileSource2201.indexOf('!oauthProviderReady(provider)') > 0 &&
+      profileSource2201.indexOf('toast(OAUTH_PENDING_MESSAGE)') > 0],
+];
+for (const [label, ok, extra] of v2201Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -2346,6 +2491,7 @@ const total =
   v2191Checks.length +
   v2192Checks.length +
   v220Checks.length +
+  v2201Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);
