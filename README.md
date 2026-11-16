@@ -209,6 +209,20 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 - `src/utils/cluster.js` — `CLUSTER_THRESHOLD_PX = 22`. 묶는 규칙(union-find · 대표 좌표 = 무리 중심 · 배지 탭하면 확대)과 네이버 지도·Leaflet 두 엔진의 공유는 그대로입니다.
 - `test/search-cluster-test.mjs` — 새 임계값으로 유닛 테스트 갱신(22px 포함/22.5px 제외 · 30px 는 안 묶임 · 12px 사슬 · 줌 10→24px 풀림).
 
+### 5. 📱 라이브 검증 (`https://reelpin.vercel.app` · 390×844 · 커밋 `2d0c0bd`)
+
+`reelpin-verify-v2.20.2/check-390x844.mjs` 로 **로컬 dist → 라이브** 두 번 실측(둘 다 **VERIFY_OK**, 이슈 0). 라이브는 네이버 지도(정식 키), 로컬은 도메인 미등록이라 Leaflet 폴백 — 두 경로가 같은 `pinIconHtml`·`clusterPoints` 를 씁니다.
+
+| 화면 | 실측 결과 |
+|---|---|
+| A) 가게명 찾기 `검단 카페` 결과 | `찾은 가게 5곳` · 베이지 배너 **0개** · 큰 🍜 **0개** → 머리말 바로 아래 `전체 선택` + 후보 5행 |
+| B) 돋보기 팝업 헤더 | `내 장소 검색` (부제 `내 핀 2곳에서 찾기 · 가게명 · 동네 · 메뉴 · 메모`) |
+| C) 저장 → 지도 + 핀 상세 시트 + 토스트 | 토스트 `지도에 핀을 꽂았어요 · 카페요일` top **200px**, 시트 헤더 118.2~**188.2px**(카페 민트 `rgb(20, 184, 166)`) → **겹칩 0 · 여백 11.8px** |
+| D) 445m(≈옛 46px 면 `2`) 떨어진 두 핀 | 클러스터 배지 **0개** · 개별 핀 3개 · 두 핀 **29px**(라이브) / **41px**(로컬) · 라벨 `검단 이니야` `당하 순대국` |
+| E) 유튜브 쇼츠 링크 추출(회귀) | `추출된 장소 1곳` · 썸네일 배너 **그대로**(높이 132px) — 사진이 있는 결과는 유지 |
+
+스크린샷: `reelpin-verify-v2.20.2/A2-search-result-from-top-390x844.png` · `B1-search-overlay-title-390x844.png` · `C1-toast-below-sheet-header-390x844.png` · `D1-two-pins-not-clustered-390x844.png` · `E1-link-thumbnail-banner-kept-390x844.png` (리포트: 같은 폴더 `local-report.json` · `live-report.json`)
+
 ## v2.20.1에서 달라진 점 (2026-11-17) — ✅ 핀 체크 배지 제거 · 게스트 프로필 · Apple 로그인 준비 중
 
 상훈 님이 아이폰으로 v2.20.0 을 쓰시고 주신 세 가지입니다.
