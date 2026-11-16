@@ -9,6 +9,8 @@ import InAppPlaceModal from './InAppPlaceModal';
 import ProviderBadges from './ProviderBadge';
 import CategoryPicker from './CategoryPicker';
 import { DEFAULT_CATEGORIES, categoryTextColor, categoryTint, getCategoryColor } from '../utils/categories';
+// v2.20 — 지금 영업 중 / 브레이크타임 / 휴무일 배지 (한국 시간 기준 · 확인된 값만)
+import { evaluateOpening, hasConfirmedHours, todaySummary } from '../utils/openingStatus';
 
 const PLATFORM_LABEL = {
   instagram: '인스타 릴스',
@@ -65,6 +67,15 @@ export default function PinDetailSheet({
   // v2.10 — ✅ 가봤어요 · 📝 한줄 메모
   const visited = pin.visited === true;
   const savedMemo = String(pin.memo || '');
+  // v2.20 — 매장 영업 상태. hours 가 없으면 **추측하지 않고** '영업시간 미확인' 으로만 둡니다.
+  const opening = evaluateOpening(pin.hours || null);
+  const openingKnown = hasConfirmedHours(pin.hours || null);
+  // 휴무일에는 요약이 배지와 같은 말('오늘 휴무')이 되므로, 대신 **다음 영업**을 보여 줍니다.
+  const openingSummary = !openingKnown
+    ? ''
+    : opening.state === 'closedToday'
+    ? String(opening.sub || '')
+    : todaySummary(pin.hours);
   const memoDirty = memoDraft !== savedMemo;
   const visitedAtLabel = (() => {
     if (!visited || !pin.visitedAt) return '';
@@ -178,6 +189,48 @@ export default function PinDetailSheet({
               <Ionicons name="locate" size={11} color={colors.coralDark} />
               <Text style={styles.chipLiveText}>{'내 위치에서 ' + distanceLabel}</Text>
             </View>
+          )}
+        </View>
+
+        {/* v2.20 — 🟢 영업 중 / 🟠 브레이크타임 (17:00까지) / 🔴 오늘 휴무 / ⚪ 영업 종료
+            + 오늘 영업시간·브레이크타임 요약. 영업시간이 확인되지 않은 매장은 지어내지 않고
+              회색 '영업시간 미확인' 한 줄만 둡니다. */}
+        <View style={styles.openRow} testID="pin-opening-row">
+          {openingKnown ? (
+            <View
+              style={[
+                styles.openBadge,
+                opening.state === 'open'
+                  ? styles.openBadgeOpen
+                  : opening.state === 'break'
+                  ? styles.openBadgeBreak
+                  : styles.openBadgeClosed,
+              ]}
+              testID="pin-opening-badge"
+            >
+              <Text
+                style={[
+                  styles.openBadgeText,
+                  opening.state === 'open'
+                    ? styles.openBadgeTextOpen
+                    : opening.state === 'break'
+                    ? styles.openBadgeTextBreak
+                    : styles.openBadgeTextClosed,
+                ]}
+                numberOfLines={1}
+              >
+                {opening.text}
+              </Text>
+            </View>
+          ) : (
+            <Text style={styles.openUnknown} testID="pin-opening-unknown">
+              ⚪ 영업시간 미확인
+            </Text>
+          )}
+          {!!openingSummary && (
+            <Text style={styles.openSummary} numberOfLines={1} testID="pin-opening-summary">
+              {openingSummary}
+            </Text>
           )}
         </View>
 
@@ -546,6 +599,55 @@ const styles = StyleSheet.create({
   badgeRow: {
     marginTop: 8,
   },
+  // v2.20 — 영업 상태 줄 (배지 + 오늘 영업시간 요약)
+  openRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 6,
+  },
+  openBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+  },
+  openBadgeOpen: {
+    backgroundColor: '#E8F8EE',
+    borderColor: '#BBE9CB',
+  },
+  openBadgeBreak: {
+    backgroundColor: '#FFF3E0',
+    borderColor: '#FFD9A8',
+  },
+  openBadgeClosed: {
+    backgroundColor: '#F1F3F6',
+    borderColor: '#E1E5EC',
+  },
+  openBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  openBadgeTextOpen: {
+    color: '#12833B',
+  },
+  openBadgeTextBreak: {
+    color: '#B45309',
+  },
+  openBadgeTextClosed: {
+    color: '#64748B',
+  },
+  openUnknown: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  openSummary: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.textSub,
+  },
+
   // v2.10 — ✅ 가봤어요 토글
   visitBtn: {
     flexDirection: 'row',

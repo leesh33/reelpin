@@ -102,6 +102,9 @@ export default function GeofenceBanner({
   sub,
   badge,
   tone,
+  // v2.20 — 영업 상태 배지 { text:'영업 중'|'브레이크타임'|'오늘 휴무'|'영업 종료', tone, state }
+  //         확인된 매장에만 글자가 들어 있습니다(미확인이면 '') → 헛걸음 방지
+  opening,
 }) {
   const translateY = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
@@ -346,6 +349,17 @@ export default function GeofenceBanner({
     // 실시간 배너는 상위 화면이 넘긴 사실만 그립니다. 넘긴 값이 없으면 아무것도 그리지 않습니다.
     const mainTitle = title || '';
     const mainSub = sub || '';
+    // v2.20 — 영업 상태 (확인된 경우에만) — 색은 상태별로
+    const openingText = opening && opening.text ? String(opening.text) : '';
+    const openingTone = opening && opening.tone ? String(opening.tone) : 'muted';
+    const openingStyle =
+      openingTone === 'open'
+        ? styles.openPillOpen
+        : openingTone === 'break'
+        ? styles.openPillBreak
+        : openingTone === 'closed'
+        ? styles.openPillClosed
+        : styles.openPillMuted;
     if (mainTitle || mainSub) {
       const mainBadge = badge || '지금';
       const muted = tone === 'muted';
@@ -365,10 +379,21 @@ export default function GeofenceBanner({
                 {mainTitle}
               </Text>
             )}
-            {!!mainSub && (
-              <Text style={styles.sub} numberOfLines={1}>
-                {mainSub}
-              </Text>
+            {(!!mainSub || !!openingText) && (
+              <View style={styles.subRow}>
+                {!!openingText && (
+                  <View style={[styles.openPill, openingStyle]} testID="geofence-opening-badge">
+                    <Text style={styles.openPillText} numberOfLines={1}>
+                      {openingText}
+                    </Text>
+                  </View>
+                )}
+                {!!mainSub && (
+                  <Text style={styles.sub} numberOfLines={1}>
+                    {mainSub}
+                  </Text>
+                )}
+              </View>
             )}
           </View>
           <View style={[styles.nowChip, muted ? styles.nowChipMuted : styles.nowChipLive]}>
@@ -470,6 +495,40 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
     color: '#C7D0E0',
+  },
+  // v2.20 — 영업 상태 뱃지 (배너의 부제 줄 앞에 작게) — 다크 카드 위에서 읽히는 색
+  subRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  openPill: {
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    marginRight: 6,
+    borderWidth: 1,
+  },
+  openPillOpen: {
+    backgroundColor: 'rgba(34, 197, 94, 0.18)',
+    borderColor: 'rgba(34, 197, 94, 0.55)',
+  },
+  openPillBreak: {
+    backgroundColor: 'rgba(245, 158, 11, 0.18)',
+    borderColor: 'rgba(245, 158, 11, 0.55)',
+  },
+  openPillClosed: {
+    backgroundColor: 'rgba(148, 163, 184, 0.16)',
+    borderColor: 'rgba(148, 163, 184, 0.45)',
+  },
+  openPillMuted: {
+    backgroundColor: 'rgba(148, 163, 184, 0.12)',
+    borderColor: 'rgba(148, 163, 184, 0.35)',
+  },
+  openPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   locateBtn: {
     height: 34,

@@ -13,6 +13,7 @@
  *   npm run test:nav      … 검색 결과 따른 지도 이동 · 결과 목록 테스트만 (v2.6)
  *   npm run test:visit    … ✅ 가봤어요 · 📝 한줄 메모 · 🔓 10개 한도 해제 테스트만 (v2.10)
  *   npm run test:collections … 📂 컬렉션 만들기·담기·공유·정리 테스트만 (v2.19)
+ *   npm run test:hours     … 🕒 영업 상태 배지 · 📝 한줄 메모 초안 테스트만 (v2.20)
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -158,6 +159,17 @@ if (!only || only === 'collections') {
     entry: 'collections-test.mjs',
     out: 'collections-test.bundle.mjs',
     format: 'esm',
+  });
+}
+
+if (!only || only === 'hours') {
+  // v2.20 — 🕒 영업 상태 배지(한국 시간) · 📝 한줄 메모 초안 · 매장 상세 연결
+  failed += await runSuite({
+    name: '영업 상태·한줄 메모 초안 테스트',
+    entry: 'opening-status-test.mjs',
+    out: 'opening-status-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
   });
 }
 

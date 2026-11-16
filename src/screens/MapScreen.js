@@ -23,6 +23,9 @@ import {
 } from '../utils/categories';
 import GeofenceBanner, { shouldShowBanner } from '../components/GeofenceBanner';
 import PinDetailSheet from '../components/PinDetailSheet';
+// v2.20 — 영업 상태 배지(한국 시간 기준) · 매장 상세 조회(영업시간·추천 메뉴)
+import { bannerOpeningBadge } from '../utils/openingStatus';
+import { fetchPlaceInfo, needsPlaceInfo, pinHoursPatch } from '../services/placeInfo';
 import {
   NEARBY_RADIUS_M,
   distanceMap,
@@ -75,6 +78,8 @@ export default function MapScreen({
   onDeletePin,
   onTogglePinVisited,
   onChangePinMemo,
+  // v2.20 — 매장 상세(영업시간·추천 메뉴)를 확인해 핀에 저장 (App 이 로컬에 보관)
+  onSavePinHours,
   onToast,
   sharedPins = [],
   onAddSharedPins,
@@ -586,6 +591,62 @@ export default function MapScreen({
   }, [myCoords, nearby, closest, pins.length]);
 
   /**
+   * v2.20 — 지금 화면에 필요한 매장 상세(영업시간·추천 메뉴)를 **조용히** 확인해 핀에 저장합니다.
+   *   · 대상: 보고 있는 핀 + 반경 500m 안의 핀(최대 3곳). (배너의 영업 상태 배지도 실제 값으로)
+   *   · 핀마다 6시간에 한 번만(placeInfo.needsPlaceInfo) — 화면을 열 때마다 서버를 부르지 않습니다.
+   *   · 실패는 10분 뒤 다시 시도 (일시적인 네트워크 오류로 6시간 비워 두지 않게)
+   *   · 읽기 전용(공유받은 지도) 핀은 건드리지 않습니다.
+   */
+  const placeInfoBusy = useRef({});
+  const placeInfoFailedAt = useRef({});
+  useEffect(() => {
+    if (typeof onSavePinHours !== 'function') return;
+    const now = Date.now();
+    const targets = [];
+    const push = (pin) => {
+      if (!pin || !pin.id || pin.readOnly) return;
+      if (targets.some((p) => p.id === pin.id)) return;
+      if (placeInfoBusy.current[pin.id]) return;
+      const failedAt = placeInfoFailedAt.current[pin.id] || 0;
+      if (failedAt && now - failedAt < 10 * 60 * 1000) return;
+      if (!needsPlaceInfo(pin, now)) return;
+      targets.push(pin);
+    };
+    push(selectedPin);
+    nearby.slice(0, 3).forEach((hit) => push(hit.pin));
+    if (!targets.length) return;
+    let cancelled = false;
+    targets.forEach((pin) => {
+      placeInfoBusy.current[pin.id] = true;
+      fetchPlaceInfo(pin)
+        .then((result) => {
+          if (cancelled) return;
+          if (!result || !result.ok) {
+            placeInfoFailedAt.current[pin.id] = Date.now();
+            return;
+          }
+          delete placeInfoFailedAt.current[pin.id];
+          onSavePinHours(pin.id, pinHoursPatch(result.place));
+        })
+        .catch(() => {
+          placeInfoFailedAt.current[pin.id] = Date.now();
+        })
+        .finally(() => {
+          delete placeInfoBusy.current[pin.id];
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPin, nearby, onSavePinHours]);
+
+  /** v2.20 — 반경 500m 배너의 영업 상태 배지 (확인된 경우에만 글자가 있습니다) */
+  const bannerOpening = useMemo(
+    () => bannerOpeningBadge(banner.pin ? banner.pin.hours : null),
+    [banner.pin]
+  );
+
+  /**
    * v2.14.1 — 배너 한 장을 가리키는 키. 위로 스와이프해 닫으면 이 키를 기억해 두고,
    * 같은 키(같은 가게·같은 모드)의 배너는 다시 띄우지 않습니다.
    * · 다른 가게가 가장 가까워지거나 반경 안팎이 바뀌면 키가 달라져 다시 보입니다.
@@ -792,6 +853,7 @@ export default function MapScreen({
               sub={banner.sub}
               badge={banner.badge}
               tone={banner.tone}
+              opening={bannerOpening}
             />
           )}
           {!!locationError && (

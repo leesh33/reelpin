@@ -14,6 +14,11 @@
  *   · naverPlaceId            … 네이버 플레이스 ID — 있으면 매장 정보가 상세 페이지로 직행
  *   · 여러 곳을 한 번에 저장할 때의 중복 판정(`splitNewPins`)도 이 파일에 모읍니다.
  *
+ * v2.20 에서 핀에 새로 붙는 필드 (기기 로컬 전용 — 클라우드 스키마는 그대로)
+ *   · hours           … 매장 영업시간(요일·브레이크·라스트오더·휴무) — 배지 계산용 스냅샷
+ *   · hoursCheckedAt  … 영업시간을 확인한 시각(ISO). 6시간 지나면 다시 확인합니다
+ *   · hoursName       … 서버가 확인해 준 매장 이름 (이름이 다르면 화면에서 무시)
+ *
  * v2.10 에서 핀에 새로 붙는 필드
  *   · visited                 … ✅ '가봤어요' 방문 완료 (기본 false)
  *   · visitedAt               … 방문 체크를 한 시각(ISO). 체크를 풀면 빈 문자열
@@ -53,6 +58,10 @@ export function buildPin(candidate, options = {}) {
     visited: options.visited === true,
     visitedAt: options.visited === true ? now.toISOString() : '',
     memo: normalizeMemo(options.memo != null ? options.memo : candidate.memo),
+    // v2.20 — 영업시간 스냅샷 (추출 단계에서는 없습니다 — 상세를 열 때 채워집니다)
+    hours: candidate.hours && typeof candidate.hours === 'object' ? candidate.hours : null,
+    hoursCheckedAt: '',
+    hoursName: '',
     createdAt: now.toISOString(),
   };
 }
@@ -96,7 +105,27 @@ export function normalizePin(pin) {
     visited: pin.visited === true,
     visitedAt: pin.visited === true ? String(pin.visitedAt || '') : '',
     memo: normalizeMemo(pin.memo),
+    // v2.20 — v2.19 이하에서 저장된 핀에는 없습니다. (없으면 null → '영업시간 미확인')
+    hours: pin.hours && typeof pin.hours === 'object' ? pin.hours : null,
+    hoursCheckedAt: String(pin.hoursCheckedAt || ''),
+    hoursName: String(pin.hoursName || ''),
   };
+}
+
+/**
+ * v2.20 — 매장 상세에서 확인한 영업시간을 핀에 얹습니다. (기기 로컬에만 보관)
+ *   · updatedAt 은 건드리지 않습니다 — 클라우드 동기화 대상(핀 내용)이 바뀐 게 아닙니다.
+ */
+export function withPlaceHours(pin, patch, options = {}) {
+  if (!pin) return null;
+  const now = options.now ? new Date(options.now) : new Date();
+  const next = patch && typeof patch === 'object' ? patch : {};
+  return normalizePin({
+    ...pin,
+    hours: next.hours && typeof next.hours === 'object' ? next.hours : null,
+    hoursCheckedAt: String(next.hoursCheckedAt || now.toISOString()),
+    hoursName: String(next.hoursName || ''),
+  });
 }
 
 /**

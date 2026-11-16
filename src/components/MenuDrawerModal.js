@@ -32,7 +32,7 @@ import ProfileScreen, {
 import { colors } from '../theme';
 import LayerSheet from './LayerSheet';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.19.3';
+export const APP_VERSION_LABEL = '릴스핀 v2.20.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];

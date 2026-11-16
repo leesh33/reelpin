@@ -37,7 +37,7 @@ import {
   saveRadius,
   saveAlerts,
 } from './src/storage';
-import { findExistingPin, normalizePins, planPinAddition } from './src/utils/pins';
+import { findExistingPin, normalizePins, planPinAddition, withPlaceHours } from './src/utils/pins';
 import {
   addCategory,
   allCategories,
@@ -628,6 +628,25 @@ export default function App() {
     [pushPinsToCloud]
   );
 
+  /**
+   * v2.20 — 매장 상세에서 확인한 영업시간을 핀에 저장합니다. (기기 로컬 전용)
+   *   · 클라우드 스키마에 hours 컬럼이 없으므로 push 하지 않습니다. (updatedAt 도 그대로)
+   *   · 화면(상세 시트 배지·500m 배너)이 곧바로 다시 그려집니다.
+   */
+  const handleSavePinHours = useCallback(
+    (pinId, patch) => {
+      if (!pinId || !patch) return;
+      const target = (pinsRef.current || []).find((p) => p && p.id === pinId);
+      if (!target) return;
+      const updated = withPlaceHours(target, patch);
+      if (!updated) return;
+      const updatedList = pinsRef.current.map((p) => (p && p.id === pinId ? updated : p));
+      pinsRef.current = updatedList;
+      setPins(updatedList);
+    },
+    []
+  );
+
   const handleSaved = useCallback(
     (pin) => {
       // 매장 정보 URL 또는 이름+동네가 같으면 같은 장소 — 중복 핀을 만들지 않습니다.
@@ -1036,6 +1055,7 @@ export default function App() {
               onDeletePin={handleDeletePin}
               onTogglePinVisited={handleTogglePinVisited}
               onChangePinMemo={handleSavePinMemo}
+              onSavePinHours={handleSavePinHours}
               onToast={showToast}
               sharedPins={sharedPins}
               onAddSharedPins={handleAddSharedPins}

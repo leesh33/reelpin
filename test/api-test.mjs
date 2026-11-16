@@ -21,7 +21,11 @@ import resolveUrlHandler, {
   normalizeTarget,
   parseNaverPlaceHtml as apiParseNaverPlaceHtml,
 } from '../api/resolve-url.js';
-import geminiHandler from '../api/gemini.js';
+import geminiHandler, { coerceAnalysis as geminiCoerceAnalysis, coerceMemo as geminiCoerceMemo } from '../api/gemini.js';
+// v2.20 — 🕒 매장 영업시간 (네이버 플레이스 · 카카오맵 패널)
+import naverPlaceHandler, { parseNaverPlacePage } from '../api/naver-place.js';
+import kakaoPlaceHandler, { parseKakaoPlacePanel } from '../api/kakao-place.js';
+import { parkingPhrase, timeRangeOf, weekdaysFromText } from '../server/place-info.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -839,6 +843,187 @@ const rewrite = (vercel.rewrites || [])[0] || {};
 check('vercel.json: SPA rewrite → index.html', rewrite.destination === '/index.html', JSON.stringify(rewrite));
 check('vercel.json: /api 는 rewrite 제외', String(rewrite.source).indexOf('(?!api/)') > 0, String(rewrite.source));
 check('vercel.json: 확장자 있는 파일(js·png) 은 rewrite 제외', String(rewrite.source).indexOf('(?!.*\\.)') > 0, String(rewrite.source));
+
+
+// ── 10. v2.20 · 매장 영업시간 (네이버 플레이스 · 카카오맵 패널) ─────────
+// 응답 모양은 실측값(칸다소바 · 원당진순대국)을 그대로 줄였습니다.
+const NAVER_STATE = {
+  'PlaceDetailBase:1736095566': { __typename: 'PlaceDetailBase', id: '1736095566', name: '칸다소바' },
+  'PlaceMenuCategory:recommend': {
+    __typename: 'PlaceMenuCategory',
+    id: 'recommend',
+    kind: 'recommend',
+    itemIds: ['PlaceMenuItem:a', 'PlaceMenuItem:b'],
+  },
+  'PlaceMenuItem:a': { __typename: 'PlaceMenuItem', name: '지로케 라멘', badges: ['repr'] },
+  'PlaceMenuItem:b': { __typename: 'PlaceMenuItem', name: '마제소바', badges: ['repr'] },
+  'InformationFacilities:42': { __typename: 'InformationFacilities', id: '42', name: '아기의자' },
+  ROOT_QUERY: {
+    'placeDetail({"input":{"deviceType":"mobile","id":"1736095566","isNx":false}})': {
+      __typename: 'PlaceDetail',
+      informationTab: {
+        parkingInfo: { description: '지정 주차장은 따로 준비되어 있지 않습니다' },
+        facilities: [{ __ref: 'InformationFacilities:42' }],
+        keywordList: ['마제소바', '홍대라멘'],
+      },
+      newBusinessHours: [
+        {
+          __typename: 'NewBusinessHour',
+          name: '기본',
+          businessStatusDescription: { status: '영업 종료', description: '11:30에 영업 시작' },
+          businessHours: [
+            {
+              day: '매일',
+              businessHours: { start: '11:30', end: '21:30' },
+              breakHours: [{ start: '15:30', end: '17:00' }],
+              lastOrderTimes: [
+                { type: '휴게시간', time: '15:00' },
+                { type: '영업시간', time: '21:00' },
+              ],
+              showEndsNextDay: false,
+            },
+            { day: '화', businessHours: null, breakHours: [], lastOrderTimes: [] },
+          ],
+          comingIrregularClosedDays: [],
+          comingRegularClosedDays: '매주 화요일 휴무',
+          freeText: '',
+        },
+      ],
+    },
+  },
+};
+const NAVER_PLACE_PAGE_API =
+  '<!doctype html><html><head><title>네이버 플레이스</title></head><body><script>window.__APOLLO_STATE__ = ' +
+  JSON.stringify(NAVER_STATE) +
+  ';</script></body></html>';
+
+const naverParsed = parseNaverPlacePage(NAVER_PLACE_PAGE_API, '1736095566');
+check('naver-place: 파싱 ok · 이름', naverParsed.ok && naverParsed.name === '칸다소바', JSON.stringify(naverParsed).slice(0, 200));
+check(
+  'naver-place: 매일 11:30~21:30 + 브레이크 15:30~17:00 + 라스트오더 21:00',
+  naverParsed.hours.days[0].start === '11:30' &&
+    naverParsed.hours.days[0].end === '21:30' &&
+    naverParsed.hours.days[0].breaks[0].end === '17:00' &&
+    naverParsed.hours.days[0].lastOrder[1].time === '21:00',
+  JSON.stringify(naverParsed.hours.days[0])
+);
+check(
+  'naver-place: 정기휴무(화) + 요일 칸 비어 있는 행도 휴무로',
+  naverParsed.hours.closedDays.join(',') === '화',
+  JSON.stringify(naverParsed.hours.closedDays)
+);
+check('naver-place: hasHours true', naverParsed.hours.hasHours === true);
+check(
+  'naver-place: 추천 메뉴 · 주차 불가 (정보탭에서)',
+  naverParsed.tips.recommendedMenu.join(',') === '지로케 라멘,마제소바' && naverParsed.tips.parking === '주차 불가',
+  JSON.stringify(naverParsed.tips)
+);
+check('naver-place: 아기의자 시설 인식', naverParsed.tips.kids === '아기의자 있음', naverParsed.tips.kids);
+check('naver-place: 영업시간 없는 페이지는 hasHours=false', parseNaverPlacePage('<html>no state</html>', '1').ok === false);
+
+const KAKAO_PANEL = {
+  summary: { confirm_id: '2057792795', name: '칸다소바 홍대점' },
+  open_hours: {
+    headline: { code: 'BEFORE_OPEN', display_text: '영업 전', display_text_info: '11:30 오픈' },
+    week_from_today: {
+      business_hours_desc: '점심 라스트 오더 15:00 / 저녁 라스트 오더 21:00',
+      week_periods: [
+        {
+          days: [
+            {
+              day_of_the_week_desc: '화(11/17)',
+              on_days: {
+                start_end_time_desc: '11:30 ~ 21:30',
+                break_times_desc: ['15:30 ~ 17:00 브레이크타임'],
+                last_order_times_desc: ['21:00 라스트오더'],
+              },
+            },
+            { day_of_the_week_desc: '수(11/18)' },
+            {
+              day_of_the_week_desc: '목(11/19)',
+              on_days: { start_end_time_desc: '11:30 ~ 21:30' },
+            },
+          ],
+        },
+      ],
+    },
+  },
+  menu: { menus: { items: [{ name: '마제소바', is_recommend: true }, { name: '지로케 라멘', is_recommend: false }] } },
+  place_add_info: { facilities: { is_parking: false }, tags: ['마제소바', '혼밥'] },
+};
+const kakaoParsed = parseKakaoPlacePanel(KAKAO_PANEL, '2057792795');
+check('kakao-place: 파싱 ok · 이름', kakaoParsed.ok && kakaoParsed.name === '칸다소바 홍대점');
+check(
+  'kakao-place: 요일별 영업시간·브레이크·라스트오더',
+  kakaoParsed.hours.days[0].day === '화' &&
+    kakaoParsed.hours.days[0].start === '11:30' &&
+    kakaoParsed.hours.days[0].breaks[0].start === '15:30' &&
+    kakaoParsed.hours.days[0].lastOrder[0].time === '21:00',
+  JSON.stringify(kakaoParsed.hours.days[0])
+);
+check('kakao-place: on_days 없는 날은 휴무(수)', kakaoParsed.hours.closedDays.join(',') === '수', JSON.stringify(kakaoParsed.hours.closedDays));
+check(
+  'kakao-place: 추천 메뉴(is_recommend) · 주차 불가(is_parking=false)',
+  kakaoParsed.tips.recommendedMenu.join(',') === '마제소바' && kakaoParsed.tips.parking === '주차 불가',
+  JSON.stringify(kakaoParsed.tips)
+);
+check(
+  'kakao-place: 영업시간 없는 패널은 hasHours=false (지어내지 않음)',
+  parseKakaoPlacePanel({ summary: { name: 'x' } }, '1').hours.hasHours === false
+);
+
+// 입력 검증 · 업스트림 실패 · 키/본문 노출 없음
+let rp = await call(naverPlaceHandler, {});
+check('naver-place: id 없음 → 400', rp.status === 400 && rp.body.error === 'bad-place-id', JSON.stringify(rp.body));
+calls = [];
+rp = await call(naverPlaceHandler, { id: '../etc/passwd' });
+check('naver-place: 이상한 id → 400 (다른 주소로 요청 안 함)', rp.status === 400 && calls.length === 0, String(rp.status));
+rp = await call(naverPlaceHandler, { id: '1736095566' }, 'POST');
+check('naver-place: POST -> 405', rp.status === 405);
+calls = [];
+handler = () => ({ ok: true, status: 200, text: async () => NAVER_PLACE_PAGE_API, json: async () => ({}) });
+rp = await call(naverPlaceHandler, { id: '1736095566' });
+check('naver-place: 200 + 이름', rp.status === 200 && rp.body.name === '칸다소바', JSON.stringify(rp.body).slice(0, 160));
+check('naver-place: 요청 URL 이 모바일 플레이스 상세', calls[0] && calls[0].url === 'https://m.place.naver.com/place/1736095566/home', calls[0] && calls[0].url);
+check('naver-place: 캐시 헤더(5분)', String(rp.headers['cache-control'] || '').indexOf('s-maxage=300') >= 0, rp.headers['cache-control']);
+handler = () => errRes(500);
+rp = await call(naverPlaceHandler, { id: '1736095566' });
+check('naver-place: 업스트림 500 → 502', rp.status === 502 && rp.body.error === 'naver-place-failed', JSON.stringify(rp.body));
+
+let rk = await call(kakaoPlaceHandler, {});
+check('kakao-place: id 없음 → 400', rk.status === 400 && rk.body.error === 'bad-place-id');
+calls = [];
+handler = () => ({ ok: true, status: 200, json: async () => KAKAO_PANEL });
+rk = await call(kakaoPlaceHandler, { id: '2057792795' });
+check('kakao-place: 200 + 이름', rk.status === 200 && rk.body.name === '칸다소바 홍대점');
+check(
+  'kakao-place: 요청 URL·머리글(모바일 UA · 지도 Referer)',
+  calls[0] &&
+    calls[0].url === 'https://place-api.map.kakao.com/places/panel3/2057792795' &&
+    String(calls[0].init.headers['User-Agent']).indexOf('iPhone') > 0 &&
+    calls[0].init.headers.Referer === 'https://map.kakao.com/',
+  calls[0] && calls[0].url
+);
+handler = () => errRes(403);
+rk = await call(kakaoPlaceHandler, { id: '2057792795' });
+check('kakao-place: 업스트림 403 → 502 (본문·키 노출 없음)', rk.status === 502 && !leaksSecret(rk.raw), rk.raw);
+
+// 순수 도우미
+check('place-info: 주차 문구 → 짧은 사실', parkingPhrase('주차장이 없습니다') === '주차 불가' && parkingPhrase('지하 주차 가능') === '주차 가능' && parkingPhrase('') === '');
+check('place-info: 시간 범위 파싱', JSON.stringify(timeRangeOf('11:30 ~ 21:30')) === '{"start":"11:30","end":"21:30"}');
+check('place-info: 휴무 요일 문장', weekdaysFromText('매주 화요일 휴무').join(',') === '화');
+
+// Gemini: 한줄 메모 재료도 함께 뽑는가 (v2.20)
+const geminiMemo = geminiCoerceMemo({ memo: { recommendedMenu: '지로케 라멘', parking: '주차 불가', kidsOrWaitingTip: '웨이팅 있음' } });
+check(
+  'gemini: memo 세 칸 그대로',
+  geminiMemo.recommendedMenu === '지로케 라멘' && geminiMemo.parking === '주차 불가' && geminiMemo.kidsOrWaitingTip === '웨이팅 있음',
+  JSON.stringify(geminiMemo)
+);
+check('gemini: memo 없으면 빈 문자열(지어내지 않음)', JSON.stringify(geminiCoerceMemo({})) === '{"recommendedMenu":"","parking":"","kidsOrWaitingTip":""}');
+const coerced = geminiCoerceAnalysis({ storeName: '칸다소바', memo: { recommendedMenu: '마제소바' }, places: [] });
+check('gemini: coerceAnalysis 가 memo 를 남김', coerced.memo && coerced.memo.recommendedMenu === '마제소바', JSON.stringify(coerced.memo));
+check('gemini: 빈 결과에도 memo 기본값', JSON.stringify(geminiCoerceAnalysis(null).memo) === '{"recommendedMenu":"","parking":"","kidsOrWaitingTip":""}');
 
 if (fails) {
   console.log('\nAPI_TEST_FAILED (' + fails + ')');

@@ -227,6 +227,12 @@ function fillPin(basic, extra) {
     out.menuTags = extra.menuTags.slice();
   }
   if (!out.naverPlaceId && extra && extra.naverPlaceId) out.naverPlaceId = String(extra.naverPlaceId);
+  // v2.20 — 영업시간은 기기 로컬 스냅샷입니다. 클라우드에서 온 핀이 비우지 않게 유지합니다.
+  if (!out.hours && extra && extra.hours) {
+    out.hours = extra.hours;
+    out.hoursCheckedAt = extra.hoursCheckedAt || '';
+    out.hoursName = extra.hoursName || '';
+  }
   if (out.confidence == null && extra && typeof extra.confidence === 'number') out.confidence = extra.confidence;
   return normalizePin(out);
 }

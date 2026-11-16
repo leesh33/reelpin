@@ -85,6 +85,8 @@ export default function PasteScreen({
   const [categoryTouched, setCategoryTouched] = useState(false);
   // v2.10 — 📝 저장 전에 미리 적어 두는 한줄 메모 (선택)
   const [memo, setMemo] = useState('');
+  // v2.20 — 🤖 AI 가 채운 초안인지 (사용자가 한 글자라도 고치면 false → 안내 문구가 바뀝니다)
+  const [memoAutoFilled, setMemoAutoFilled] = useState(false);
   // v2.13 — 📸 사진을 읽고 있는 동안 (버튼 자체가 'AI 사진 분석 중…' 으로 바뀝니다)
   const [photoBusy, setPhotoBusy] = useState(false);
   const scrollRef = useRef(null);
@@ -151,6 +153,7 @@ export default function PasteScreen({
     setCategoryTouched(false);
     setPickedCategory('');
     setMemo('');
+    setMemoAutoFilled(false);
     setExtracting(false);
     setPhotoBusy(false);
   };
@@ -228,6 +231,11 @@ export default function PasteScreen({
         // v2.9 — Gemini 가 영상 속 말·자막을 읽어 찾은 경우의 한 줄 근거
         aiNote: result.aiNote || '',
       });
+      // v2.20 — AI·설명글에서 확인된 추천 메뉴·주차·아기/웨이팅 → 한줄 메모 초안을 미리 채웁니다.
+      //         (확인된 값이 없으면 빈 문자열 → 메모는 그대로 비어 있습니다)
+      const draft = String(result.memoDraft || '').trim().slice(0, 120);
+      setMemo(draft);
+      setMemoAutoFilled(Boolean(draft));
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
       clearInterval(stageTimer);
@@ -269,6 +277,9 @@ export default function PasteScreen({
       }
       setCandidates(result.candidates || []);
       setSelectedIds(result.candidates && result.candidates[0] ? [result.candidates[0].id] : []);
+      // 가게명 검색에는 설명글·사진이 없어 메모 초안도 없습니다. (이전 초안이 남지 않게 비웁니다)
+      setMemo('');
+      setMemoAutoFilled(false);
       setMeta({
         mode: 'search',
         multi: false,
@@ -339,6 +350,10 @@ export default function PasteScreen({
         suggestedQuery: result.suggestedQuery || '',
         aiNote: result.aiNote || '',
       });
+      // v2.20 — 사진에서 읽은 추천 메뉴·주차·아기/웨이팅으로 한줄 메모 초안을 채웁니다.
+      const photoDraft = String(result.memoDraft || '').trim().slice(0, 120);
+      setMemo(photoDraft);
+      setMemoAutoFilled(Boolean(photoDraft));
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
       if (seq !== runSeq.current) return;
@@ -411,6 +426,7 @@ export default function PasteScreen({
     setCategoryTouched(false);
     setPickedCategory('');
     setMemo('');
+    setMemoAutoFilled(false);
   };
 
   /** 선택한 후보를 핀으로 만들어 저장합니다. (1곳이든 N곳이든 같은 버튼) */
@@ -846,17 +862,37 @@ export default function PasteScreen({
               />
             </View>
 
-            {/* v2.10 — 📝 저장 전에 한줄 메모를 미리 적어 둡니다 (입력하지 않아도 저장됩니다) */}
+            {/* v2.10 — 📝 저장 전에 한줄 메모를 미리 적어 둡니다 (입력하지 않아도 저장됩니다)
+                v2.20 — AI 가 읽은 추천 메뉴·주차·아기/웨이팅으로 **자동으로 채워** 둡니다.
+                        그대로 [저장]만 눌러도 되고, 한 글자 고쳐도 됩니다. */}
+            {memoAutoFilled && !!memo.trim() && (
+              <View style={styles.memoAutoLine} testID="paste-memo-auto-line">
+                <Ionicons name="sparkles" size={12} color={colors.coralDark} />
+                <Text style={styles.memoAutoText} numberOfLines={2}>
+                  AI가 한줄 메모 초안을 채웠어요 · 그대로 저장해도 되고, 고쳐도 돼요
+                </Text>
+              </View>
+            )}
             <View style={styles.memoCard}>
               <View style={styles.memoHead}>
-                <Ionicons name="create-outline" size={13} color={colors.coralDark} />
+                <Ionicons
+                  name={memoAutoFilled ? 'sparkles-outline' : 'create-outline'}
+                  size={13}
+                  color={colors.coralDark}
+                />
                 <Text style={styles.memoLabel}>한줄 메모</Text>
-                <Text style={styles.memoHint}>{memo.trim() ? memo.trim().length + '/120' : '선택 입력'}</Text>
+                <Text style={styles.memoHint}>
+                  {memo.trim() ? memo.trim().length + '/120' : '선택 입력'}
+                </Text>
               </View>
               <TextInput
                 style={styles.memoInput}
                 value={memo}
-                onChangeText={setMemo}
+                onChangeText={(text) => {
+                  setMemo(text);
+                  // 사용자가 직접 고친 뒤에는 'AI 초안' 안내를 끕니다.
+                  if (memoAutoFilled) setMemoAutoFilled(false);
+                }}
                 placeholder="추천 메뉴, 아기의자, 웨이팅 팁 등을 적어두세요"
                 placeholderTextColor={colors.textMuted}
                 maxLength={120}
@@ -1384,6 +1420,23 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   // v2.10 — 📝 저장 전 한줄 메모 (선택)
+  // v2.20 — AI 초안 안내 줄 (한줄 메모 카드 바로 위)
+  memoAutoLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#FFF3EE',
+    borderRadius: radius.sm,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    marginTop: 4,
+  },
+  memoAutoText: {
+    flex: 1,
+    fontSize: 11,
+    color: colors.coralDark,
+    fontWeight: '600',
+  },
   memoCard: {
     backgroundColor: colors.white,
     borderRadius: radius.md,

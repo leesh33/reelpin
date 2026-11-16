@@ -61,7 +61,16 @@ const MAX_IMAGE_PLACES = 6;
 
 /** 실패·미확인 시 돌려주는 빈 결과 — 앱은 이 모양만 보고 폴백합니다. */
 function emptyResult(reason) {
-  return { storeName: '', area: '', menu: '', category: '', places: [], reason: String(reason || '') };
+  return {
+    storeName: '',
+    area: '',
+    menu: '',
+    category: '',
+    places: [],
+    // v2.20 — 한줄 메모 초안 재료 (없으면 빈 문자열 — 앱은 메모를 비워 둡니다)
+    memo: { recommendedMenu: '', parking: '', kidsOrWaitingTip: '' },
+    reason: String(reason || ''),
+  };
 }
 
 function cleanText(value, maxLength) {
@@ -152,6 +161,11 @@ const SYSTEM_INSTRUCTION = [
   '5) category: 맛집|카페|디저트|베이커리|가볼곳|기타 중 하나.',
   '6) places: 영상에 서로 다른 가게가 여러 곳 나오면 최대 3곳까지 [{name, area, menu}].',
   '7) 가게를 하나도 특정할 수 없으면 storeName 을 "" 로, places 를 [] 로 둔다.',
+  // v2.20 — 저장 화면의 한줄 메모를 자동으로 채우기 위한 재료. 확인된 것만.
+  '8) memo.recommendedMenu: 영상에서 확인된 대표 메뉴 이름 하나(예: "지로케 라멘"). 메뉴가 여럿이면 가장 많이 강조된 것. 없으면 "".',
+  '9) memo.parking: 주차에 대한 말이 나오면 "주차 불가"·"주차 가능"·"무료 주차"처럼 짧게. 나오지 않으면 "".',
+  '10) memo.kidsOrWaitingTip: 아기의자·유아 동반·웨이팅(대기)에 대한 말이 나오면 "아기의자 있음"·"웨이팅 있음"처럼 짧게. 없으면 "".',
+  '11) 8~10 은 **영상에서 확인된 내용만** 적는다. 추측·일반론("보통 웨이팅이 있다")은 금지. 모르면 빈 문자열.',
 ].join('\n');
 
 /** 요청 본문 — 영상 + 참고용 메타데이터(제목·설명글) */
@@ -161,8 +175,10 @@ function buildRequestBody({ videoUrl, title, description, thinking }) {
   if (description) hints.push('영상 설명글: ' + description);
   const ask =
     '이 영상을 보고, 영상에 나온 가게 정보를 아래 키만 가진 JSON 하나로 답해줘(설명·코드블록 없이).\n' +
-    '{"storeName":"가게 상호","area":"동네","menu":"대표 메뉴 1~3개(쉼표)","category":"맛집|카페|디저트|베이커리|가볼곳|기타","places":[{"name":"","area":"","menu":""}]}\n' +
-    '영상 속 말(음성)과 화면 자막·간판에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.' +
+    '{"storeName":"가게 상호","area":"동네","menu":"대표 메뉴 1~3개(쉼표)","category":"맛집|카페|디저트|베이커리|가볼곳|기타","places":[{"name":"","area":"","menu":""}],' +
+    '"memo":{"recommendedMenu":"","parking":"","kidsOrWaitingTip":""}}\n' +
+    '영상 속 말(음성)과 화면 자막·간판에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.\n' +
+    'memo 는 영상에 실제로 나온 추천 메뉴·주차·아기/웨이팅 정보만 적고, 확인되지 않으면 빈 문자열로 둬.' +
     (hints.length ? '\n\n[참고 — 영상 메타데이터]\n' + hints.join('\n') : '');
   const generationConfig = {
     temperature: 0.2,
@@ -207,14 +223,21 @@ const IMAGE_SYSTEM_INSTRUCTION = [
   '5) category: 맛집|카페|디저트|베이커리|가볼곳|기타 중 하나.',
   '6) places: 사진에 서로 다른 가게가 여러 곳(목록형 캡처)이면 최대 6곳까지 [{name, area, menu}].',
   '7) 가게를 하나도 특정할 수 없으면 storeName 을 "" 로, places 를 [] 로 둔다.',
+  // v2.20 — 한줄 메모 재료. 사진에 적힌 글자에 있는 것만.
+  '8) memo.recommendedMenu: 사진에 적힌 대표 메뉴 이름 하나(없으면 "").',
+  '9) memo.parking: 사진에 주차 안내가 적혀 있으면 "주차 불가"·"주차 가능"처럼 짧게(없으면 "").',
+  '10) memo.kidsOrWaitingTip: 사진에 아기의자·유아 동반·웨이팅 안내가 적혀 있으면 "아기의자 있음"·"웨이팅 있음"처럼 짧게(없으면 "").',
+  '11) 8~10 은 사진에 적힌 내용만. 추측 금지.',
 ].join('\n');
 
 /** 사진 모드 요청 본문 — inlineData(사진) + 프롬프트 */
 function buildImageRequestBody({ mimeType, data, hint, thinking }) {
   const ask =
     '이 사진(인스타 캡처·스크린샷)을 보고, 사진에 적힌 가게 정보를 아래 키만 가진 JSON 하나로 답해줘(설명·코드블록 없이).\n' +
-    '{"storeName":"가게 상호","area":"동네","menu":"대표 메뉴 1~3개(쉼표)","category":"맛집|카페|디저트|베이커리|가볼곳|기타","places":[{"name":"","area":"","menu":""}]}\n' +
-    '사진 속 캡션·간판·메뉴판·위치 태그에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.' +
+    '{"storeName":"가게 상호","area":"동네","menu":"대표 메뉴 1~3개(쉼표)","category":"맛집|카페|디저트|베이커리|가볼곳|기타","places":[{"name":"","area":"","menu":""}],' +
+    '"memo":{"recommendedMenu":"","parking":"","kidsOrWaitingTip":""}}\n' +
+    '사진 속 캡션·간판·메뉴판·위치 태그에서 실제 가게 이름을 찾아줘. 없으면 빈 문자열로 두고 지어내지 마.\n' +
+    'memo 는 사진에 적힌 추천 메뉴·주차·아기/웨이팅 정보만 적고, 확인되지 않으면 빈 문자열로 둬.' +
     (hint ? '\n\n[참고 — 사용자가 함께 적은 메모]\n' + hint : '');
   const generationConfig = {
     temperature: 0.2,
@@ -323,6 +346,31 @@ function parseJsonLoose(text) {
 
 const CATEGORY_WHITELIST = ['맛집', '카페', '디저트', '베이커리', '가볼곳'];
 
+/**
+ * v2.20 — 모델 응답의 `memo` → 앱이 쓰는 고정 모양.
+ *   · 문자열이 아니거나 비면 빈 문자열 (앱의 한줄 메모 초안이 비어 있게 — 지어내지 않음)
+ *   · 최대 40자로 잘라 한줄 메모(120자)에 여러 조각이 들어가게 합니다.
+ */
+function coerceMemo(obj) {
+  const source = obj && obj.memo && typeof obj.memo === 'object' ? obj.memo : obj || {};
+  const pick = (...keys) => {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) return cleanText(value, 40);
+      if (Array.isArray(value)) {
+        const first = value.map((v) => cleanText(v, 40)).filter(Boolean)[0];
+        if (first) return first;
+      }
+    }
+    return '';
+  };
+  return {
+    recommendedMenu: pick('recommendedMenu', 'recommended_menu', 'recommend'),
+    parking: pick('parking', 'parkingTip', 'parking_tip'),
+    kidsOrWaitingTip: pick('kidsOrWaitingTip', 'kids_or_waiting_tip', 'kidsTip', 'waitingTip'),
+  };
+}
+
 /** 모델 응답(모양이 흔들릴 수 있음) → 고정된 응답 모양으로 다듬습니다. */
 function coerceAnalysis(obj, options = {}) {
   if (!obj || typeof obj !== 'object') return emptyResult('gemini-unparsed');
@@ -352,8 +400,9 @@ function coerceAnalysis(obj, options = {}) {
   const menu = cleanText(pick('menu', 'menuTags', 'menus'), 80);
   const rawCategory = cleanText(pick('category'), 12);
   const category = CATEGORY_WHITELIST.indexOf(rawCategory) >= 0 ? rawCategory : '';
-  if (!storeName) return { ...emptyResult('gemini-no-store'), area, menu, category, places };
-  return { storeName, area, menu, category, places };
+  const memo = coerceMemo(obj);
+  if (!storeName) return { ...emptyResult('gemini-no-store'), area, menu, category, places, memo };
+  return { storeName, area, menu, category, places, memo };
 }
 
 /** Gemini 호출 1회. 실패하면 { ok:false, status } */
@@ -550,6 +599,7 @@ module.exports.MAX_IMAGE_BODY_BYTES = MAX_BODY_BYTES;
 module.exports.MAX_IMAGE_PLACES = MAX_IMAGE_PLACES;
 module.exports.parseJsonLoose = parseJsonLoose;
 module.exports.coerceAnalysis = coerceAnalysis;
+module.exports.coerceMemo = coerceMemo;
 module.exports.modelCandidates = modelCandidates;
 module.exports.thinkingModesFor = thinkingModesFor;
 module.exports.GEMINI_TIMEOUT_MS = GEMINI_TIMEOUT_MS;

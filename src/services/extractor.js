@@ -32,6 +32,8 @@
  */
 import { Platform } from 'react-native';
 import { extractNaverPlaceId, isShortLinkUrl, naverPlaceDetailUrl } from '../utils/links';
+// v2.20 — 저장 화면 `한줄 메모` 초안 (AI·설명글 키워드, 확인된 값만)
+import { memoDraftFromText, memoDraftOfParts, mergeMemoDrafts } from '../utils/memoDraft';
 
 export const PLATFORMS = {
   instagram: { label: '인스타 릴스', host: 'instagram.com' },
@@ -594,6 +596,31 @@ export const GEMINI_PROXY_TIMEOUT_MS = 59000;
  *                    places:Array<{name:string, area:string, menu:string}>, source:string}|null>}
  *          가게를 못 찾았거나(빈 결과) 프록시가 없으면 `null` — 호출부는 기존 폴백으로 이어집니다.
  */
+/**
+ * v2.20 — Gemini 응답에서 **한줄 메모 재료**만 꺼냅니다.
+ *   응답이 `memo:{recommendedMenu,parking,kidsOrWaitingTip}` 로 오거나, 같은 이름이 최상위에 와도 받아 줍니다.
+ *   (모델이 모양을 흘려도 앱이 조용히 무시하도록 문자열만 취합니다)
+ */
+export function memoPartsOf(json) {
+  const source = json && json.memo && typeof json.memo === 'object' ? json.memo : json || {};
+  const pick = (...keys) => {
+    for (const key of keys) {
+      const value = source[key];
+      if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 80);
+      if (Array.isArray(value)) {
+        const first = value.map((v) => String(v || '').trim()).filter(Boolean)[0];
+        if (first) return first.slice(0, 80);
+      }
+    }
+    return '';
+  };
+  return {
+    recommendedMenu: pick('recommendedMenu', 'recommended_menu', 'recommend', 'menu'),
+    parking: pick('parking', 'parkingTip', 'parking_tip'),
+    kidsOrWaitingTip: pick('kidsOrWaitingTip', 'kids_or_waiting_tip', 'kidsTip', 'waitingTip', 'tip'),
+  };
+}
+
 export async function fetchGeminiAnalysis(parsed, meta, options = {}) {
   if (!parsed || parsed.platform !== 'youtube') return null;
   const videoUrl = youtubeWatchUrlOf(parsed);
@@ -642,6 +669,8 @@ export async function fetchGeminiAnalysis(parsed, meta, options = {}) {
     menu: String(json.menu || '').trim().slice(0, 80),
     category: String(json.category || '').trim(),
     places,
+    // v2.20 — 한줄 메모 초안 재료 (추천 메뉴·주차·아기/웨이팅)
+    memo: memoPartsOf(json),
     source: 'gemini',
   };
 }
@@ -1060,6 +1089,8 @@ export async function fetchGeminiImageAnalysis(image, options = {}) {
       menu: String(json.menu || '').trim().slice(0, 80),
       category: String(json.category || '').trim(),
       places,
+      // v2.20 — 한줄 메모 초안 재료 (사진에 적힌 추천 메뉴·주차·아기/웨이팅)
+      memo: memoPartsOf(json),
       source: 'gemini',
       kind: 'image',
     },
@@ -1164,6 +1195,11 @@ export async function extractFromImage(input, options = {}) {
     suggestedQuery: geminiQueryList(analysis, 3)[0] || analysis.storeName,
     aiNote: imageNoteOf(analysis),
     aiAnalysis: analysis,
+    // v2.20 — 사진에서 읽은 추천 메뉴·주차·아기/웨이팅 → 한줄 메모 초안 (없으면 빈 문자열)
+    memoDraft: mergeMemoDrafts(
+      memoDraftOfParts(analysis.memo || {}),
+      memoDraftFromText(options.hint || '')
+    ),
   };
 
   // ── 목록형 캡처(가게 2곳 이상) → 각 가게를 따로 지도 조회 ──
@@ -3591,6 +3627,9 @@ export async function extractPlaces(rawInput, options = {}) {
     titleStatus,
     titleNotice,
     suggestedQuery,
+    // v2.20 — 제목·설명글에 **표식이 붙은** 추천 메뉴·주차·아기/웨이팅만 초안으로 뽑습니다.
+    //         (없는 정보는 지어내지 않습니다 — 재료가 없으면 빈 문자열)
+    memoDraft: memoDraftFromText(primaryText),
   };
 
   // ── v2.0 (1) 네이버 지도 링크는 지도 검색 없이 placeId 로 직행 저장 ──
@@ -3841,6 +3880,8 @@ export async function extractPlaces(rawInput, options = {}) {
         failures: [...(chain.failures || []), ...geminiChain.failures],
         aiNote,
         aiAnalysis: gemini,
+        // v2.20 — AI 가 영상에서 읽은 추천 메뉴·주차·아기/웨이팅을 설명글 초안 앞에 둡니다.
+        memoDraft: mergeMemoDrafts(memoDraftOfParts(gemini.memo || {}), base.memoDraft),
       };
     }
 
@@ -3873,6 +3914,7 @@ export async function extractPlaces(rawInput, options = {}) {
       failures: [...(chain.failures || []), ...geminiChain.failures],
       aiNote,
       aiAnalysis: gemini,
+      memoDraft: mergeMemoDrafts(memoDraftOfParts(gemini.memo || {}), base.memoDraft),
     };
   }
 
