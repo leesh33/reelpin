@@ -597,8 +597,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.10.0', pkg.version === '2.10.0', pkg.version],
-  ['버전: app.json 2.10.0', expoConfig.version === '2.10.0', expoConfig.version],
+  ['버전: package.json 2.11.0', pkg.version === '2.11.0', pkg.version],
+  ['버전: app.json 2.11.0', expoConfig.version === '2.11.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -839,6 +839,69 @@ for (const [label, ok, extra] of v210Checks) {
   }
 }
 
+// ── v2.11: 오른쪽 위 ✕ 가 있는 헤더는 모두 다크 차콜(#1C1C1E) ─────────────
+const pasteSource211 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const sheetSource211 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
+const webModalSource211 = fs.readFileSync(path.join(process.cwd(), 'src/components/InAppPlaceModal.web.js'), 'utf8');
+const nativeModalSource211 = fs.readFileSync(path.join(process.cwd(), 'src/components/InAppPlaceModal.js'), 'utf8');
+
+/** 헤더에 ✕ 닫기 버튼이 있는 화면들 — 소스에서 같은 다크 차콜 헤더를 쓰는지 봅니다. */
+const CLOSE_HEADER_FILES = [
+  ['저장 화면', pasteSource211, 'styles.header'],
+  ['핀 상세 시트', sheetSource211, 'styles.headerBar'],
+  ['인앱 매장 정보 모달(웹)', webModalSource211, 'styles.header'],
+  ['인앱 매장 정보 모달(iOS·안드로이드)', nativeModalSource211, 'styles.header'],
+];
+
+const v211HeaderChecks = [
+  ['헤더 통일: 저장 화면 헤더가 다크 차콜', /header: \{[\s\S]{0,400}?backgroundColor: colors\.charcoal,/.test(pasteSource211)],
+  ['헤더 통일: 저장 화면 로고 흰색 · [저장] 뱃지 반투명', /brandText: \{[\s\S]{0,120}?color: colors\.white/.test(pasteSource211) && /brandBadge: \{[\s\S]{0,80}?backgroundColor: colors\.charcoalPill/.test(pasteSource211)],
+  ['헤더 통일: 저장 화면 닫기 = 반투명 원 + 흰 ✕', /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(pasteSource211) && /name="close" size=\{18\} color=\{colors\.white\}/.test(pasteSource211)],
+  ['헤더 통일: 상세 시트 헤더 바가 다크 차콜 + 위쪽 둥근 모서리', /headerBar: \{[\s\S]{0,260}?backgroundColor: colors\.charcoal,[\s\S]{0,200}?borderTopLeftRadius: radius\.xxl/.test(sheetSource211)],
+  ['헤더 통일: 상세 시트 가게명 흰색 · 닫기 반투명 원 + 흰 ✕', /name: \{[\s\S]{0,140}?color: colors\.white/.test(sheetSource211) && /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(sheetSource211) && /name="close" size=\{18\} color=\{colors\.white\}/.test(sheetSource211)],
+  ['헤더 통일: 상세 시트 드래그 핸들도 밝은 반투명', /handle: \{[\s\S]{0,180}?backgroundColor: 'rgba\(255,255,255,0\.28\)'/.test(sheetSource211)],
+  // ✕ 헤더를 가진 화면은 빠짐없이 charcoal 을 써야 합니다 (색을 되돌리면 여기서 걸립니다)
+  ...CLOSE_HEADER_FILES.map(([label, source, styleKey]) => [
+    '헤더 통일: ' + label + ' 도 다크 차콜',
+    source.indexOf(styleKey) > 0 && source.indexOf('colors.charcoal') > 0,
+    styleKey,
+  ]),
+  // 다크 헤더 위 닫기 버튼은 흰 ✕ (예전 회색 ✕ 가 남아 있으면 실패)
+  ['헤더 통일: ✕ 닫기 아이콘은 모두 흰색', CLOSE_HEADER_FILES.every(([, source]) => !/name="close"[^>]*color=\{colors\.(textSub|textMuted|text)\}/.test(source))],
+  // 앱 전체(src)에서 ✕ 닫기를 가진 헤더 화면을 빠짐없이 찾습니다 — 새로 생기면 여기서 확인하게 됩니다
+  [
+    '헤더 통일: ✕ 닫기 헤더는 넣은 4곳뿐 (전수 검사)',
+    (() => {
+      const files = [];
+      const walk = (dir) => {
+        for (const name of fs.readdirSync(dir)) {
+          const full = path.join(dir, name);
+          if (fs.statSync(full).isDirectory()) walk(full);
+          else if (/\.jsx?$/.test(name)) files.push(full);
+        }
+      };
+      walk(path.join(process.cwd(), 'src'));
+      const withCloseHeader = files.filter((f) =>
+        /accessibilityLabel="(닫기|상세 닫기)"/.test(fs.readFileSync(f, 'utf8'))
+      );
+      const wanted = ['InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'PasteScreen.js', 'PinDetailSheet.js'];
+      return (
+        withCloseHeader.length === wanted.length &&
+        wanted.every((w) => withCloseHeader.some((f) => f.endsWith(w)))
+      );
+    })(),
+  ],
+  // 다크 헤더 아래 흰 본문이 바로 붙지 않게 스크롤 상단 여백을 둡니다 (스크롤 시 가려짐 완화)
+  ['저장 화면: 다크 헤더 아래 스크롤 상단 여백', /scrollContent: \{[\s\S]{0,160}?paddingTop: 12/.test(pasteSource211)],
+];
+for (const [label, ok, extra] of v211HeaderChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -859,6 +922,7 @@ const total =
   assetChecks.length +
   brandChecks.length +
   v210Checks.length +
+  v211HeaderChecks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

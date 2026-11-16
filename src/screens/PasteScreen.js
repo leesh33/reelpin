@@ -344,7 +344,8 @@ export default function PasteScreen({
 
   return (
     <View style={styles.root}>
-      {/* 헤더 */}
+      {/* 헤더 — v2.11: 오른쪽 위 ✕ 가 있는 화면은 모두 같은 다크 차콜(#1C1C1E) 헤더를 씁니다.
+          (인앱 매장 정보 모달 헤더와 같은 색 · 아래 흰 본문과 확실히 갈립니다.) */}
       <View style={styles.header}>
         <View style={styles.brand}>
           <View style={styles.brandPin}>
@@ -356,7 +357,7 @@ export default function PasteScreen({
           </View>
         </View>
         <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8} accessibilityLabel="닫기">
-          <Ionicons name="close" size={18} color={colors.textSub} />
+          <Ionicons name="close" size={18} color={colors.white} />
         </Pressable>
       </View>
 
@@ -752,8 +753,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingTop: 6,
-    paddingBottom: 12,
+    paddingTop: 12,
+    paddingBottom: 13,
+    backgroundColor: colors.charcoal,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.charcoalLine,
   },
   brand: {
     flexDirection: 'row',
@@ -771,11 +775,11 @@ const styles = StyleSheet.create({
   brandText: {
     fontSize: 19,
     fontWeight: '800',
-    color: colors.text,
+    color: colors.white,
     letterSpacing: -0.4,
   },
   brandBadge: {
-    backgroundColor: colors.lineSoft,
+    backgroundColor: colors.charcoalPill,
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
@@ -783,19 +787,22 @@ const styles = StyleSheet.create({
   brandBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.textSub,
+    color: colors.charcoalSub,
   },
+  // 다크 헤더 위 닫기 — 반투명 흰 원 + 흰 ✕ (모달 헤더와 같은 규칙)
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: colors.lineSoft,
+    backgroundColor: colors.charcoalPill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   scroll: { flex: 1 },
   scrollContent: {
     paddingHorizontal: 20,
+    // 다크 헤더 바로 아래에서 첫 항목이 붙어 보이지 않게 살짝 띄웁니다.
+    paddingTop: 12,
     paddingBottom: 36,
   },
   modeRow: {

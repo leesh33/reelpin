@@ -119,256 +119,261 @@ export default function PinDetailSheet({
 
   return (
     <View style={styles.sheet}>
-      <View style={styles.handle} />
-
-      <View style={styles.headerRow}>
-        <View style={styles.titleWrap}>
+      {/* 헤더 바 — v2.11: 오른쪽 위 ✕ 가 있는 화면은 모두 같은 다크 차콜(#1C1C1E) 헤더를 씁니다.
+          가게 이름(흰색)과 닫기 버튼(반투명 원 + 흰 ✕)이 한눈에 갈리고,
+          시트 위쪽 둥근 모서리까지 그대로 이어집니다. */}
+      <View style={styles.headerBar}>
+        <View style={styles.handle} />
+        <View style={styles.headerRow}>
           <Text style={styles.name} numberOfLines={1}>
             {pin.name}
           </Text>
-          <View style={styles.chipRow}>
-            <View
-              style={[
-                styles.chipCoral,
-                { backgroundColor: categoryBadgeBg, borderColor: categoryBadgeBorder },
-              ]}
-              testID="pin-category-badge"
-            >
-              <View style={[styles.chipDot, { backgroundColor: categoryDot }]} />
-              <Text style={[styles.chipCoralText, { color: categoryBadgeText }]}>
-                {categoryName}
+          <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityLabel="상세 닫기">
+            <Ionicons name="close" size={18} color={colors.white} />
+          </Pressable>
+        </View>
+      </View>
+
+      <View style={styles.body}>
+        <View style={styles.chipRow}>
+          <View
+            style={[
+              styles.chipCoral,
+              { backgroundColor: categoryBadgeBg, borderColor: categoryBadgeBorder },
+            ]}
+            testID="pin-category-badge"
+          >
+            <View style={[styles.chipDot, { backgroundColor: categoryDot }]} />
+            <Text style={[styles.chipCoralText, { color: categoryBadgeText }]}>
+              {categoryName}
+            </Text>
+          </View>
+          {!!pin.area && (
+            <View style={styles.chipGray}>
+              <Text style={styles.chipGrayText}>{pin.area}</Text>
+            </View>
+          )}
+          <View style={styles.chipGray}>
+            <Ionicons name="navigate" size={11} color={colors.textSub} />
+            <Text style={styles.chipGrayText}>{radiusLabel}</Text>
+          </View>
+          {hasDistance && !!distanceLabel && (
+            <View style={styles.chipLive}>
+              <Ionicons name="locate" size={11} color={colors.coralDark} />
+              <Text style={styles.chipLiveText}>{'내 위치에서 ' + distanceLabel}</Text>
+            </View>
+          )}
+        </View>
+
+        {/* 어느 지도에서 확인된 장소인지 — 두 곳 이상이면 배지가 나란히 붙습니다 */}
+        <ProviderBadges item={pin} size="sm" style={styles.badgeRow} />
+
+        {/* v2.10 — ✅ 가봤어요: 탭 한 번으로 방문 완료 체크/해제 */}
+        {!readOnly && (
+          <Pressable
+            style={[styles.visitBtn, visited && styles.visitBtnOn]}
+            onPress={handleToggleVisited}
+            accessibilityRole="button"
+            accessibilityState={{ selected: visited }}
+            accessibilityLabel={visited ? '가봤어요 체크 해제' : '가봤어요로 체크'}
+            testID="pin-visited-toggle"
+          >
+            <View style={[styles.visitCheck, visited && styles.visitCheckOn]}>
+              {visited ? <Ionicons name="checkmark" size={13} color={colors.white} /> : null}
+            </View>
+            <View style={styles.visitTextWrap}>
+              <Text style={[styles.visitText, visited && styles.visitTextOn]} testID="pin-visited-label">
+                {visited ? '가봤어요' : '아직 안 가봤어요'}
+              </Text>
+              <Text style={[styles.visitSub, visited && styles.visitSubOn]} numberOfLines={1}>
+                {visited
+                  ? (visitedAtLabel ? visitedAtLabel + ' 체크 · 다시 누르면 해제' : '다시 누르면 해제돼요')
+                  : '다녀왔으면 눌러서 체크해 두세요'}
               </Text>
             </View>
-            {!!pin.area && (
-              <View style={styles.chipGray}>
-                <Text style={styles.chipGrayText}>{pin.area}</Text>
-              </View>
-            )}
-            <View style={styles.chipGray}>
-              <Ionicons name="navigate" size={11} color={colors.textSub} />
-              <Text style={styles.chipGrayText}>{radiusLabel}</Text>
+            <Text style={[styles.visitAction, visited && styles.visitActionOn]}>{visited ? '해제' : '체크'}</Text>
+          </Pressable>
+        )}
+
+        {/* v2.10 — 📝 한줄 메모 (추천 메뉴·아기의자·웨이팅 팁) */}
+        {!readOnly && (
+          <View style={styles.memoBox} testID="pin-memo-box">
+            <View style={styles.memoHead}>
+              <Ionicons name="create-outline" size={13} color={colors.coralDark} />
+              <Text style={styles.memoLabel}>한줄 메모</Text>
+              <Text style={styles.memoHint}>{memoDirty ? '저장을 누르면 반영돼요' : savedMemo ? '저장됨' : '선택 입력'}</Text>
             </View>
-            {hasDistance && !!distanceLabel && (
-              <View style={styles.chipLive}>
-                <Ionicons name="locate" size={11} color={colors.coralDark} />
-                <Text style={styles.chipLiveText}>{'내 위치에서 ' + distanceLabel}</Text>
-              </View>
-            )}
-          </View>
-        </View>
-        <Pressable onPress={onClose} hitSlop={10} style={styles.closeBtn} accessibilityLabel="상세 닫기">
-          <Ionicons name="close" size={18} color={colors.textSub} />
-        </Pressable>
-      </View>
-
-      {/* 어느 지도에서 확인된 장소인지 — 두 곳 이상이면 배지가 나란히 붙습니다 */}
-      <ProviderBadges item={pin} size="sm" style={styles.badgeRow} />
-
-      {/* v2.10 — ✅ 가봤어요: 탭 한 번으로 방문 완료 체크/해제 */}
-      {!readOnly && (
-        <Pressable
-          style={[styles.visitBtn, visited && styles.visitBtnOn]}
-          onPress={handleToggleVisited}
-          accessibilityRole="button"
-          accessibilityState={{ selected: visited }}
-          accessibilityLabel={visited ? '가봤어요 체크 해제' : '가봤어요로 체크'}
-          testID="pin-visited-toggle"
-        >
-          <View style={[styles.visitCheck, visited && styles.visitCheckOn]}>
-            {visited ? <Ionicons name="checkmark" size={13} color={colors.white} /> : null}
-          </View>
-          <View style={styles.visitTextWrap}>
-            <Text style={[styles.visitText, visited && styles.visitTextOn]} testID="pin-visited-label">
-              {visited ? '가봤어요' : '아직 안 가봤어요'}
-            </Text>
-            <Text style={[styles.visitSub, visited && styles.visitSubOn]} numberOfLines={1}>
-              {visited
-                ? (visitedAtLabel ? visitedAtLabel + ' 체크 · 다시 누르면 해제' : '다시 누르면 해제돼요')
-                : '다녀왔으면 눌러서 체크해 두세요'}
-            </Text>
-          </View>
-          <Text style={[styles.visitAction, visited && styles.visitActionOn]}>{visited ? '해제' : '체크'}</Text>
-        </Pressable>
-      )}
-
-      {/* v2.10 — 📝 한줄 메모 (추천 메뉴·아기의자·웨이팅 팁) */}
-      {!readOnly && (
-        <View style={styles.memoBox} testID="pin-memo-box">
-          <View style={styles.memoHead}>
-            <Ionicons name="create-outline" size={13} color={colors.coralDark} />
-            <Text style={styles.memoLabel}>한줄 메모</Text>
-            <Text style={styles.memoHint}>{memoDirty ? '저장을 누르면 반영돼요' : savedMemo ? '저장됨' : '선택 입력'}</Text>
-          </View>
-          <TextInput
-            style={styles.memoInput}
-            value={memoDraft}
-            onChangeText={setMemoDraft}
-            onBlur={saveMemo}
-            onSubmitEditing={saveMemo}
-            placeholder="추천 메뉴, 아기의자, 웨이팅 팁 등을 적어두세요"
-            placeholderTextColor={colors.textMuted}
-            maxLength={120}
-            returnKeyType="done"
-            accessibilityLabel="한줄 메모"
-            testID="pin-memo-input"
-          />
-          <View style={styles.memoFoot}>
-            <Text style={styles.memoCount}>{memoDraft.length}/120 · 검색에도 함께 걸려요</Text>
-            <Pressable
-              style={[styles.memoSave, !memoDirty && styles.memoSaveOff]}
-              onPress={saveMemo}
-              disabled={!memoDirty}
-              accessibilityRole="button"
-              accessibilityLabel="메모 저장"
-              testID="pin-memo-save"
-            >
-              <Text style={[styles.memoSaveText, !memoDirty && styles.memoSaveTextOff]}>저장</Text>
-            </Pressable>
-          </View>
-        </View>
-      )}
-
-      {/* v2.2 — 저장된 핀의 분류를 바로 바꾸거나 새 분류를 만듭니다 (읽기 전용 핀은 제외) */}
-      {!readOnly && (
-        <View style={styles.categoryBox}>
-          <CategoryPicker
-            value={pin.category || '맛집'}
-            onChange={(name) => {
-              if (typeof onChangeCategory === 'function') onChangeCategory(pin.id, name);
-            }}
-            categories={categories}
-            onAddCategory={onAddCategory}
-            label={'분류'}
-            hint={'누르면 바로 바뀌어요'}
-            compact
-          />
-        </View>
-      )}
-
-      {pin.menuTags && pin.menuTags.length > 0 && (
-        <View style={styles.tagRow}>
-          {pin.menuTags.map((tag) => (
-            <View key={tag} style={styles.tag}>
-              <Text style={styles.tagText}>#{tag}</Text>
+            <TextInput
+              style={styles.memoInput}
+              value={memoDraft}
+              onChangeText={setMemoDraft}
+              onBlur={saveMemo}
+              onSubmitEditing={saveMemo}
+              placeholder="추천 메뉴, 아기의자, 웨이팅 팁 등을 적어두세요"
+              placeholderTextColor={colors.textMuted}
+              maxLength={120}
+              returnKeyType="done"
+              accessibilityLabel="한줄 메모"
+              testID="pin-memo-input"
+            />
+            <View style={styles.memoFoot}>
+              <Text style={styles.memoCount}>{memoDraft.length}/120 · 검색에도 함께 걸려요</Text>
+              <Pressable
+                style={[styles.memoSave, !memoDirty && styles.memoSaveOff]}
+                onPress={saveMemo}
+                disabled={!memoDirty}
+                accessibilityRole="button"
+                accessibilityLabel="메모 저장"
+                testID="pin-memo-save"
+              >
+                <Text style={[styles.memoSaveText, !memoDirty && styles.memoSaveTextOff]}>저장</Text>
+              </Pressable>
             </View>
-          ))}
-        </View>
-      )}
-
-      {!!pin.note && (
-        <Text style={styles.note} numberOfLines={2}>
-          {pin.note}
-        </Text>
-      )}
-
-      {!!pin.sourceUrl && (
-        <Pressable
-          style={styles.sourceRow}
-          onPress={() => openSource(pin.sourceUrl)}
-          accessibilityRole="link"
-          accessibilityLabel="원본 릴스 열기"
-        >
-          <View style={styles.sourceIcon}>
-            <Ionicons name="play" size={12} color={colors.coral} />
           </View>
-          <View style={styles.sourceTextWrap}>
-            <Text style={styles.sourceLabel}>{platform}</Text>
-            <Text style={styles.sourceUrl} numberOfLines={1}>
-              {pin.sourceUrl}
+        )}
+
+        {/* v2.2 — 저장된 핀의 분류를 바로 바꾸거나 새 분류를 만듭니다 (읽기 전용 핀은 제외) */}
+        {!readOnly && (
+          <View style={styles.categoryBox}>
+            <CategoryPicker
+              value={pin.category || '맛집'}
+              onChange={(name) => {
+                if (typeof onChangeCategory === 'function') onChangeCategory(pin.id, name);
+              }}
+              categories={categories}
+              onAddCategory={onAddCategory}
+              label={'분류'}
+              hint={'누르면 바로 바뀌어요'}
+              compact
+            />
+          </View>
+        )}
+
+        {pin.menuTags && pin.menuTags.length > 0 && (
+          <View style={styles.tagRow}>
+            {pin.menuTags.map((tag) => (
+              <View key={tag} style={styles.tag}>
+                <Text style={styles.tagText}>#{tag}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {!!pin.note && (
+          <Text style={styles.note} numberOfLines={2}>
+            {pin.note}
+          </Text>
+        )}
+
+        {!!pin.sourceUrl && (
+          <Pressable
+            style={styles.sourceRow}
+            onPress={() => openSource(pin.sourceUrl)}
+            accessibilityRole="link"
+            accessibilityLabel="원본 릴스 열기"
+          >
+            <View style={styles.sourceIcon}>
+              <Ionicons name="play" size={12} color={colors.coral} />
+            </View>
+            <View style={styles.sourceTextWrap}>
+              <Text style={styles.sourceLabel}>{platform}</Text>
+              <Text style={styles.sourceUrl} numberOfLines={1}>
+                {pin.sourceUrl}
+              </Text>
+            </View>
+            <Ionicons name="open-outline" size={16} color={colors.textMuted} />
+          </Pressable>
+        )}
+
+        {/* v2.0 — 전화번호(tel: 원탭) · 주소(원탭 복사) */}
+        {!!phone && !!telUrlOf(phone) && (
+          <Pressable
+            style={styles.infoRow}
+            onPress={handlePhone}
+            accessibilityRole="link"
+            accessibilityLabel={'전화 걸기 ' + phone}
+          >
+            <Ionicons name="call-outline" size={14} color={colors.coralDark} />
+            <Text style={styles.infoValue} numberOfLines={1}>
+              {phone}
             </Text>
-          </View>
-          <Ionicons name="open-outline" size={16} color={colors.textMuted} />
-        </Pressable>
-      )}
+            <Text style={styles.infoAction}>전화</Text>
+          </Pressable>
+        )}
 
-      {/* v2.0 — 전화번호(tel: 원탭) · 주소(원탭 복사) */}
-      {!!phone && !!telUrlOf(phone) && (
         <Pressable
           style={styles.infoRow}
-          onPress={handlePhone}
-          accessibilityRole="link"
-          accessibilityLabel={'전화 걸기 ' + phone}
+          onPress={handleCopyAddress}
+          disabled={!hasAddress}
+          accessibilityRole="button"
+          accessibilityLabel={hasAddress ? '주소 복사' : '주소 미확인'}
         >
-          <Ionicons name="call-outline" size={14} color={colors.coralDark} />
+          <Ionicons name="location-outline" size={14} color={colors.textMuted} />
           <Text style={styles.infoValue} numberOfLines={1}>
-            {phone}
+            {hasAddress ? address : '주소 미확인'}
           </Text>
-          <Text style={styles.infoAction}>전화</Text>
+          {hasAddress ? <Text style={styles.infoAction}>복사</Text> : null}
         </Pressable>
-      )}
 
-      <Pressable
-        style={styles.infoRow}
-        onPress={handleCopyAddress}
-        disabled={!hasAddress}
-        accessibilityRole="button"
-        accessibilityLabel={hasAddress ? '주소 복사' : '주소 미확인'}
-      >
-        <Ionicons name="location-outline" size={14} color={colors.textMuted} />
-        <Text style={styles.infoValue} numberOfLines={1}>
-          {hasAddress ? address : '주소 미확인'}
-        </Text>
-        {hasAddress ? <Text style={styles.infoAction}>복사</Text> : null}
-      </Pressable>
-
-      {/* v1.7 — 저장된 매장 페이지가 없어도 가게 이름+동네로 네이버 플레이스를 앱 안에서 엽니다 */}
-      <Pressable
-        style={styles.placeBtn}
-        onPress={handlePlace}
-        accessibilityRole="button"
-        accessibilityLabel="매장 정보 보기"
-      >
-        <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
-        <Text style={styles.placeBtnText}>매장 정보 보기</Text>
-        <Text style={styles.placeBtnMeta}>{pin.naverPlaceId ? '네이버 플레이스 상세' : '네이버 플레이스'}</Text>
-        <Ionicons name="expand-outline" size={14} color={colors.coralDark} />
-      </Pressable>
-
-      <View style={styles.btnRow}>
+        {/* v1.7 — 저장된 매장 페이지가 없어도 가게 이름+동네로 네이버 플레이스를 앱 안에서 엽니다 */}
         <Pressable
-          style={[styles.mapBtn, { backgroundColor: colors.naver }]}
-          onPress={() => handleMap('naver')}
+          style={styles.placeBtn}
+          onPress={handlePlace}
           accessibilityRole="button"
-          accessibilityLabel="네이버지도 열기"
+          accessibilityLabel="매장 정보 보기"
         >
-          <Text style={[styles.mapBtnText, { color: colors.white }]}>네이버지도 열기</Text>
+          <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
+          <Text style={styles.placeBtnText}>매장 정보 보기</Text>
+          <Text style={styles.placeBtnMeta}>{pin.naverPlaceId ? '네이버 플레이스 상세' : '네이버 플레이스'}</Text>
+          <Ionicons name="expand-outline" size={14} color={colors.coralDark} />
         </Pressable>
-        <Pressable
-          style={[styles.mapBtn, { backgroundColor: colors.kakao }]}
-          onPress={() => handleMap('kakao')}
-          accessibilityRole="button"
-          accessibilityLabel="카카오맵 열기"
-        >
-          <Text style={[styles.mapBtnText, { color: colors.kakaoText }]}>카카오맵 열기</Text>
-        </Pressable>
-      </View>
 
-      {!readOnly && (
-        <Pressable style={styles.deleteBtn} onPress={() => onDelete(pin.id)} hitSlop={8}>
-          <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
-          <Text style={styles.deleteText}>핀 삭제</Text>
-        </Pressable>
-      )}
-
-      {readOnly && (visited || savedMemo) && (
-        <View style={styles.readOnlyInfo}>
-          {visited ? (
-            <View style={styles.readOnlyVisit}>
-              <Ionicons name="checkmark-circle" size={13} color={colors.visit} />
-              <Text style={styles.readOnlyVisitText}>가봤어요</Text>
-            </View>
-          ) : null}
-          {savedMemo ? (
-            <Text style={styles.readOnlyMemo} numberOfLines={2}>
-              {'📝 ' + savedMemo}
-            </Text>
-          ) : null}
+        <View style={styles.btnRow}>
+          <Pressable
+            style={[styles.mapBtn, { backgroundColor: colors.naver }]}
+            onPress={() => handleMap('naver')}
+            accessibilityRole="button"
+            accessibilityLabel="네이버지도 열기"
+          >
+            <Text style={[styles.mapBtnText, { color: colors.white }]}>네이버지도 열기</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.mapBtn, { backgroundColor: colors.kakao }]}
+            onPress={() => handleMap('kakao')}
+            accessibilityRole="button"
+            accessibilityLabel="카카오맵 열기"
+          >
+            <Text style={[styles.mapBtnText, { color: colors.kakaoText }]}>카카오맵 열기</Text>
+          </Pressable>
         </View>
-      )}
 
-      {readOnly && (
-        <Text style={styles.sharedNote}>공유받은 맛집이에요 · 내 지도에 추가하면 저장할 수 있어요</Text>
-      )}
+        {!readOnly && (
+          <Pressable style={styles.deleteBtn} onPress={() => onDelete(pin.id)} hitSlop={8}>
+            <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
+            <Text style={styles.deleteText}>핀 삭제</Text>
+          </Pressable>
+        )}
+
+        {readOnly && (visited || savedMemo) && (
+          <View style={styles.readOnlyInfo}>
+            {visited ? (
+              <View style={styles.readOnlyVisit}>
+                <Ionicons name="checkmark-circle" size={13} color={colors.visit} />
+                <Text style={styles.readOnlyVisitText}>가봤어요</Text>
+              </View>
+            ) : null}
+            {savedMemo ? (
+              <Text style={styles.readOnlyMemo} numberOfLines={2}>
+                {'📝 ' + savedMemo}
+              </Text>
+            ) : null}
+          </View>
+        )}
+
+        {readOnly && (
+          <Text style={styles.sharedNote}>공유받은 맛집이에요 · 내 지도에 추가하면 저장할 수 있어요</Text>
+        )}
+      </View>
 
       {placeModalOpen && (
         <InAppPlaceModal
@@ -390,33 +395,44 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
-    paddingHorizontal: 20,
-    paddingTop: 10,
     paddingBottom: 16,
     ...sheetShadow,
+  },
+  // 다크 차콜 헤더 바 — 시트 위쪽 둥근 모서리를 그대로 물려받습니다.
+  headerBar: {
+    backgroundColor: colors.charcoal,
+    borderTopLeftRadius: radius.xxl,
+    borderTopRightRadius: radius.xxl,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 14,
   },
   handle: {
     alignSelf: 'center',
     width: 42,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.line,
+    backgroundColor: 'rgba(255,255,255,0.28)',
     marginBottom: 12,
   },
   headerRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 10,
   },
-  titleWrap: { flex: 1 },
   name: {
+    flex: 1,
     ...typography.h2,
     fontSize: 19,
+    color: colors.white,
+  },
+  body: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
   },
   chipRow: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 8,
     flexWrap: 'wrap',
   },
   chipCoral: {
@@ -472,7 +488,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: colors.lineSoft,
+    backgroundColor: colors.charcoalPill,
     alignItems: 'center',
     justifyContent: 'center',
   },
