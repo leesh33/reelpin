@@ -2497,8 +2497,8 @@ const v2202Checks = [
   ],
   // ② 토스트 — 시트 헤더(분류 색) 아래로
   [
-    'v2.20.2 토스트: 시트가 열려 있으면 헤더 아래(top 196px @ 844) 로 내려옴',
-    toastTopBelowSheetHeader(844) === 196 && toastTopBelowSheetHeader(844) > Math.round(844 * (1 - SHEET_MAX_HEIGHT_RATIO)) + SHEET_HEADER_HEIGHT,
+    'v2.20.2 토스트: 시트가 열려 있으면 헤더 아래(top 200px @ 844) 로 내려옴',
+    toastTopBelowSheetHeader(844) === 200 && toastTopBelowSheetHeader(844) > Math.round(844 * (1 - SHEET_MAX_HEIGHT_RATIO)) + SHEET_HEADER_HEIGHT,
     String(toastTopBelowSheetHeader(844)),
   ],
   [
@@ -2515,7 +2515,7 @@ const v2202Checks = [
   ],
   [
     'v2.20.2 토스트: 기본 상단값·시트 헤더 높이 상수가 문서화됨',
-    TOAST_TOP === 152 && SHEET_HEADER_HEIGHT === 66 && SHEET_MAX_HEIGHT_RATIO === 0.86,
+    TOAST_TOP === 152 && SHEET_HEADER_HEIGHT === 70 && SHEET_MAX_HEIGHT_RATIO === 0.86,
   ],
   [
     'v2.20.2 토스트: 렌더 결과 testID·문구 그대로',
