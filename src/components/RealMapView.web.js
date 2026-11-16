@@ -688,9 +688,20 @@ function NaverMap({
 
         // RNW 레이아웃이 늦게 잡히는 경우가 있어 한 번 더 크기를 알려 줍니다.
         setTimeout(applySize, 80);
-        // v2.18 — 로고 DOM 은 지도가 그려진 뒤에 들어오므로 한 번 더 잡아 줍니다.
-        setTimeout(applySize, 600);
-        liftNaverLogo(node, tabBar.floatTop + 6);
+        // v2.18 — 로고 DOM 은 **지도 타일이 그려진 뒤**에 들어옵니다. 한 번 더 잡고,
+        //          늦게 붙는 경우까지 놓치지 않게 지도 DOM 변화를 지켜보다가 로고가 보이면 올립니다.
+        const LOGO_LIFT_PX = tabBar.floatTop + 6;
+        const liftLogoNow = () => liftNaverLogo(node, LOGO_LIFT_PX);
+        [setTimeout(applySize, 600), setTimeout(liftLogoNow, 120), setTimeout(liftLogoNow, 900), setTimeout(liftLogoNow, 2200)].forEach((t) => {
+          if (t && typeof t.unref === 'function') t.unref();
+        });
+        liftLogoNow();
+        if (typeof MutationObserver === 'function') {
+          logoObserver = new MutationObserver(() => {
+            if (liftLogoNow()) logoObserver.disconnect();
+          });
+          logoObserver.observe(node, { childList: true, subtree: true });
+        }
         if (typeof ResizeObserver === 'function') {
           resizeObserver = new ResizeObserver(applySize);
           resizeObserver.observe(node);
@@ -719,6 +730,12 @@ function NaverMap({
       cancelled = true;
       if (naverFailureListener) naverFailureListener = null;
       if (controlsRef) controlsRef.current = null;
+      if (logoObserver) {
+        try {
+          logoObserver.disconnect();
+        } catch (e) {}
+        logoObserver = null;
+      }
       if (resizeObserver) {
         try {
           resizeObserver.disconnect();
