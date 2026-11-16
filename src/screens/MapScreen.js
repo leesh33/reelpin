@@ -770,7 +770,13 @@ export default function MapScreen({
             nearbyCount={nearbyList.length}
             nearbyRadius={NEARBY_RADIUS_M}
             hasMyCoords={Boolean(myCoords)}
-            onToggleOpen={() => setToolsOpen((open) => !open)}
+            onToggleOpen={() => {
+              // v2.17.1 — 카드와 반경 500m 패널이 동시에 떠 서로 가리지 않게,
+              //             메뉴를 펼칠 때는 패널을 먼저 닫습니다(패널 → 메뉴도 반대).
+              const next = !toolsOpen;
+              setToolsOpen(next);
+              if (next) setNearbyOpen(false);
+            }}
             onToggleVisited={toggleVisitedOnly}
             onPressNearby={() => {
               // v2.17.1 — 카드를 접고 기존 반경 500m 패널을 그대로 열고/닫습니다.

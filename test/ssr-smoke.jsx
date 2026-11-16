@@ -1561,7 +1561,7 @@ const v217Checks = [
   ['도구 메뉴: [지도 공유하기] 버튼', toolsOpenHtml217.indexOf('map-tools-share') > 0 && toolsOpenHtml217.indexOf('지도공유하기') > 0],
   ['도구 메뉴: 켜진 상태는 토글에 가본 곳만 + 점', toolsOpenHtml217.indexOf('가본곳만') > 0 && toolsOpenHtml217.indexOf('map-tools-dot') > 0],
   ['도구 메뉴: 요약 알약도 함께', toolsOpenHtml217.indexOf('가본곳만2/5') > 0],
-  ['지도: 토글을 다시 누르거나 지도를 누르면 접힘', mapSource217.indexOf('onToggleOpen={() => setToolsOpen((open) => !open)}') > 0 && mapSource217.indexOf('testID="map-tools-backdrop"') > 0],
+  ['지도: 토글을 다시 누르거나 지도를 누르면 접힘', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?const next = !toolsOpen;/.test(mapSource217) && mapSource217.indexOf('testID="map-tools-backdrop"') > 0],
   ['지도: 열려 있을 때만 지도 먹는 막을 그림', /toolsOpen && \([\s\S]{0,320}?map-tools-backdrop/.test(mapSource217)],
   ['지도: 왼쪽 하단 도구는 상세 시트가 열리면 숨김', /view === 'map' && !selectedPin && \(\s*\n\s*<MapToolsMenu/.test(mapSource217)],
   // ⑤ Y/N 동작 — 지도·목록이 같은 상태를 씁니다
@@ -1654,6 +1654,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 켤 때/끌 때 문구로 상태를 알림', mapSource2171.indexOf("showToast('가본 곳만 보는 중 · '") > 0 && mapSource2171.indexOf('전체 핀 ') > 0],
   ['가본 곳만 보기: 가본 곳 0곳이면 새 지도 대신 이유 안내', mapSource2171.indexOf('visited-only-empty') > 0 && mapSource2171.indexOf('전체 핀 보기') > 0],
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
+  ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
   ['버전: v2.17.1', APP_VERSION_LABEL === '릴스핀 v2.17.1'],
 ];
