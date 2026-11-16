@@ -22,6 +22,12 @@ export const colors = {
   mapText: '#5A6B87',
   mint: '#4ECDB4',
 
+  // v2.10 — ✅ '가봤어요' 방문 완료 표시 (초록 계열 · 분류 색과 겹치지 않게 따로 둡니다)
+  visit: '#0FA968',
+  visitDark: '#0A7D4E',
+  visitSoft: '#E4F7EF',
+  visitLine: '#B7E8D2',
+
   // 인앱 모달 헤더 (네이버 플레이스의 흰 화면과 확실히 갈라지는 다크 차콜)
   charcoal: '#1C1C1E',
   charcoalLine: '#33333A',

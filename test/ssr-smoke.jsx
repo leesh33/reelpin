@@ -379,7 +379,7 @@ const v2Checks = [
   ['MapScreen: navigator.share 지원 시 공유 시트', mapSource2.indexOf('canNativeShare') > 0 && mapSource2.indexOf('buildShareUrl') > 0],
   ['ProfileScreen: [내 지도 공유하기] 버튼', profileSource.indexOf('내 지도 공유하기') > 0 && profileSource.indexOf('buildShareUrl(pins)') > 0],
   ['App: 공유 링크(?share=) 읽어 배너로', appSource.indexOf('readShareFromLocation') > 0 && appSource.indexOf('handleAddSharedPins') > 0],
-  ['App: 일괄 저장 시 이름+좌표 중복 제거', appSource.indexOf('splitNewPins') > 0],
+  ['App: 일괄 저장 시 이름+좌표 중복 제거', appSource.indexOf('splitNewPins') > 0 || appSource.indexOf('planPinAddition') > 0],
   // v2.8 — 추출 결과 히어로 카드: 영상 썸네일을 배경 사진으로, 없으면 분류 이모지 폴백
   [
     'PasteScreen: 히어로 카드 썸네일 배경(Image + cover)',
@@ -541,7 +541,7 @@ const v23Checks = [
       mapSource.indexOf('pinIconHtml(pin, isOn, categories)') > 0],
   ['네이티브 도식 지도(MapCanvas)도 핀 아래 이름 라벨',
     mapCanvasSource.indexOf('pinLabelWrap') > 0 && mapCanvasSource.indexOf('pinLabelText') > 0 &&
-      /\{pin\.name\}/.test(mapCanvasSource)],
+      /\+ pin\.name\}/.test(mapCanvasSource)],
 ];
 for (const [label, ok, extra] of v23Checks) {
   if (ok) console.log('OK   ' + label);
@@ -597,8 +597,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.9.0', pkg.version === '2.9.0', pkg.version],
-  ['버전: app.json 2.9.0', expoConfig.version === '2.9.0', expoConfig.version],
+  ['버전: package.json 2.10.0', pkg.version === '2.10.0', pkg.version],
+  ['버전: app.json 2.10.0', expoConfig.version === '2.10.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -770,6 +770,75 @@ for (const [label, ok, extra] of brandChecks) {
   }
 }
 
+// ── v2.10: ✅ 가봤어요 · 📝 한줄 메모 · 🔓 무료 10개 한도 해제 ──────────────
+const pasteSource210 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const profileSource210 = fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8');
+const sheetSource210 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
+const listSource210 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinListView.js'), 'utf8');
+const VISIT_PIN = {
+  ...SEARCH_PIN,
+  id: 'pin-visited-1',
+  name: '연남동 딸기 케이크',
+  category: '카페',
+  visited: true,
+  visitedAt: '2026-11-14T10:00:00.000Z',
+  memo: '아기의자 있음 · 주말 웨이팅 30분',
+};
+const plainPinHtml = renderToString(
+  <PinDetailSheet pin={{ ...SEARCH_PIN, visited: false, memo: '' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />
+);
+const visitedPinHtml = renderToString(
+  <PinDetailSheet pin={VISIT_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />
+);
+const readOnlyPinHtml = renderToString(
+  <PinDetailSheet pin={{ ...VISIT_PIN, shared: true }} radiusMeters={300} onClose={noop} onDelete={noop} readOnly />
+);
+const listVisitHtml = stripSpaces(
+  renderToString(
+    <PinListView
+      pins={[VISIT_PIN, SEED_PINS[0]]}
+      categories={['맛집', '카페', '가볼곳']}
+      filter="전체"
+      counts={{ '전체': 2 }}
+      visitFilter="전체"
+      visitCounts={{ '전체': 2, 미방문: 1, 가봤어요: 1 }}
+      myCoords={null}
+      onSelectPin={noop}
+      onToggleView={noop}
+      onChangeFilter={noop}
+      onChangeVisitFilter={noop}
+    />
+  )
+);
+const paste12Html = renderToString(
+  <PasteScreen pinCount={12} onSaved={noop} onClose={noop} onToast={noop} />
+);
+const profile12Html = renderToString(
+  <ProfileScreen name="이상훈" handle="odol" pins={new Array(12).fill(0).map((_, i) => ({ ...SEED_PINS[i % 4], id: 'p12-' + i }))} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} />
+);
+const v210Checks = [
+  ['한도: App 이 무료 10개 한도에 기대지 않음', appSource.indexOf('FREE_PIN_LIMIT') < 0 && appSource.indexOf('planPinAddition') > 0],
+  ['한도: 저장 화면에 잠금 배너·무료 한도 문구 없음', pasteSource210.indexOf('FREE_PIN_LIMIT') < 0 && plainPinHtml.indexOf('핀 10개까지') < 0 && pasteSource210.indexOf('핀 10개까지') < 0],
+  ['한도: 내 정보에 무료 한도·프로그레스 없음', profileSource210.indexOf('FREE_PIN_LIMIT') < 0 && profileSource210.indexOf('무료 한도를 다 채웠어요') < 0],
+  ['한도: 12개 저장해도 저장 화면이 막지 않음', paste12Html.indexOf('핀 10개까지') < 0 && paste12Html.indexOf('저장된 장소 12곳') > 0],
+  ['한도: 내 정보가 12곳을 그대로 셈', profile12Html.indexOf('>12<') > 0 && profile12Html.indexOf('개수 제한 없이') > 0 && profile12Html.indexOf('무료 한도') < 0],
+  ['가봤어요: 상세 시트에 토글 버튼', sheetSource210.indexOf('pin-visited-toggle') > 0 && plainPinHtml.indexOf('아직 안 가봤어요') > 0],
+  ['가봤어요: 체크된 핀은 가봤어요 + 체크 날짜', visitedPinHtml.indexOf('가봤어요') > 0 && visitedPinHtml.indexOf('2026.11.14') > 0],
+  ['가봤어요: 읽기 전용(공유) 핀도 표시만', readOnlyPinHtml.indexOf('가봤어요') > 0 && readOnlyPinHtml.indexOf('pin-visited-toggle') < 0],
+  ['메모: 상세 시트 입력칸 + 안내 문구', sheetSource210.indexOf('pin-memo-input') > 0 && plainPinHtml.indexOf('추천 메뉴, 아기의자') > 0],
+  ['메모: 저장된 메모가 상세 시트에 보임', visitedPinHtml.indexOf('아기의자 있음') > 0],
+  ['메모: 목록 행에 ✓ 방문완료 배지와 1줄 미리보기', listVisitHtml.indexOf('✓방문완료') > 0 && listVisitHtml.indexOf('📝아기의자있음') > 0],
+  ['방문 필터: 지도·목록 상단 칩이 실제로 렌더', listVisitHtml.indexOf('미방문') > 0 && listVisitHtml.indexOf('가봤어요') > 0],
+  ['메모: 저장 화면에도 선택 입력칸', pasteSource210.indexOf('paste-memo-input') > 0 && pasteSource210.indexOf('한줄 메모') > 0],
+];
+for (const [label, ok, extra] of v210Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
 const total =
   cases.length +
   contentCases.length +
@@ -789,6 +858,7 @@ const total =
   pwaChecks.length +
   assetChecks.length +
   brandChecks.length +
+  v210Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

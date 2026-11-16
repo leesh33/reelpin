@@ -11,6 +11,7 @@
  *   npm run test:category … 분류(카테고리) 만들기·이름 변경·삭제 테스트만
  *   npm run test:search   … 내 핀 검색 · 목록 정렬 · 픽셀 클러스터링 테스트만 (v2.5)
  *   npm run test:nav      … 검색 결과 따른 지도 이동 · 결과 목록 테스트만 (v2.6)
+ *   npm run test:visit    … ✅ 가봤어요 · 📝 한줄 메모 · 🔓 10개 한도 해제 테스트만 (v2.10)
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -135,6 +136,17 @@ if (!only || only === 'nav') {
     out: 'search-nav-test.bundle.mjs',
     format: 'esm',
     alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
+if (!only || only === 'visit') {
+  // v2.10 — ✅ 가봤어요 · 📝 한줄 메모 · 🔓 무료 10개 한도 해제 (핀·검색·클라우드·공유)
+  failed += await runSuite({
+    name: '가봤어요·한줄 메모·한도 해제 테스트',
+    entry: 'visit-memo-test.mjs',
+    out: 'visit-memo-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
   });
 }
 

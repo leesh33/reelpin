@@ -3,10 +3,11 @@
  * ─────────────────────────────────────────────────────────────
  * 📋 목록 보기 — 지도 ↔ 목록 전환의 '목록' 쪽 화면.
  *
- *   · 위에서부터 검색창 · 분류 칩 · (몇 곳 · 가까운 순/최신순) 요약
- *   · 현재 분류 필터 **AND** 검색어에 맞는 핀만, **내 위치가 있으면 가까운 순,
+ *   · 위에서부터 검색창 · 분류 칩 · ✅ 방문 상태 필터 · (몇 곳 · 가까운 순/최신순) 요약
+ *   · 현재 분류 필터 **AND** 검색어 **AND** 방문 상태에 맞는 핀만, **내 위치가 있으면 가까운 순,
  *     없으면 최신순** 카드 목록으로 (정렬 규칙은 utils/searchPins.js)
  *   · 각 행 = 분류 색 점 + 분류 배지 + 가게 이름 + 지역/주소 + 내 위치와의 거리
+ *   · v2.10 — 가봤어요 핀은 `✓ 방문완료` 배지, 메모가 있으면 한 줄 미리보기
  *   · 행을 누르면 그 핀의 상세 시트가 열립니다 (지도로 돌아가지 않아도 됨)
  *   · 검색 결과가 없으면 빈 상태 안내 ([검색어 지우기])
  */
@@ -14,6 +15,7 @@ import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import FilterChips from './FilterChips';
+import VisitFilterChips from './VisitFilterChips';
 import PinSearchBar from './PinSearchBar';
 import { colors, cardShadow, radius, typography } from '../theme';
 import {
@@ -34,6 +36,9 @@ export default function PinListView({
   filter,
   onChangeFilter,
   counts,
+  visitFilter = '전체',
+  onChangeVisitFilter,
+  visitCounts = null,
   categories,
   myCoords = null,
   onSelectPin,
@@ -61,6 +66,15 @@ export default function PinListView({
             onChange={onChangeFilter}
             counts={counts}
             categories={categories}
+            onDark={false}
+          />
+        </View>
+        {/* v2.10 — ✅ 방문 상태 필터 (전체 · 미방문 · 가봤어요) */}
+        <View style={styles.visitWrap}>
+          <VisitFilterChips
+            value={visitFilter}
+            onChange={onChangeVisitFilter}
+            counts={visitCounts}
             onDark={false}
           />
         </View>
@@ -93,6 +107,8 @@ export default function PinListView({
             const distance = origin ? pinDistanceMeters(origin, pin) : null;
             const place = [pin.area, pin.address].filter(Boolean).join(' · ');
             const tags = Array.isArray(pin.menuTags) ? pin.menuTags.slice(0, 3) : [];
+            const visited = pin.visited === true;
+            const memo = String(pin.memo || '').trim();
             return (
               <Pressable
                 key={pin.id}
@@ -127,6 +143,12 @@ export default function PinListView({
                         {category}
                       </Text>
                     </View>
+                    {/* v2.10 — ✅ 가봤어요 핀은 초록 배지로 한눈에 */}
+                    {visited && (
+                      <View style={styles.visitBadge} testID={'pin-visited-badge-' + pin.id}>
+                        <Text style={styles.visitBadgeText}>✓ 방문완료</Text>
+                      </View>
+                    )}
                     <Text style={styles.place} numberOfLines={1}>
                       {place || '위치 정보 없음'}
                     </Text>
@@ -134,6 +156,12 @@ export default function PinListView({
                   {tags.length > 0 && (
                     <Text style={styles.tags} numberOfLines={1}>
                       {tags.join(' · ')}
+                    </Text>
+                  )}
+                  {/* v2.10 — 📝 한줄 메모 미리보기 */}
+                  {!!memo && (
+                    <Text style={styles.memo} numberOfLines={1} testID={'pin-memo-preview-' + pin.id}>
+                      {'📝 ' + memo}
                     </Text>
                   )}
                 </View>
@@ -149,13 +177,25 @@ export default function PinListView({
               <Ionicons name={keyword ? 'search' : 'document-text-outline'} size={20} color={colors.coral} />
             </View>
             <Text style={styles.emptyTitle}>
-              {keyword ? '검색 결과가 없어요' : total === 0 ? '아직 저장한 핀이 없어요' : '조건에 맞는 핀이 없어요'}
+              {keyword
+                ? '검색 결과가 없어요'
+                : total === 0
+                ? '아직 저장한 핀이 없어요'
+                : visitFilter === '가봤어요'
+                ? '아직 가본 곳이 없어요'
+                : visitFilter === '미방문'
+                ? '안 가본 곳이 남아 있지 않아요'
+                : '조건에 맞는 핀이 없어요'}
             </Text>
             <Text style={styles.emptySub}>
               {keyword
                 ? "'" + keyword + "' 와 맞는 핀이 없어요. 다른 낱말로 찾아보세요."
                 : total === 0
                 ? '릴스 링크 하나면 3초 만에 핀이 꽂힙니다.'
+                : visitFilter === '가봤어요'
+                ? '가본 곳은 상세 시트에서 [가봤어요]를 누르면 여기 모입니다.'
+                : visitFilter === '미방문'
+                ? '저장한 곳을 모두 다녀오셨네요. 전체로 보면 한눈에 볼 수 있어요.'
                 : '다른 분류를 골라 보세요.'}
             </Text>
             {keyword ? (
@@ -197,6 +237,28 @@ const styles = StyleSheet.create({
   },
   chipWrap: {
     marginTop: 8,
+  },
+  visitWrap: {
+    marginTop: 6,
+  },
+  visitBadge: {
+    backgroundColor: colors.visitSoft,
+    borderWidth: 1,
+    borderColor: colors.visitLine,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  visitBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: colors.visitDark,
+  },
+  memo: {
+    ...typography.tiny,
+    fontSize: 10.5,
+    color: colors.textSub,
+    fontWeight: '600',
   },
   metaRow: {
     flexDirection: 'row',

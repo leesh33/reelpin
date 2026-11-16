@@ -301,7 +301,10 @@ const wiring = [
   ['지도 화면: 검색창이 배너와 필터 칩 사이에', screenSource.indexOf('<PinSearchBar') > 0 && screenSource.indexOf('filterAndSearchPins') > 0],
   ['지도 화면: [목록 보기] / [지도 보기] 토글', screenSource.indexOf('목록 보기') > 0 && listSource.indexOf('지도 보기') > 0],
   ['지도 화면: 목록 모드에서 목록이 지도를 덮음', screenSource.indexOf("view === 'list' && (") > 0],
-  ['지도 화면: 실시간 개수 반영', screenSource.indexOf('{filtered.length} / {pins.length} 핀 표시 중') > 0],
+  [
+    '지도 화면: 실시간 개수 반영',
+    screenSource.indexOf("' / ' + pins.length + ' 핀 표시 중'") > 0 && screenSource.indexOf('filtered.length') > 0,
+  ],
   ['목록: 분류 색 점 + 분류 배지 + 이름 + 지역/주소 + 거리', listSource.indexOf('pin-dot-') > 0 && listSource.indexOf('pinDistanceMeters') > 0 && listSource.indexOf('formatDistance') > 0 && listSource.indexOf('categoryTint') > 0],
   ['목록: 탭하면 그 핀 상세 시트', listSource.indexOf('onSelectPin(pin.id)') > 0],
   ['목록: 빈 상태 안내 + 검색어 지우기', listSource.indexOf('검색 결과가 없어요') > 0 && listSource.indexOf('검색어 지우기') > 0],

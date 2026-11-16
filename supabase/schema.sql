@@ -1,5 +1,5 @@
 -- ─────────────────────────────────────────────────────────────
--- 릴스핀(Reelspin) v2.1 · Supabase 스키마
+-- 릴스핀(Reelspin) v2.10 · Supabase 스키마
 -- ─────────────────────────────────────────────────────────────
 -- Supabase 대시보드 → SQL Editor 에 이 파일을 통째로 붙여 넣고 Run 하면 됩니다.
 --   · public.pins         저장한 핀 (사용자별)
@@ -28,6 +28,8 @@ create table if not exists public.pins (
   address        text        not null default '',
   providers      jsonb       not null default '[]'::jsonb,
   menu_tags      jsonb       not null default '[]'::jsonb,
+  visited        boolean     not null default false,   -- v2.10 ✅ '가봤어요'
+  memo           text        not null default '',      -- v2.10 📝 한줄 메모
   created_at     timestamptz not null default now(),
   updated_at     timestamptz not null default now(),
   -- 한 사용자 안에서 핀 id 는 유일합니다. (여러 기기에서 같은 핀을 올려도 한 줄로 합쳐짐)
@@ -39,6 +41,14 @@ comment on column public.pins.id is '앱이 만든 핀 id (pin-…, 기기에서
 comment on column public.pins.user_id is 'auth.users.id — RLS 기준';
 comment on column public.pins.providers is '어느 지도에서 확인된 장소인지 ["kakao","naver"]';
 comment on column public.pins.menu_tags is '대표 메뉴 태그 ["소금빵"]';
+comment on column public.pins.visited is 'v2.10 — ✅ 가봤어요(방문 완료) 여부';
+comment on column public.pins.memo is 'v2.10 — 📝 한줄 메모 (추천 메뉴·아기의자·웨이팅 팁)';
+
+-- 1-1. 이미 v2.9 이하 스키마로 만들어 둔 DB 에서도 안전하게 (다시 실행해도 OK) ──
+--   · Supabase SQL Editor 에 이 파일을 통째로 다시 붙여 넣고 Run 하면 아래 두 줄이 컬럼을 더합니다.
+--   · 이 단계를 건너뛰어도 앱은 예전 컬럼만으로 저장·동기화를 계속합니다 (방문·메모만 클라우드에 안 올라감).
+alter table public.pins add column if not exists visited boolean not null default false;
+alter table public.pins add column if not exists memo    text    not null default '';
 
 -- 목록 조회(최근 저장 순)와 개수 세기에 쓰는 인덱스
 create index if not exists pins_user_created_idx on public.pins (user_id, created_at desc);

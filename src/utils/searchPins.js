@@ -4,6 +4,7 @@
  * 🔍 내 핀 검색 + 📋 목록 정렬의 **순수 규칙**만 모읍니다. (화면·지도와 무관 → 단위 테스트 가능)
  *
  *   · 검색 대상 … 가게명(name) · 지역(area) · 주소(address) · 분류(category) · 메뉴태그(menuTags)
+ *                · 📝 한줄 메모(memo) — v2.10 ("아기의자" 검색 → 메모에 적어 둔 핀 매칭)
  *   · 대소문자·공백에 흔들리지 않는 매칭
  *       '베 통' → '베통 성수'   (공백을 지우고 비교)
  *       'BETONG' → 'betong'     (소문자로 비교)
@@ -31,13 +32,49 @@ export function searchTokens(query) {
     .filter(Boolean);
 }
 
-/** 핀 하나가 검색되는 글자들 — 가게명·지역·주소·분류(옛 이름 포함)·메뉴태그 */
+/** 핀 하나가 검색되는 글자들 — 가게명·지역·주소·분류(옛 이름 포함)·메뉴태그·한줄 메모 */
 export function pinSearchFields(pin) {
   if (!pin) return [];
   const tags = Array.isArray(pin.menuTags) ? pin.menuTags : [];
   const category = String(pin.category == null ? '' : pin.category);
-  const fields = [pin.name, pin.area, pin.address, category, mapLegacyCategory(category)];
+  const fields = [pin.name, pin.area, pin.address, category, mapLegacyCategory(category), pin.memo];
   return fields.concat(tags).filter((field) => field != null && String(field).trim() !== '');
+}
+
+// ─────────────────────────────────────────────────────────────
+// ✅ 방문 상태 필터 — 지도·목록 상단의 '전체 / 미방문 / 가봤어요'
+// ─────────────────────────────────────────────────────────────
+export const VISIT_ALL = '전체';
+export const VISIT_TODO = '미방문';
+export const VISIT_DONE = '가봤어요';
+/** 화면에 그리는 순서 (전체 → 미방문 → 가봤어요) */
+export const VISIT_FILTERS = [VISIT_ALL, VISIT_TODO, VISIT_DONE];
+
+/** 모르는 값·빈 값은 '전체' 로 (칩이 사라지지 않게) */
+export function normalizeVisitFilter(value) {
+  return VISIT_FILTERS.indexOf(value) >= 0 ? value : VISIT_ALL;
+}
+
+/** 핀 하나가 방문 필터에 맞는가? (값이 없던 예전 핀 = 미방문) */
+export function matchesVisit(pin, visit) {
+  const filter = normalizeVisitFilter(visit);
+  if (filter === VISIT_ALL) return true;
+  const visited = Boolean(pin) && pin.visited === true;
+  return filter === VISIT_DONE ? visited : !visited;
+}
+
+/** '{전체:N, 미방문:N, 가봤어요:N}' — 칩 옆 숫자 */
+export function countByVisit(pins, options = {}) {
+  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
+  const base = typeof options.base === 'function' ? list.filter(options.base) : list;
+  const done = base.filter((pin) => pin.visited === true).length;
+  return { [VISIT_ALL]: base.length, [VISIT_TODO]: base.length - done, [VISIT_DONE]: done };
+}
+
+/** 방문 필터만 적용한 목록 */
+export function filterByVisit(pins, visit) {
+  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
+  return list.filter((pin) => matchesVisit(pin, visit));
 }
 
 /** 핀 하나를 정규화한 한 줄로 — 낱말 매칭용 */
@@ -70,8 +107,11 @@ export function filterAndSearchPins(pins, options = {}) {
   const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
   const filter = options.filter;
   const query = options.query;
-  if (!searchTokens(query).length) return list.filter((pin) => matchesFilter(pin, filter));
-  return list.filter((pin) => matchesFilter(pin, filter) && pinMatchesSearch(pin, query));
+  // v2.10 — ✅ 방문 상태도 같은 자리에서 AND 조건으로 겁니다 (기본 '전체')
+  const visit = normalizeVisitFilter(options.visit);
+  const base = list.filter((pin) => matchesFilter(pin, filter) && matchesVisit(pin, visit));
+  if (!searchTokens(query).length) return base;
+  return base.filter((pin) => pinMatchesSearch(pin, query));
 }
 
 /** 핀의 저장 시각(ms). 값이 없거나 깨졌으면 0 (가장 오래된 것으로 취급) */

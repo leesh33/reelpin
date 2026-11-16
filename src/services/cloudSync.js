@@ -13,6 +13,11 @@
  *   4. **삭제는 명시적으로만.** 병합은 올리기(upsert)만 하고, 다른 기기에서 저장한 핀을 지우지 않습니다.
  *
  * 테이블: `supabase/schema.sql` 의 `public.pins` (PK = user_id + id, RLS = auth.uid() = user_id)
+ *
+ * v2.10 — `visited`(가봤어요) · `memo`(한줄 메모) 컬럼 추가.
+ *   · `supabase/schema.sql` 을 SQL Editor 에서 한 번 더 Run 하면 두 컬럼이 생깁니다.
+ *   · 아직 적용하지 않은 DB 에서도 앱이 깨지지 않게, 컬럼이 없다는 오류를 만나면
+ *     그 요청만 **예전 컬럼 목록**으로 다시 보냅니다 (`legacySchema` 로 기억 → 다음부터 바로 예전 모양).
  */
 import { Linking } from 'react-native';
 import { authRedirectUrl, isSupabaseConfigured, supabase } from './supabase';
@@ -48,9 +53,36 @@ export const PIN_COLUMNS = [
   'address',
   'providers',
   'menu_tags',
+  'visited',
+  'memo',
   'created_at',
   'updated_at',
 ];
+/** v2.9 이하 DB(visited·memo 컬럼 없음)에 쓸 컬럼 목록 */
+export const PIN_COLUMNS_LEGACY = PIN_COLUMNS.filter((name) => name !== 'visited' && name !== 'memo');
+/** 새 컬럼이 아직 없는 DB 라는 것을 한 번 알아내면 기억합니다 (매 요청 재시도 방지) */
+let legacySchema = false;
+/** 테스트용 — 기억을 지웁니다. */
+export function __resetLegacySchemaFlag() {
+  legacySchema = false;
+}
+/** 컬럼이 없다는 오류인가? (Postgres 42703 · PostgREST PGRST204 · 메시지 문구) */
+export function isMissingColumnError(error) {
+  if (!error) return false;
+  const code = String(error.code || '');
+  if (code === '42703' || code === 'PGRST204') return true;
+  const text = String(error.message || error.details || error.hint || '').toLowerCase();
+  if (!text) return false;
+  return (
+    (text.indexOf('column') >= 0 && (text.indexOf('does not exist') >= 0 || text.indexOf('not found') >= 0 || text.indexOf('unknown') >= 0)) ||
+    text.indexOf("could not find the 'visited'") >= 0 ||
+    text.indexOf("could not find the 'memo'") >= 0
+  );
+}
+/** 지금 쓰는 컬럼 목록 — 새 컬럼이 없는 DB 를 한 번 만나면 예전 목록으로 */
+export function activePinColumns() {
+  return legacySchema ? PIN_COLUMNS_LEGACY : PIN_COLUMNS;
+}
 
 const NOT_CONFIGURED = Object.freeze({
   ok: false,
@@ -129,6 +161,9 @@ export function pinToRow(userId, pin, options = {}) {
     address: String(pin.address || ''),
     providers: toJsonArray(pin.providers),
     menu_tags: toJsonArray(pin.menuTags),
+    // v2.10 — ✅ 가봤어요 · 📝 한줄 메모
+    visited: pin.visited === true,
+    memo: String(pin.memo == null ? '' : pin.memo).trim(),
     created_at: createdAt,
     updated_at: now.toISOString(),
   };
@@ -153,6 +188,10 @@ export function rowToPin(row) {
     address: row.address || '',
     providers: Array.isArray(row.providers) ? row.providers : [],
     menuTags: Array.isArray(row.menu_tags) ? row.menu_tags : [],
+    // v2.10 — 예전 DB(컬럼 없음)에서 읽은 행은 false / '' 로 안전하게
+    visited: row.visited === true,
+    visitedAt: row.visited === true ? String(row.updated_at || '') : '',
+    memo: row.memo == null ? '' : String(row.memo),
     createdAt: row.created_at || new Date().toISOString(),
   });
 }
@@ -172,7 +211,7 @@ function pinTime(pin) {
 /** 핀 두 개를 하나로 — 앞(basic) 값이 비어 있으면 뒤(extra) 값으로 채웁니다. */
 function fillPin(basic, extra) {
   const out = { ...extra, ...basic };
-  ['area', 'category', 'address', 'placeUrl', 'placeUrlLabel', 'phone', 'note', 'sourceUrl', 'platform'].forEach(
+  ['area', 'category', 'address', 'placeUrl', 'placeUrlLabel', 'phone', 'note', 'memo', 'sourceUrl', 'platform'].forEach(
     (key) => {
       if (!out[key] && extra && extra[key]) out[key] = extra[key];
     }
@@ -433,13 +472,20 @@ export async function fetchCloudPins(userId) {
   if (!client) return { ...NOT_CONFIGURED, pins: [] };
   if (!userId) return { ...fail('missing-user', '로그인이 필요해요'), pins: [] };
   try {
-    const { data, error } = await client
-      .from(PIN_TABLE)
-      .select(PIN_COLUMNS.join(','))
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    const query = (columns) =>
+      client
+        .from(PIN_TABLE)
+        .select(columns.join(','))
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+    let { data, error } = await query(activePinColumns());
+    // v2.10 — 새 컬럼(visited·memo)이 아직 없는 DB: 예전 컬럼으로 한 번만 다시 읽습니다.
+    if (error && !legacySchema && isMissingColumnError(error)) {
+      legacySchema = true;
+      ({ data, error } = await query(PIN_COLUMNS_LEGACY));
+    }
     if (error) return { ok: false, error: error.code || 'fetch-error', message: friendlyAuthError(error), pins: [] };
-    return { ok: true, pins: rowsToPins(data), rows: Array.isArray(data) ? data : [] };
+    return { ok: true, pins: rowsToPins(data), rows: Array.isArray(data) ? data : [], legacySchema };
   } catch (e) {
     return { ok: false, error: 'network', message: friendlyAuthError(e), pins: [] };
   }
@@ -463,17 +509,38 @@ export async function upsertCloudPins(userId, pins) {
   const now = new Date();
   const rows = list.map((pin) => pinToRow(userId, pin, { now })).filter(Boolean);
   if (!rows.length) return { ok: true, count: 0, rows: [] };
+  /** 새 컬럼이 없는 DB 에 보낼 행 — visited·memo 만 빼고 나머지는 그대로 */
+  const stripNewColumns = (row) => {
+    const copy = { ...row };
+    delete copy.visited;
+    delete copy.memo;
+    return copy;
+  };
   const saved = [];
   try {
-    for (let i = 0; i < rows.length; i += UPSERT_CHUNK) {
-      const chunk = rows.slice(i, i + UPSERT_CHUNK);
-      const { data, error } = await client.from(PIN_TABLE).upsert(chunk, { onConflict: 'user_id,id' }).select(PIN_COLUMNS.join(','));
+    let payload = legacySchema ? rows.map(stripNewColumns) : rows;
+    for (let i = 0; i < payload.length; i += UPSERT_CHUNK) {
+      let chunk = payload.slice(i, i + UPSERT_CHUNK);
+      let { data, error } = await client
+        .from(PIN_TABLE)
+        .upsert(chunk, { onConflict: 'user_id,id' })
+        .select(activePinColumns().join(','));
+      // v2.10 — 스키마에 visited·memo 가 없어도 저장은 되게: 한 번만 예전 모양으로 다시
+      if (error && !legacySchema && isMissingColumnError(error)) {
+        legacySchema = true;
+        payload = rows.map(stripNewColumns);
+        chunk = payload.slice(i, i + UPSERT_CHUNK);
+        ({ data, error } = await client
+          .from(PIN_TABLE)
+          .upsert(chunk, { onConflict: 'user_id,id' })
+          .select(PIN_COLUMNS_LEGACY.join(',')));
+      }
       if (error) {
         return { ok: false, error: error.code || 'upsert-error', message: friendlyAuthError(error), count: saved.length, rows: saved };
       }
       if (Array.isArray(data)) saved.push(...data);
     }
-    return { ok: true, count: saved.length || rows.length, rows: saved };
+    return { ok: true, count: saved.length || rows.length, rows: saved, legacySchema };
   } catch (e) {
     return { ok: false, error: 'network', message: friendlyAuthError(e), count: saved.length, rows: saved };
   }

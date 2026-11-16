@@ -59,4 +59,9 @@ export const SEED_PINS = [
   },
 ];
 
-export const FREE_PIN_LIMIT = 10;
+/**
+ * v2.10 — 무료 플랜 핀 10개 한도를 없앴습니다.
+ *   예전 코드·문서와 헷갈리지 않게 이름만 남겨 두고, 값은 '무제한'(Infinity)입니다.
+ *   화면은 이 값을 쓰지 않습니다 — 저장은 누구나 개수 제한 없이 됩니다.
+ */
+export const FREE_PIN_LIMIT = Infinity;

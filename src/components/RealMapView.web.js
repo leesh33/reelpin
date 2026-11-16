@@ -134,14 +134,20 @@ export function pinAnchor(selected) {
  *   · 선택 안 됨 … 흰 알약 + 진한 글씨 + **그 분류 색의 얇은 테두리**
  *   · 선택됨    … **그 분류 색 알약 + 흰 글씨** (크기 확대와 함께 선택 표시)
  *     → 선택해도 분류 색이 그대로 보여, 어떤 분류인지 헷갈리지 않습니다.
+ *   · v2.10 — ✅ 가봤어요 핀은 라벨 앞에 `✓` + 초록 테두리
  */
 export function pinLabelHtml(pin, selected, categories) {
   const name = String((pin && pin.name) || '').trim();
   if (!name) return '';
+  const visited = Boolean(pin) && pin.visited === true;
   const color = pinColor(pin, selected, categories);
   const background = selected ? color : 'rgba(255,255,255,0.96)';
-  const textColor = selected ? '#FFFFFF' : colors.charcoal;
-  const border = selected ? 'rgba(255,255,255,0.85)' : hexToRgba(color, 0.55);
+  const textColor = selected ? '#FFFFFF' : visited ? colors.visitDark : colors.charcoal;
+  const border = selected
+    ? 'rgba(255,255,255,0.85)'
+    : visited
+    ? hexToRgba(colors.visit, 0.7)
+    : hexToRgba(color, 0.55);
   return (
     '<div style="margin-top:' +
     PIN_LABEL_GAP +
@@ -164,6 +170,23 @@ export function pinLabelHtml(pin, selected, categories) {
 }
 
 /**
+ * v2.10 — ✅ 가봤어요 배지 (동그라미 오른쪽 위의 작은 초록 체크).
+ *   마커 HTML 안에서만 쓰는 조각이라 지도 엔진(네이버·Leaflet)과 무관합니다.
+ */
+export function pinVisitedBadgeHtml(visited) {
+  if (!visited) return '';
+  return (
+    '<div style="position:absolute;right:-4px;top:-4px;width:12px;height:12px;border-radius:50%;' +
+    'background:' +
+    colors.visit +
+    ';border:1.5px solid #FFFFFF;color:#FFFFFF;font-family:' +
+    PIN_LABEL_FONT_STACK +
+    ';font-size:8px;font-weight:900;line-height:9px;text-align:center;' +
+    'box-shadow:0 1px 3px rgba(15,23,42,0.35);">✓</div>'
+  );
+}
+
+/**
  * 마커 content HTML = [분류 색 동그라미] 아래 [가게 이름 라벨].
  * 네이버 지도·Leaflet(divIcon) 이 같은 HTML 을 씁니다.
  */
@@ -172,7 +195,7 @@ export function pinIconHtml(pin, selected, categories) {
   const border = selected ? 3 : 2;
   const color = pinColor(pin, selected, categories);
   const circle =
-    '<div style="width:' +
+    '<div style="position:relative;width:' +
     size +
     'px;height:' +
     size +
@@ -180,7 +203,9 @@ export function pinIconHtml(pin, selected, categories) {
     color +
     ';border:' +
     border +
-    'px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+    'px solid #FFFFFF;box-shadow:0 2px 6px rgba(0,0,0,0.35);">' +
+    pinVisitedBadgeHtml(Boolean(pin) && pin.visited === true) +
+    '</div>';
   return (
     '<div style="display:flex;flex-direction:column;align-items:center;width:max-content;' +
     'transform:translateX(-50%);cursor:pointer;-webkit-tap-highlight-color:transparent;">' +

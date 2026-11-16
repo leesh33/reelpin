@@ -24,7 +24,7 @@ export const SHARE_PARAM = 'share';
 /** 링크가 너무 길어지지 않게 담는 핀 수 상한 */
 export const SHARE_MAX_PINS = 100;
 /** 필드 상한 — 비정상적으로 긴 값이 링크를 망가뜨리지 않게 */
-export const SHARE_FIELD_MAX = { name: 60, area: 30, category: 20, placeUrl: 300, phone: 24, address: 120 };
+export const SHARE_FIELD_MAX = { name: 60, area: 30, category: 20, placeUrl: 300, phone: 24, address: 120, memo: 60 };
 
 /** 배포 주소 — 브라우저가 아닌 곳(테스트·SSR)에서 쓰는 기본 origin */
 export const DEFAULT_SHARE_ORIGIN = 'https://reelpin.vercel.app';
@@ -153,8 +153,11 @@ function clampText(value, max) {
 }
 
 /**
- * 핀 → `이름|카테고리|동네|위도|경도|placeUrl|naverPlaceId|전화|주소`
+ * 핀 → `이름|카테고리|동네|위도|경도|placeUrl|naverPlaceId|전화|주소|가봤어요|메모`
  * 빈 값은 뒤에서부터 잘라 링크를 짧게 유지합니다.
+ * v2.10 — 뒤에 `visited`('1' 또는 빈 값) · `memo` 가 붙습니다.
+ *   구 버전 링크(9칸)는 그대로 읽히고(방문 false), 구 버전 앱도 앞의 9칸만 읽으므로
+ *   형식 번호(SHARE_VERSION)를 올리지 않아도 됩니다 — 양방향 호환.
  * @param {object} pin
  */
 export function encodePinTuple(pin) {
@@ -169,6 +172,8 @@ export function encodePinTuple(pin) {
     String(pin.naverPlaceId || '').replace(/\D/g, '').slice(0, 20),
     clampText(pin.phone, SHARE_FIELD_MAX.phone),
     clampText(pin.address, SHARE_FIELD_MAX.address),
+    pin.visited === true ? '1' : '',
+    clampText(pin.memo, SHARE_FIELD_MAX.memo),
   ].map(escapeField);
   while (fields.length > 3 && !fields[fields.length - 1]) fields.pop();
   return fields.join('|');
@@ -199,6 +204,10 @@ export function decodePinTuple(tuple, index) {
     platform: 'share',
     sourceUrl: '',
     note: '공유받은 맛집 지도',
+    // v2.10 — 공유한 사람의 방문 체크 · 한줄 메모도 함께 (없던 링크는 false / '')
+    visited: parts[9] === '1',
+    visitedAt: '',
+    memo: clampText(parts[10], SHARE_FIELD_MAX.memo),
     shared: true,
   };
 }

@@ -13,6 +13,12 @@
  *   · phone                   … 지도 API 가 준 전화번호(상세 시트에서 tel: 원탭 연결)
  *   · naverPlaceId            … 네이버 플레이스 ID — 있으면 매장 정보가 상세 페이지로 직행
  *   · 여러 곳을 한 번에 저장할 때의 중복 판정(`splitNewPins`)도 이 파일에 모읍니다.
+ *
+ * v2.10 에서 핀에 새로 붙는 필드
+ *   · visited                 … ✅ '가봤어요' 방문 완료 (기본 false)
+ *   · visitedAt               … 방문 체크를 한 시각(ISO). 체크를 풀면 빈 문자열
+ *   · memo                    … 📝 한줄 메모 ("아기의자 있음 · 웨이팅 20분" 등)
+ *   예전에 저장된 핀에는 이 필드가 없으므로 `normalizePin` 이 기본값을 채웁니다.
  */
 
 /** 후보 → 핀. 저장에 필요한 값만 추리고, 나머지는 안전한 기본값으로 채웁니다. */
@@ -43,8 +49,25 @@ export function buildPin(candidate, options = {}) {
     sourceUrl: options.sourceUrl || '',
     platform: options.platform || 'instagram',
     note: options.note || '',
+    // v2.10 — 방문 체크 · 한줄 메모. 저장 화면에서 메모를 미리 적어 둘 수 있습니다.
+    visited: options.visited === true,
+    visitedAt: options.visited === true ? now.toISOString() : '',
+    memo: normalizeMemo(options.memo != null ? options.memo : candidate.memo),
     createdAt: now.toISOString(),
   };
+}
+
+/** 한줄 메모 다듬기 — 줄바꿈은 공백으로, 앞뒤 공백 제거. (화면·DB·공유가 같은 값을 씁니다) */
+export function normalizeMemo(value) {
+  return String(value == null ? '' : value)
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+/** ✅ 방문 완료 여부 (값이 없던 예전 핀은 미방문) */
+export function isVisited(pin) {
+  return Boolean(pin) && pin.visited === true;
 }
 
 /**
@@ -69,7 +92,35 @@ export function normalizePin(pin) {
     sourceUrl: pin.sourceUrl || '',
     platform: pin.platform || 'instagram',
     note: pin.note || '',
+    // v2.10 — v2.9 이하에서 저장된 핀에는 없습니다. 화면이 기대하는 기본값을 채웁니다.
+    visited: pin.visited === true,
+    visitedAt: pin.visited === true ? String(pin.visitedAt || '') : '',
+    memo: normalizeMemo(pin.memo),
   };
+}
+
+/**
+ * ✅ 방문 체크 토글 — 원본을 바꾸지 않고 새 핀을 돌려줍니다.
+ *   · 체크 … visited=true + visitedAt(지금)   · 해제 … visited=false + visitedAt=''
+ *   · 화면·클라우드가 "최근에 바뀐 핀"을 알 수 있게 updatedAt 도 함께 갱신합니다.
+ */
+export function toggleVisited(pin, options = {}) {
+  if (!pin) return null;
+  const now = options.now ? new Date(options.now) : new Date();
+  const next = pin.visited !== true;
+  return normalizePin({
+    ...pin,
+    visited: next,
+    visitedAt: next ? now.toISOString() : '',
+    updatedAt: now.toISOString(),
+  });
+}
+
+/** 📝 한줄 메모 저장 — 원본을 바꾸지 않고 새 핀을 돌려줍니다. */
+export function withMemo(pin, memo, options = {}) {
+  if (!pin) return null;
+  const now = options.now ? new Date(options.now) : new Date();
+  return normalizePin({ ...pin, memo: normalizeMemo(memo), updatedAt: now.toISOString() });
 }
 
 export function normalizePins(pins) {
@@ -166,4 +217,15 @@ export function splitNewPins(existing, incoming) {
     else fresh.push(pin);
   });
   return { fresh, duplicates };
+}
+
+/**
+ * v2.10 — 저장 요청 → 실제로 꽂을 핀.
+ *   중복만 걸러 내고 **개수 한도는 없습니다** (v2.9까지의 무료 10개 제한을 없앴습니다).
+ *   · fresh      : 지금 저장할 핀 (몇 개든 전부)
+ *   · duplicates : 이미 있어서 건너뛴 핀
+ */
+export function planPinAddition(existing, incoming) {
+  const { fresh, duplicates } = splitNewPins(existing, incoming);
+  return { fresh, duplicates, added: fresh.length };
 }

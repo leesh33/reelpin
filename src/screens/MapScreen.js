@@ -7,6 +7,7 @@ import FilterChips from '../components/FilterChips';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 // v2.6 — 검색 결과 1곳이면 그 핀으로 지도 이동, 2곳 이상이면 검색창 아래 결과 목록
 import PinSearchBar from '../components/PinSearchBar';
+import VisitFilterChips from '../components/VisitFilterChips';
 import PinListView from '../components/PinListView';
 import PinSearchResults from '../components/PinSearchResults';
 import {
@@ -40,7 +41,13 @@ import {
 } from '../services/notifications';
 import { colors, cardShadow, mapControls, radius, typography } from '../theme';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
-import { filterAndSearchPins } from '../utils/searchPins';
+import {
+  VISIT_ALL,
+  countByVisit,
+  filterAndSearchPins,
+  filterByVisit,
+  normalizeVisitFilter,
+} from '../utils/searchPins';
 import {
   SEARCH_DEBOUNCE_MS,
   mapCoordsOf,
@@ -62,12 +69,16 @@ export default function MapScreen({
   radiusMeters,
   onGoPaste,
   onDeletePin,
+  onTogglePinVisited,
+  onChangePinMemo,
   onToast,
   sharedPins = [],
   onAddSharedPins,
   onDismissShared,
 }) {
   const [filter, setFilter] = useState('전체');
+  // v2.10 — ✅ 방문 상태 필터 ('전체' | '미방문' | '가봤어요')
+  const [visitFilter, setVisitFilter] = useState(VISIT_ALL);
 
   // ── v2.5 검색어 · 지도/목록 전환 ──────────────────────────────
   //   query … 내 핀 검색어 (가게명·지역·주소·분류·메뉴태그)
@@ -142,7 +153,10 @@ export default function MapScreen({
   }, []);
 
   // 분류 필터 **AND** 검색어 — 지도에 꽂히는 핀과 목록이 같은 목록을 씁니다.
-  const filtered = useMemo(() => filterAndSearchPins(pins, { filter, query }), [pins, filter, query]);
+  // v2.10 — 그 위에 ✅ 방문 상태까지 AND. 칩 숫자는 방문 필터를 빼고 세야 맞습니다.
+  const baseFiltered = useMemo(() => filterAndSearchPins(pins, { filter, query }), [pins, filter, query]);
+  const visitCounts = useMemo(() => countByVisit(baseFiltered), [baseFiltered]);
+  const filtered = useMemo(() => filterByVisit(baseFiltered, visitFilter), [baseFiltered, visitFilter]);
   // v2.0 — 공유받은 지도는 '미리보기'로 지도에 함께 띄우고, 상세 시트는 읽기 전용으로 엽니다.
   const previewPins = useMemo(() => (Array.isArray(sharedPins) ? sharedPins.filter(Boolean) : []), [sharedPins]);
   const mapPins = useMemo(
@@ -309,7 +323,7 @@ export default function MapScreen({
   }, [query]);
 
   useEffect(() => {
-    const matches = searchMatches(pins, { filter, query: navQuery });
+    const matches = searchMatches(pins, { filter, query: navQuery, visit: visitFilter });
     const plan = planSearchNavigation({
       query: navQuery,
       matches,
@@ -344,7 +358,7 @@ export default function MapScreen({
         showToast(action.message);
       }
     });
-  }, [navQuery, filter, pins, showToast]);
+  }, [navQuery, filter, pins, visitFilter, showToast]);
 
   const focusOnPin = useCallback(
     (pin) => {
@@ -498,6 +512,12 @@ export default function MapScreen({
     selected: Boolean(selectedPin),
   });
 
+  /** v2.10 — 방문 상태 칩: 같은 칩을 다시 누르면 '전체'로 돌아갑니다 */
+  const changeVisitFilter = useCallback((next) => {
+    const value = normalizeVisitFilter(next);
+    setVisitFilter((current) => (current === value && value !== VISIT_ALL ? VISIT_ALL : value));
+  }, []);
+
   return (
     <View style={styles.root}>
       <RealMapView
@@ -523,6 +543,9 @@ export default function MapScreen({
           filter={filter}
           onChangeFilter={setFilter}
           counts={counts}
+          visitFilter={visitFilter}
+          onChangeVisitFilter={changeVisitFilter}
+          visitCounts={visitCounts}
           categories={categories}
           myCoords={myCoords}
           onSelectPin={onSelectPin}
@@ -598,6 +621,14 @@ export default function MapScreen({
         {!showResults && (
           <View style={styles.chipWrap}>
             <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
+            {/* v2.10 — ✅ 방문 상태 필터 (지도에서도 바로 '안 가본 곳만' 볼 수 있게) */}
+            <View style={styles.visitWrap}>
+              <VisitFilterChips
+                value={visitFilter}
+                onChange={changeVisitFilter}
+                counts={visitCounts}
+              />
+            </View>
           </View>
         )}
         {!!locationError && (
@@ -616,7 +647,9 @@ export default function MapScreen({
         <View style={styles.countPill} pointerEvents="none">
           <View style={styles.countDot} />
           <Text style={styles.countText}>
-            {filtered.length} / {pins.length} 핀 표시 중
+            {visitFilter === VISIT_ALL
+              ? filtered.length + ' / ' + pins.length + ' 핀 표시 중'
+              : visitFilter + ' ' + filtered.length + '곳 / ' + pins.length + '곳'}
           </Text>
         </View>
       )}
@@ -771,6 +804,8 @@ export default function MapScreen({
           distanceMeters={myCoords ? distanceById[selectedPin.id] : null}
           onClose={() => onSelectPin(null)}
           onDelete={onDeletePin}
+          onToggleVisited={onTogglePinVisited}
+          onChangeMemo={onChangePinMemo}
           onToast={onToast}
           readOnly={selectedIsShared}
         />
@@ -845,6 +880,9 @@ const styles = StyleSheet.create({
   },
   chipWrap: {
     marginTop: 10,
+  },
+  visitWrap: {
+    marginTop: 6,
   },
   searchWrap: {
     marginTop: 8,

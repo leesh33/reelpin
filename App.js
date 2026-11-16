@@ -24,7 +24,7 @@ import {
   savePro,
   saveRadius,
 } from './src/storage';
-import { findExistingPin, normalizePins, splitNewPins } from './src/utils/pins';
+import { findExistingPin, normalizePins, planPinAddition } from './src/utils/pins';
 import {
   addCategory,
   allCategories,
@@ -39,7 +39,6 @@ import {
   sameCategory,
 } from './src/utils/categories';
 import { clearShareFromLocation, readShareFromLocation } from './src/utils/shareMap';
-import { FREE_PIN_LIMIT } from './src/data/seedPins';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
 import {
   OAUTH_PROVIDERS,
@@ -507,6 +506,47 @@ export default function App() {
     [pushPinsToCloud, showToast]
   );
 
+  /**
+   * v2.10 — ✅ 가봤어요 체크/해제. 상세 시트의 버튼 한 번으로 바뀌고, 기기·클라우드에 바로 저장됩니다.
+   */
+  const handleTogglePinVisited = useCallback(
+    (pinId, next) => {
+      if (!pinId) return;
+      const target = (pinsRef.current || []).find((p) => p && p.id === pinId);
+      if (!target) return;
+      const now = new Date().toISOString();
+      const toggled = {
+        ...target,
+        visited: next === true,
+        visitedAt: next === true ? now : '',
+        updatedAt: now,
+      };
+      const updated = normalizePins([toggled])[0];
+      if (!updated) return;
+      const updatedList = pinsRef.current.map((p) => (p && p.id === pinId ? updated : p));
+      pinsRef.current = updatedList;
+      setPins(updatedList);
+      pushPinsToCloud([updated]);
+    },
+    [pushPinsToCloud]
+  );
+
+  /** v2.10 — 📝 한줄 메모 저장 (상세 시트 · 저장 화면) */
+  const handleSavePinMemo = useCallback(
+    (pinId, memo) => {
+      if (!pinId) return;
+      const target = (pinsRef.current || []).find((p) => p && p.id === pinId);
+      if (!target) return;
+      const updated = normalizePins([{ ...target, memo, updatedAt: new Date().toISOString() }])[0];
+      if (!updated) return;
+      const updatedList = pinsRef.current.map((p) => (p && p.id === pinId ? updated : p));
+      pinsRef.current = updatedList;
+      setPins(updatedList);
+      pushPinsToCloud([updated]);
+    },
+    [pushPinsToCloud]
+  );
+
   const handleSaved = useCallback(
     (pin) => {
       // 매장 정보 URL 또는 이름+동네가 같으면 같은 장소 — 중복 핀을 만들지 않습니다.
@@ -530,62 +570,49 @@ export default function App() {
   /**
    * v2.0 — 여러 곳 한 번에 저장.
    *   · 이미 저장한 핀과 이름+좌표(200m)·placeId·매장 URL 이 겹치면 건너뜁니다.
-   *   · 무료 플랜은 남은 자리까지만 저장하고, 그 밖의 곳은 토스트로 알려 줍니다.
+   *   · v2.10 — 무료 플랜 10개 한도를 없앴습니다. 몇 개든 저장됩니다 (중복만 걸러 냄).
    */
   const handleSavedMany = useCallback(
     (incoming) => {
       const list = (Array.isArray(incoming) ? incoming : [incoming]).filter(Boolean);
       if (!list.length) return;
-      const { fresh, duplicates } = splitNewPins(pins, list);
-      const room = isPro ? Infinity : Math.max(0, FREE_PIN_LIMIT - pins.length);
-      const allowed = fresh.slice(0, room);
-      const overLimit = fresh.length - allowed.length;
-      if (!allowed.length) {
+      const { fresh, duplicates } = planPinAddition(pins, list);
+      if (!fresh.length) {
         setTab('map');
         if (duplicates.length) {
           const first = duplicates[0].existing;
           if (first) setSelectedPinId(first.id);
-          showToast(
-            duplicates.length === list.length
-              ? '이미 지도에 있는 장소예요 · ' + first.name
-              : '무료 플랜은 핀 ' + FREE_PIN_LIMIT + '개까지예요'
-          );
-        } else {
-          showToast('무료 플랜은 핀 ' + FREE_PIN_LIMIT + '개까지예요');
+          showToast('이미 지도에 있는 장소예요 · ' + first.name);
         }
         return;
       }
-      setPins((prev) => allowed.concat(prev));
-      setSelectedPinId(allowed[0].id);
+      setPins((prev) => fresh.concat(prev));
+      setSelectedPinId(fresh[0].id);
       setTab('map');
       const parts = [];
-      parts.push(allowed.length > 1 ? allowed.length + '곳을 지도에 꽂았어요' : '지도에 핀을 꽂았어요 · ' + allowed[0].name);
+      parts.push(fresh.length > 1 ? fresh.length + '곳을 지도에 꽂았어요' : '지도에 핀을 꽂았어요 · ' + fresh[0].name);
       if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
-      if (overLimit > 0) parts.push('무료 한도로 ' + overLimit + '곳은 못 넣었어요');
       showToast(parts.join(' · '), 'pro');
-      pushPinsToCloud(allowed);
+      pushPinsToCloud(fresh);
     },
-    [isPro, pins, pushPinsToCloud, showToast]
+    [pins, pushPinsToCloud, showToast]
   );
 
-  /** 공유받은 지도를 내 지도에 합칩니다. (중복은 건너뛰고, 주소창의 share 는 지움) */
+  /** 공유받은 지도를 내 지도에 합칩니다. (중복은 건너뛰고, 주소창의 share 는 지움 — 개수 한도 없음) */
   const handleAddSharedPins = useCallback(() => {
     if (!sharedPins.length) return;
     const incoming = sharedPins.map((p) => ({ ...p, id: 'pin-shared-' + p.id + '-' + Date.now(), shared: false }));
-    const { fresh, duplicates } = splitNewPins(pins, incoming);
-    const room = isPro ? Infinity : Math.max(0, FREE_PIN_LIMIT - pins.length);
-    const allowed = fresh.slice(0, room);
-    if (allowed.length) setPins((prev) => allowed.concat(prev));
+    const { fresh, duplicates } = planPinAddition(pins, incoming);
+    if (fresh.length) setPins((prev) => fresh.concat(prev));
     setSharedPins([]);
     setTab('map');
     clearShareFromLocation();
     const parts = [];
-    if (allowed.length) parts.push('공유받은 ' + allowed.length + '곳을 내 지도에 넣었어요');
+    if (fresh.length) parts.push('공유받은 ' + fresh.length + '곳을 내 지도에 넣었어요');
     if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
-    if (fresh.length - allowed.length > 0) parts.push('무료 한도로 ' + (fresh.length - allowed.length) + '곳은 못 넣었어요');
-    showToast(parts.join(' · ') || '추가할 곳이 없어요', allowed.length ? 'pro' : 'dark');
-    if (allowed.length) pushPinsToCloud(allowed);
-  }, [isPro, pins, pushPinsToCloud, sharedPins, showToast]);
+    showToast(parts.join(' · ') || '추가할 곳이 없어요', fresh.length ? 'pro' : 'dark');
+    if (fresh.length) pushPinsToCloud(fresh);
+  }, [pins, pushPinsToCloud, sharedPins, showToast]);
 
   const handleDismissShared = useCallback(() => {
     setSharedPins([]);
@@ -651,6 +678,8 @@ export default function App() {
               radiusMeters={radius}
               onGoPaste={() => setTab('paste')}
               onDeletePin={handleDeletePin}
+              onTogglePinVisited={handleTogglePinVisited}
+              onChangePinMemo={handleSavePinMemo}
               onToast={showToast}
               sharedPins={sharedPins}
               onAddSharedPins={handleAddSharedPins}
@@ -662,11 +691,9 @@ export default function App() {
               pinCount={pins.length}
               categories={categories}
               onAddCategory={handleAddCategory}
-              isPro={isPro}
               onSaved={handleSaved}
               onSavedMany={handleSavedMany}
               onClose={() => setTab('map')}
-              onGoProfile={() => setTab('profile')}
               onToast={showToast}
             />
           </View>

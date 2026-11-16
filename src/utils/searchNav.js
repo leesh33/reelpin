@@ -47,7 +47,12 @@ export function mapCoordsOf(pins) {
 
 /** 분류 필터 **AND** 검색어 — 지도·목록과 같은 함수를 씁니다. */
 export function searchMatches(pins, options = {}) {
-  return filterAndSearchPins(pins, { filter: options.filter, query: options.query });
+  return filterAndSearchPins(pins, {
+    filter: options.filter,
+    query: options.query,
+    // v2.10 — ✅ 방문 상태 필터도 검색 결과에 함께 적용
+    visit: options.visit,
+  });
 }
 
 /**

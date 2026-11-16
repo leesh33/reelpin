@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { FREE_PIN_LIMIT } from '../data/seedPins';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 import { OAUTH_PROVIDERS } from '../services/cloudSync';
 import { SUPABASE_SETUP_HINT } from '../services/supabase';
@@ -22,9 +21,9 @@ const RADIUS_OPTIONS = [
 ];
 
 const PRO_FEATURES = [
-  '핀 저장 무제한 (무료는 월 10건)',
-  '전 지역 · 반경 300m / 500m / 1km 알림',
   '친구와 함께 쓰는 공동 편집 지도',
+  '여러 기기 실시간 동기화',
+  '방문 기록 · 메모 백업',
 ];
 
 /**
@@ -499,8 +498,8 @@ export default function ProfileScreen({
 }) {
   const [copied, setCopied] = useState(false);
   const count = pins.length;
-  const limit = isPro ? 0 : FREE_PIN_LIMIT;
-  const ratio = isPro ? 1 : Math.min(1, count / FREE_PIN_LIMIT);
+  // v2.10 — 무료 플랜 10개 한도를 없앴습니다. 이제 누구나 개수 제한 없이 저장합니다.
+  const visitedCount = pins.filter((p) => p && p.visited === true).length;
 
   const shareMap = async () => {
     if (!pins.length) {
@@ -559,27 +558,27 @@ export default function ProfileScreen({
 
         {/* 계정 · 클라우드 동기화 (v2.1) — v2.1.3 에서 '내 정보' 맨 아래로 이동 */}
 
-        {/* 저장한 핀 카운터 */}
+        {/* 저장한 핀 카운터 — v2.10: 개수 한도 없이 'N곳 저장'과 방문 현황만 깔끔하게 */}
         <View style={styles.card}>
           <View style={styles.cardHead}>
-            <Text style={styles.cardTitle}>저장한 핀</Text>
+            <Text style={styles.cardTitle}>저장한 장소</Text>
             <Pressable onPress={onGoPaste} hitSlop={8}>
               <Text style={styles.linkText}>+ 핀 추가</Text>
             </Pressable>
           </View>
           <View style={styles.counterRow}>
             <Text style={styles.counterValue}>{count}</Text>
-            <Text style={styles.counterLimit}>{isPro ? '/ 무제한' : `/ ${FREE_PIN_LIMIT} 무료`}</Text>
-          </View>
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressFill, { width: Math.round(ratio * 100) + '%' }]} />
+            <Text style={styles.counterLimit}>곳</Text>
+            <View style={styles.visitPill}>
+              <Ionicons name="checkmark-circle" size={12} color={colors.visit} />
+              <Text style={styles.visitPillText}>{'가봤어요 ' + visitedCount}</Text>
+            </View>
           </View>
           <Text style={styles.cardHint}>
-            {isPro
-              ? '프로 플랜이라 저장 개수 제한이 없어요.'
-              : count >= FREE_PIN_LIMIT
-              ? '무료 한도를 다 채웠어요. 프로로 전환하면 계속 저장할 수 있어요.'
-              : `무료로 ${FREE_PIN_LIMIT - count}건 더 저장할 수 있어요.`}
+            {'개수 제한 없이 저장할 수 있어요. ' +
+              (visitedCount > 0
+                ? '가본 곳 ' + visitedCount + '곳 · 안 가본 곳 ' + (count - visitedCount) + '곳'
+                : '다녀온 곳은 상세에서 [가봤어요]를 눌러 표시해 두세요.')}
           </Text>
         </View>
 
@@ -670,7 +669,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.8.0</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.10.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>
@@ -828,6 +827,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: colors.textMuted,
+  },
+  // v2.10 — 가봤어요 현황 알약
+  visitPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto',
+    backgroundColor: colors.visitSoft,
+    borderWidth: 1,
+    borderColor: colors.visitLine,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  visitPillText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: colors.visitDark,
   },
   progressTrack: {
     height: 7,

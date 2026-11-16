@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FREE_PIN_LIMIT, SEED_PINS } from './data/seedPins';
+import { SEED_PINS } from './data/seedPins';
 
 const PINS_KEY = 'reelpin.pins.v1';
 const RADIUS_KEY = 'reelpin.radius.v1';
@@ -93,6 +93,7 @@ export async function saveCategories(categories) {
   }
 }
 
-export function pinLimit(isPro) {
-  return isPro ? Infinity : FREE_PIN_LIMIT;
+/** v2.10 — 저장 개수 한도 없음 (예전 화면·테스트 호환용 이름) */
+export function pinLimit() {
+  return Infinity;
 }

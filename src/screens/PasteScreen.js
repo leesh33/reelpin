@@ -20,7 +20,6 @@ import {
   searchPlacesDirect,
   splitSharedText,
 } from '../services/extractor';
-import { FREE_PIN_LIMIT } from '../data/seedPins';
 import ProviderBadges from '../components/ProviderBadge';
 import ExtractedTitleNote from '../components/ExtractedTitleNote';
 import CategoryPicker from '../components/CategoryPicker';
@@ -46,11 +45,9 @@ export default function PasteScreen({
   pinCount,
   categories = DEFAULT_CATEGORIES,
   onAddCategory,
-  isPro,
   onSaved,
   onSavedMany,
   onClose,
-  onGoProfile,
   onToast,
   initialMode = 'link',
 }) {
@@ -67,9 +64,10 @@ export default function PasteScreen({
   // v2.2 — 저장하기 전에 분류를 직접 고르기 (고르지 않았다면 자동 분류 결과를 씁니다)
   const [pickedCategory, setPickedCategory] = useState('');
   const [categoryTouched, setCategoryTouched] = useState(false);
+  // v2.10 — 📝 저장 전에 미리 적어 두는 한줄 메모 (선택)
+  const [memo, setMemo] = useState('');
   const scrollRef = useRef(null);
 
-  const limitReached = !isPro && pinCount >= FREE_PIN_LIMIT;
   const isSearch = mode === 'search';
   const stageLabels = isSearch ? SEARCH_STAGES : LINK_STAGES;
 
@@ -119,6 +117,7 @@ export default function PasteScreen({
     setStage(0);
     setCategoryTouched(false);
     setPickedCategory('');
+    setMemo('');
   };
 
   const startProgress = () => {
@@ -314,22 +313,19 @@ export default function PasteScreen({
     setMeta(null);
     setCategoryTouched(false);
     setPickedCategory('');
+    setMemo('');
   };
 
   /** 선택한 후보를 핀으로 만들어 저장합니다. (1곳이든 N곳이든 같은 버튼) */
   const savePins = () => {
     if (!selectedCandidates.length) return;
-    if (limitReached) {
-      onToast('무료 플랜은 핀 10개까지예요');
-      return;
-    }
     const searchMode = meta ? meta.mode === 'search' : isSearch;
     // 붙여넣은 게 '문구 + 링크' 덩어리여도 핀에는 링크만 저장합니다. (상세 시트의 [원본 열기]가 깨지지 않게)
     const sourceUrl = searchMode ? '' : splitSharedText(url).url;
     const platform = searchMode ? 'search' : parseUrl(sourceUrl).platform || 'instagram';
     const built = selectedCandidates
       .map((candidate) =>
-        buildPin({ ...candidate, category: saveCategory }, { sourceUrl, platform })
+        buildPin({ ...candidate, category: saveCategory }, { sourceUrl, platform, memo })
       )
       .filter(Boolean);
     if (!built.length) {
@@ -697,28 +693,40 @@ export default function PasteScreen({
               />
             </View>
 
-            {limitReached ? (
-              <Pressable style={styles.proGate} onPress={onGoProfile}>
-                <Ionicons name="lock-closed" size={15} color={colors.coralDark} />
-                <Text style={styles.proGateText}>
-                  무료 플랜은 핀 {FREE_PIN_LIMIT}개까지예요. 프로에서 무제한으로 저장하세요.
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                style={[styles.primaryBtn, styles.saveBtn, !selectedCandidates.length && styles.saveBtnOff]}
-                onPress={savePins}
-                disabled={!selectedCandidates.length}
-                accessibilityRole="button"
-              >
-                <Ionicons name="location" size={16} color={colors.white} />
-                <Text style={styles.primaryBtnText}>
-                  {selectedCandidates.length > 1
-                    ? '선택한 ' + selectedCandidates.length + '곳 한 번에 저장'
-                    : '선택한 ' + selectedCandidates.length + '곳 저장'}
-                </Text>
-              </Pressable>
-            )}
+            {/* v2.10 — 📝 저장 전에 한줄 메모를 미리 적어 둡니다 (입력하지 않아도 저장됩니다) */}
+            <View style={styles.memoCard}>
+              <View style={styles.memoHead}>
+                <Ionicons name="create-outline" size={13} color={colors.coralDark} />
+                <Text style={styles.memoLabel}>한줄 메모</Text>
+                <Text style={styles.memoHint}>{memo.trim() ? memo.trim().length + '/120' : '선택 입력'}</Text>
+              </View>
+              <TextInput
+                style={styles.memoInput}
+                value={memo}
+                onChangeText={setMemo}
+                placeholder="추천 메뉴, 아기의자, 웨이팅 팁 등을 적어두세요"
+                placeholderTextColor={colors.textMuted}
+                maxLength={120}
+                returnKeyType="done"
+                accessibilityLabel="한줄 메모 (선택)"
+                testID="paste-memo-input"
+              />
+            </View>
+
+            <Pressable
+              style={[styles.primaryBtn, styles.saveBtn, !selectedCandidates.length && styles.saveBtnOff]}
+              onPress={savePins}
+              disabled={!selectedCandidates.length}
+              accessibilityRole="button"
+              testID="paste-save-button"
+            >
+              <Ionicons name="location" size={16} color={colors.white} />
+              <Text style={styles.primaryBtnText}>
+                {selectedCandidates.length > 1
+                  ? '선택한 ' + selectedCandidates.length + '곳 한 번에 저장'
+                  : '선택한 ' + selectedCandidates.length + '곳 저장'}
+              </Text>
+            </Pressable>
 
             <Pressable style={styles.againBtn} onPress={runPrimary}>
               <Text style={styles.againText}>{isSearch ? '다시 찾기' : '다시 추출하기'}</Text>
@@ -727,11 +735,7 @@ export default function PasteScreen({
         )}
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            {isPro
-              ? '프로 플랜 · 저장 무제한'
-              : `무료 플랜 · ${pinCount} / ${FREE_PIN_LIMIT}건 저장됨`}
-          </Text>
+          <Text style={styles.footerText}>{'저장된 장소 ' + pinCount + '곳'}</Text>
         </View>
       </ScrollView>
     </View>
@@ -1228,21 +1232,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 7,
   },
-  proGate: {
+  // v2.10 — 📝 저장 전 한줄 메모 (선택)
+  memoCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 11,
+    paddingTop: 9,
+    paddingBottom: 10,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  memoHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.coralSoft,
-    borderRadius: radius.md,
-    padding: 12,
-    marginTop: 6,
+    gap: 5,
   },
-  proGateText: {
+  memoLabel: {
     flex: 1,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11.5,
+    fontWeight: '800',
     color: colors.coralDark,
-    lineHeight: 17,
+  },
+  memoHint: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.textMuted,
+  },
+  memoInput: {
+    marginTop: 6,
+    height: 38,
+    borderRadius: radius.sm,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    paddingHorizontal: 10,
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: colors.text,
   },
   againBtn: {
     alignSelf: 'center',
