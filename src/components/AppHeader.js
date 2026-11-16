@@ -4,18 +4,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme';
 
 /**
- * 릴스핀 공통 상단 헤더 (v2.15)
+ * 릴스핀 공통 상단 헤더 (v2.16 · 호갱노노식)
  *
- * 상훈 님 요청: "지도탭과 내정보 탭에도 저장에 있는 상단 까만 헤더(Reelspin)를 넣는 건 어떨까?
- *               헤더 우측에는 로그인+알림 모음 아이콘을 넣고"
+ * 상훈 님 요청: "호갱노노 상단 헤더 영역처럼 … 왼쪽 상단에는 릴스핀 로고를 넣고
+ *               우측 상단에는 돋보기 버튼 알림 짝대기 3개"
  *
  *   · 왼쪽  : 주황 핀 + `Reelspin` + 지금 보고 있는 탭 뱃지(`지도` / `저장` / `내 정보`)
- *   · 오른쪽: 🔔 알림 모음(반경 500m 안 저장 장소가 있으면 주황 숫자 뱃지)
- *             👤 계정(비로그인 = `로그인` 알약 · 로그인 = 이니셜 아바타 + 초록 점)
+ *   · 오른쪽: 🔍 돋보기(검색 레이어 팝업) · 🔔 알림 모음(반경 500m 안 저장 장소 숫자 뱃지)
+ *             ☰ 짝대기 3개(메뉴 — 예전 👤 로그인 알약/아바타를 이 안으로 통합, 로그인 상태면 초록 점)
  *             ✕ 저장 탭에서 지도로 돌아가기 (onPressClose 를 넘긴 화면만)
  *
  * 세 탭이 **같은 컴포넌트**를 쓰므로 색·높이·여백이 어긋날 수 없습니다.
- * (v2.11 부터 쓰던 저장 화면의 다크 차콜 #1C1C1E 헤더를 그대로 옮겨 온 것입니다.)
+ * (v2.11 부터 쓰던 저장 화면의 다크 차콜 #1C1C1E 헤더를 그대로 이어받았습니다.)
  */
 
 /** 🔔 뱃지에 쓸 숫자 — 0이면 뱃지를 그리지 않고, 9곳을 넘으면 `9+` */
@@ -28,17 +28,21 @@ export function alertBadgeLabel(count) {
 /** 헤더 뱃지에 쓸 수 있는 탭 이름 (오타 방지용) */
 export const HEADER_TABS = ['지도', '저장', '내 정보'];
 
+/** 헤더 오른쪽 아이콘 순서 — 화면 폭 계산·검사에 쓰는 단일 출처 */
+export const HEADER_ACTIONS = ['search', 'alerts', 'menu'];
+
 export default function AppHeader({
   badge = '지도',
+  onPressSearch,
   onPressAlerts,
   alertCount = 0,
-  onPressAccount,
+  onPressMenu,
   signedIn = false,
-  accountInitial = '',
   onPressClose,
   closeLabel = '닫기',
+  showSearch = true,
   showAlerts = true,
-  showAccount = true,
+  showMenu = true,
 }) {
   const countLabel = alertBadgeLabel(alertCount);
   return (
@@ -54,6 +58,19 @@ export default function AppHeader({
       </View>
 
       <View style={styles.actions}>
+        {showSearch && (
+          <Pressable
+            style={styles.iconBtn}
+            onPress={onPressSearch}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="장소 검색"
+            testID="header-search"
+          >
+            <Ionicons name="search" size={18} color={colors.white} />
+          </Pressable>
+        )}
+
         {showAlerts && (
           <Pressable
             style={styles.iconBtn}
@@ -74,34 +91,23 @@ export default function AppHeader({
           </Pressable>
         )}
 
-        {showAccount && (
+        {showMenu && (
           <Pressable
-            style={[styles.iconBtn, signedIn ? styles.accountBtn : styles.loginBtn]}
-            onPress={onPressAccount}
+            style={styles.iconBtn}
+            onPress={onPressMenu}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={signedIn ? '계정 · 내 정보로 이동' : '로그인 · 내 정보로 이동'}
-            testID="header-account"
+            accessibilityLabel="메뉴"
+            testID="header-menu"
           >
-            {signedIn ? (
-              <>
-                <Text style={styles.accountInitial} numberOfLines={1}>
-                  {accountInitial || '나'}
-                </Text>
-                <View style={styles.accountDot} testID="header-account-dot" />
-              </>
-            ) : (
-              <>
-                <Ionicons name="person-outline" size={13} color={colors.white} />
-                <Text style={styles.loginText}>로그인</Text>
-              </>
-            )}
+            <Ionicons name="menu" size={20} color={colors.white} />
+            {signedIn ? <View style={styles.menuDot} testID="header-menu-dot" /> : null}
           </Pressable>
         )}
 
         {onPressClose ? (
           <Pressable
-            style={styles.closeBtn}
+            style={styles.iconBtn}
             onPress={onPressClose}
             hitSlop={8}
             accessibilityRole="button"
@@ -121,7 +127,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
     paddingTop: 12,
     paddingBottom: 13,
     backgroundColor: colors.charcoal,
@@ -169,9 +175,9 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
+    gap: 6,
   },
-  // 다크 헤더 위 반투명 필 — 알림·계정 아이콘의 기본 모양
+  // 다크 헤더 위 반투명 필 — 🔍·🔔·☰·✕ 아이콘의 기본 모양 (흰색 라인 아이콘)
   iconBtn: {
     width: 32,
     height: 32,
@@ -180,31 +186,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // 비로그인: 유저 아이콘 + `로그인` (알약)
-  loginBtn: {
-    width: 'auto',
-    flexDirection: 'row',
-    paddingHorizontal: 10,
-    gap: 4,
-  },
-  loginText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  // 로그인: 이니셜 아바타 + 오른쪽 아래 초록 점
-  accountBtn: {
-    backgroundColor: colors.charcoalPill,
-  },
-  accountInitial: {
-    color: colors.white,
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  accountDot: {
+  // ☰ 오른쪽 아래 초록 점 = 로그인 상태
+  menuDot: {
     position: 'absolute',
-    right: 0,
-    bottom: 0,
+    right: 1,
+    bottom: 1,
     width: 9,
     height: 9,
     borderRadius: 4.5,
@@ -232,14 +218,5 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     lineHeight: 11,
-  },
-  // 다크 헤더 위 닫기 — 반투명 흰 원 + 흰 ✕ (모달 헤더와 같은 규칙)
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.charcoalPill,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
 });

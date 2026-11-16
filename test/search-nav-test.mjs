@@ -312,8 +312,10 @@ const wiring = [
   ['화면: 결과 수 규칙은 planSearchNavigation', screenSource.indexOf('planSearchNavigation') > 0],
   ['화면: 같은 결과로 두 번 이동하지 않음', screenSource.indexOf('searchNavigationKey') > 0 && screenSource.indexOf('navKeyRef') > 0],
   ['화면: 지도에 fit/fitKey 전달', screenSource.indexOf('fit={fit}') > 0 && screenSource.indexOf('fitKey={fitKey}') > 0],
-  ['화면: 검색창 아래 결과 목록', screenSource.indexOf('<PinSearchResults') > 0 && screenSource.indexOf('showSearchResultPanel') > 0],
-  ['화면: 결과 목록이 뜨면 분류 칩은 접음', screenSource.indexOf('{!showResults && (') > 0],
+  // v2.16 — 지도 위 검색창은 상단 헤더 🔍(검색 레이어 팝업)으로 옮겼습니다.
+  //          결과 목록(PinSearchResults)은 목록 보기의 검색에서 이어지고, 지도 위에는 필터 칩만 남습니다.
+  ['화면: 지도 위에는 결과 패널 없이 필터 칩만', screenSource.indexOf('<PinSearchResults') < 0 && screenSource.indexOf('styles.chipWrap') > 0],
+  ['화면: 결과 목록 컴포넌트는 그대로 남아 있음(목록 보기)', fs.existsSync(path.join(process.cwd(), 'src/components/PinSearchResults.js'))],
   ['화면: 목록·결과에서 고르면 지도 + 상세 시트', screenSource.indexOf('openPinFromList') > 0 && screenSource.indexOf('onSelectPin(pin.id)') > 0],
   ['화면: 목록 → 지도 전환 시 범위 맞추기', /const coords = mapCoordsOf\(filtered\)/.test(screenSource) && /setFit\(coords\)/.test(screenSource)],
   ['화면: 검색어 지우기는 즉시 복귀', screenSource.indexOf('setNavQuery(\'\')') > 0],

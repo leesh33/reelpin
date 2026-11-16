@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -57,6 +57,7 @@ export default function PasteScreen({
   onToast,
   initialMode = 'link',
   header,
+  request = null,
 }) {
   // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
   const canUsePhoto = isWebPlatform();
@@ -87,6 +88,24 @@ export default function PasteScreen({
   // v2.13 — 📸 사진을 읽고 있는 동안 (버튼 자체가 'AI 사진 분석 중…' 으로 바뀝니다)
   const [photoBusy, setPhotoBusy] = useState(false);
   const scrollRef = useRef(null);
+
+  /**
+   * v2.16 — 🔍 검색 팝업에서 [저장 탭에서 ‘가게명’ 찾기] 로 넘어올 때:
+   * 상위(App)가 `request={{ id, mode:'search', query }}` 를 주고, **id 가 바뀔 때만** 적용합니다.
+   * (탭을 전환해도 화면은 계속 마운트되어 있으므로 initialMode·initialQuery 로는 반영되지 않습니다.)
+   */
+  const requestRef = useRef(0);
+  useEffect(() => {
+    if (!request || !request.id || requestRef.current === request.id) return;
+    requestRef.current = request.id;
+    if (request.mode === 'photo' && !canUsePhoto) setMode('link');
+    else setMode(request.mode === 'search' ? 'search' : 'link');
+    setQuery(String(request.query == null ? '' : request.query));
+    setError('');
+    setCandidates([]);
+    setSelectedIds([]);
+    setMeta(null);
+  }, [request, canUsePhoto]);
   /**
    * v2.14 — 분석이 도는 동안 다른 탭으로 옮겨 갈 수 있습니다(탭은 잠그지 않습니다).
    *   그래서 `runSeq` 로 '지금 화면의 요청'만 결과를 반영하고, 늦게 도착한 이전 탭의 결과는 버립니다.

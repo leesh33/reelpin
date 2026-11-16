@@ -298,7 +298,9 @@ const wiring = [
   ['지도: 배지 클릭이 지도 클릭으로 번지지 않음', mapSource.indexOf('stopPropagation') > 0],
   ['검색창: 돋보기 + ✕ 지우기 + 안내 문구', searchSource.indexOf('pin-search-clear') > 0 && searchSource.indexOf('내 핀 검색') > 0],
   ['검색창: 얇은 1줄 (높이 40)', /height: 40,/.test(searchSource)],
-  ['지도 화면: 검색창이 배너와 필터 칩 사이에', screenSource.indexOf('<PinSearchBar') > 0 && screenSource.indexOf('filterAndSearchPins') > 0],
+  // v2.16 — 지도 위 검색창은 상단 헤더 🔍(검색 레이어 팝업)로 올라갔습니다(목록 보기의 검색은 그대로).
+  ['지도 화면: 지도 위 검색창 제거(헤더 🔍 팝업으로 이동)', screenSource.indexOf('<PinSearchBar') < 0],
+  ['지도 화면: 필터 칩이 헤더 바로 아래(배너보다 위)', screenSource.indexOf('styles.chipWrap') > 0 && screenSource.indexOf('styles.chipWrap') < screenSource.indexOf('<GeofenceBanner')],
   ['지도 화면: [목록 보기] / [지도 보기] 토글', screenSource.indexOf('목록 보기') > 0 && listSource.indexOf('지도 보기') > 0],
   ['지도 화면: 목록 모드에서 목록이 지도를 덮음', screenSource.indexOf("view === 'list' && (") > 0],
   [

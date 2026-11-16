@@ -9,13 +9,17 @@ import {
   View,
 } from 'react-native';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
+import * as Clipboard from 'expo-clipboard';
 import MapScreen from './src/screens/MapScreen';
 import PasteScreen from './src/screens/PasteScreen';
 import ProfileScreen from './src/screens/ProfileScreen';
 import TabBar from './src/components/TabBar';
 import Toast from './src/components/Toast';
 // v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
+// v2.16 — 호갱노노처럼 헤더(🔍 · 🔔 · ☰) + 🔍 검색 레이어 팝업 · ☰ 메뉴 시트
 import AlertInbox from './src/components/AlertInbox';
+import SearchOverlayModal from './src/components/SearchOverlayModal';
+import MenuDrawerModal from './src/components/MenuDrawerModal';
 import { buildAlertFeed } from './src/utils/alertFeed';
 import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
@@ -42,7 +46,7 @@ import {
   renameCategory,
   sameCategory,
 } from './src/utils/categories';
-import { clearShareFromLocation, readShareFromLocation } from './src/utils/shareMap';
+import { clearShareFromLocation, readShareFromLocation, buildShareUrl, canNativeShare, nativeShare, shareMessage } from './src/utils/shareMap';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
 import {
   OAUTH_PROVIDERS,
@@ -89,6 +93,17 @@ export default function App() {
   const [pinFocus, setPinFocus] = useState(null);
   const [accountFocus, setAccountFocus] = useState(0);
   const pinFocusId = useRef(0);
+
+  // ── v2.16 · 헤더 🔍 검색 레이어 팝업 · ☰ 메뉴 시트 ──────────────────
+  //   searchOpen … 🔍 팝업이 열려 있는가 (전체 레이어)
+  //   menuOpen   … ☰ 메뉴 시트가 열려 있는가
+  //   pasteRequest … 검색 팝업에서 [저장 탭에서 가게명으로 찾기] 로 넘길 때의 요청
+  //                  ({ id, mode:'search', query }) — PasteScreen 이 id 가 바뀔 때만 적용
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [categoriesFocus, setCategoriesFocus] = useState(0);
+  const [pasteRequest, setPasteRequest] = useState(null);
+  const pasteRequestId = useRef(0);
 
   // v2.1 — 계정 · 클라우드 동기화 상태
   const [cloudConfigured, setCloudConfigured] = useState(isSupabaseConfigured());
@@ -696,6 +711,8 @@ export default function App() {
 
   const openAlerts = useCallback(() => {
     setAlertError('');
+    setSearchOpen(false);
+    setMenuOpen(false);
     setAlertOpen(true);
   }, []);
 
@@ -715,27 +732,103 @@ export default function App() {
     setTab('map');
   }, []);
 
+  // ── v2.16 · 🔍 검색 레이어 팝업 · ☰ 메뉴 ─────────────────────
+  const openSearch = useCallback(() => {
+    setAlertOpen(false);
+    setMenuOpen(false);
+    setSearchOpen(true);
+  }, []);
+
+  const closeSearch = useCallback(() => setSearchOpen(false), []);
+
+  const openMenu = useCallback(() => {
+    setAlertOpen(false);
+    setSearchOpen(false);
+    setMenuOpen(true);
+  }, []);
+
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+
+  /** 🔍 팝업에서 핀을 고르면 팝업을 닫고 지도 탭에서 그 핀 상세를 엽니다(🔔 와 같은 규칙) */
+  const openPinFromSearch = useCallback(
+    (pin) => {
+      if (!pin || !pin.id) return;
+      setSearchOpen(false);
+      setTab('map');
+      pinFocusId.current += 1;
+      setPinFocus({ id: pin.id, key: pinFocusId.current });
+    },
+    []
+  );
+
+  /** 🔍 팝업의 ‘내 핀에 없음’ → 저장 탭 [가게명으로 찾기] 에 검색어를 채워 열기 */
+  const goPasteSearch = useCallback((query) => {
+    setSearchOpen(false);
+    setMenuOpen(false);
+    pasteRequestId.current += 1;
+    setPasteRequest({
+      id: pasteRequestId.current,
+      mode: 'search',
+      query: String(query == null ? '' : query),
+    });
+    setTab('paste');
+  }, []);
+
+  /** ☰ 메뉴의 [지도 공유] — 내 정보 탭과 같은 동작(공유 시트 또는 링크 복사) */
+  const shareMyMapFromMenu = useCallback(async () => {
+    setMenuOpen(false);
+    if (!pins.length) {
+      showToast('공유할 핀이 아직 없어요');
+      return;
+    }
+    const url = buildShareUrl(pins);
+    const text = shareMessage(pins);
+    if (canNativeShare()) {
+      const result = await nativeShare(url, { title: text, text });
+      if (result.shared) {
+        showToast('공유 시트를 열었어요');
+        return;
+      }
+      if (result.cancelled) return;
+    }
+    try {
+      await Clipboard.setStringAsync(url);
+      showToast('내 지도 공유 링크를 복사했어요');
+    } catch (e) {
+      showToast('링크 복사에 실패했어요. 다시 시도해 주세요');
+    }
+  }, [pins, showToast]);
+
   /** 헤더의 👤 — 로그인 상태를 보여 주고, 누르면 내 정보 탭의 계정 카드로 내려갑니다. */
   const openAccount = useCallback(() => {
     setAlertOpen(false);
+    setSearchOpen(false);
+    setMenuOpen(false);
     setTab('profile');
     setAccountFocus((n) => n + 1);
+  }, []);
+
+  /** ☰ 메뉴의 [분류 관리] → 내 정보 탭의 분류 관리 카드로 */
+  const openCategories = useCallback(() => {
+    setMenuOpen(false);
+    setTab('profile');
+    setCategoriesFocus((n) => n + 1);
   }, []);
 
   const signedIn = Boolean(cloudUser && (cloudUser.email || cloudUser.id));
   const accountInitial =
     (cloudUser && cloudUser.email ? cloudUser.email.trim().charAt(0).toUpperCase() : '') || '나';
 
-  /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 */
+  /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 — v2.16 `🔍 · 🔔 · ☰` */
   const headerProps = useMemo(
     () => ({
       alertCount: alertFeed.badgeCount,
+      onPressSearch: openSearch,
       onPressAlerts: openAlerts,
-      onPressAccount: openAccount,
+      onPressMenu: openMenu,
       signedIn,
-      accountInitial,
     }),
-    [alertFeed.badgeCount, openAlerts, openAccount, signedIn, accountInitial]
+    [alertFeed.badgeCount, openSearch, openAlerts, openMenu, signedIn]
   );
 
   if (!ready) {
@@ -785,6 +878,7 @@ export default function App() {
             <PasteScreen
               pinCount={pins.length}
               header={headerProps}
+              request={pasteRequest}
               categories={categories}
               onAddCategory={handleAddCategory}
               onSaved={handleSaved}
@@ -799,6 +893,7 @@ export default function App() {
               handle="odol"
               header={headerProps}
               accountFocus={accountFocus}
+              categoriesFocus={categoriesFocus}
               pins={pins}
               categories={categories}
               onAddCategory={handleAddCategory}
@@ -844,6 +939,33 @@ export default function App() {
           onLocate={handleLocateForAlerts}
           onOpenPin={openPinFromAlerts}
           onGoMap={goMapFromAlerts}
+        />
+        {/* v2.16 — 🔍 검색 레이어 팝업 (저장 화면과 같은 형태 · 인풋 + 추천 + 인기 장소) */}
+        <SearchOverlayModal
+          visible={searchOpen}
+          onClose={closeSearch}
+          pins={pins}
+          myCoords={alertCoords}
+          locating={alertLocating}
+          onLocate={handleLocateForAlerts}
+          onOpenPin={openPinFromSearch}
+          onGoPasteSearch={goPasteSearch}
+        />
+        {/* v2.16 — ☰ 메뉴 시트 (계정·동기화 · 분류 관리 · 지도 공유 · 저장 요약 · 버전) */}
+        <MenuDrawerModal
+          visible={menuOpen}
+          onClose={closeMenu}
+          pins={pins}
+          signedIn={signedIn}
+          accountEmail={cloudUser && cloudUser.email ? cloudUser.email : ''}
+          accountInitial={accountInitial}
+          cloudConfigured={cloudConfigured}
+          cloudPinCount={cloudPinCount}
+          cloudSyncing={cloudSyncing}
+          cloudMessage={cloudMessage}
+          onOpenAccount={openAccount}
+          onOpenCategories={openCategories}
+          onShareMap={shareMyMapFromMenu}
         />
       </View>
     </SafeAreaView>

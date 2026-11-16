@@ -7,10 +7,10 @@ import AppHeader from '../components/AppHeader';
 import FilterChips from '../components/FilterChips';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 // v2.6 — 검색 결과 1곳이면 그 핀으로 지도 이동, 2곳 이상이면 검색창 아래 결과 목록
-import PinSearchBar from '../components/PinSearchBar';
+// v2.16 — 지도 위 검색창은 상단 헤더 🔍(검색 레이어 팝업)로 올라갔습니다.
+//         지도 화면에는 분류·방문 필터 칩만 남기고, 목록 보기의 검색은 그대로 둡니다.
 import VisitFilterChips from '../components/VisitFilterChips';
 import PinListView from '../components/PinListView';
-import PinSearchResults from '../components/PinSearchResults';
 import {
   DEFAULT_CATEGORIES,
   countByCategory,
@@ -56,7 +56,6 @@ import {
   planSearchNavigation,
   searchMatches,
   searchNavigationKey,
-  showSearchResultPanel,
 } from '../utils/searchNav';
 
 export default function MapScreen({
@@ -328,12 +327,6 @@ export default function MapScreen({
     [onSelectPin]
   );
 
-  /** v2.6 — 지도 위 결과 목록의 [전체 N곳] → 목록 보기 */
-  const showAllResults = useCallback(() => {
-    setNearbyOpen(false);
-    setView('list');
-  }, []);
-
   /** 검색어 지우기 — 300ms 기다리지 않고 바로 원래 지도 상태로 돌아갑니다. */
   const clearSearch = useCallback(() => {
     setQuery('');
@@ -583,14 +576,6 @@ export default function MapScreen({
 
   const nearbyList = myCoords ? nearby : [];
 
-  // v2.6 — 지도 보기에서 검색 결과가 2곳 이상이면 검색창 아래 콤팩트 결과 목록
-  const showResults = showSearchResultPanel({
-    view,
-    query,
-    matches: filtered,
-    selected: Boolean(selectedPin),
-  });
-
   /** v2.10 — 방문 상태 칩: 같은 칩을 다시 누르면 '전체'로 돌아갑니다 */
   const changeVisitFilter = useCallback((next) => {
     const value = normalizeVisitFilter(next);
@@ -639,9 +624,22 @@ export default function MapScreen({
           />
         )}
 
-        {/* 상단 오버레이(지도 보기): 공유받은 지도 배너 + 실시간 배너 + 검색 + 카테고리 필터 */}
+        {/* 상단 오버레이(지도 보기): 분류·방문 필터 칩 → 실시간 배너 → (공유받은 지도 · 위치 오류) */}
         {view === 'map' && (
         <View style={styles.topOverlay} pointerEvents="box-none">
+          {/* v2.16 — 헤더 바로 아래는 호갱노노처럼 **필터 칩 바 하나**만 둡니다.
+              (지도 위 검색창은 헤더 🔍 = 검색 레이어 팝업으로 올라감 → 지도가 훨씬 넓어짐) */}
+          <View style={styles.chipWrap}>
+            <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
+            {/* v2.10 — ✅ 방문 상태 필터 (지도에서도 바로 '안 가본 곳만' 볼 수 있게) */}
+            <View style={styles.visitWrap}>
+              <VisitFilterChips
+                value={visitFilter}
+                onChange={changeVisitFilter}
+                counts={visitCounts}
+              />
+            </View>
+          </View>
           {previewPins.length > 0 && (
             <View style={styles.sharedBanner}>
               <View style={styles.sharedIcon}>
@@ -691,33 +689,6 @@ export default function MapScreen({
               badge={banner.badge}
               tone={banner.tone}
             />
-          )}
-          <View style={styles.searchWrap}>
-            <PinSearchBar value={query} onChange={setQuery} onClear={clearSearch} />
-          </View>
-          {showResults && (
-            <PinSearchResults
-              pins={filtered}
-              query={query}
-              categories={categories}
-              myCoords={myCoords}
-              onOpenPin={openPinFromList}
-              onShowAll={showAllResults}
-            />
-          )}
-          {/* 검색 결과 목록이 떠 있는 동안에는 분류 칩을 잠시 접어 화면을 비워 둡니다 */}
-          {!showResults && (
-            <View style={styles.chipWrap}>
-              <FilterChips value={filter} onChange={setFilter} counts={counts} categories={categories} />
-              {/* v2.10 — ✅ 방문 상태 필터 (지도에서도 바로 '안 가본 곳만' 볼 수 있게) */}
-              <View style={styles.visitWrap}>
-                <VisitFilterChips
-                  value={visitFilter}
-                  onChange={changeVisitFilter}
-                  counts={visitCounts}
-                />
-              </View>
-            </View>
           )}
           {!!locationError && (
             <Pressable style={styles.errorChip} onPress={() => locateFromUser()} accessibilityRole="button">
@@ -973,13 +944,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   chipWrap: {
-    marginTop: 10,
+    // v2.16 — 헤더 바로 아래(오버레이 top:8)에 붙는 필터 칩 바
+    marginTop: 0,
   },
   visitWrap: {
     marginTop: 6,
-  },
-  searchWrap: {
-    marginTop: 8,
   },
   viewToggleBtn: {
     backgroundColor: colors.coral,

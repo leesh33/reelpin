@@ -498,6 +498,7 @@ export default function ProfileScreen({
   onSyncNow,
   header,
   accountFocus,
+  categoriesFocus,
 }) {
   const [copied, setCopied] = useState(false);
   const count = pins.length;
@@ -508,23 +509,32 @@ export default function ProfileScreen({
   const scrollRef = useRef(null);
   const accountYRef = useRef(0);
   const accountSeenRef = useRef(0);
+  // v2.16 — ☰ 메뉴의 [분류 관리] 로 바로 내려오기 위한 분류 카드 위치/요청
+  const categoriesYRef = useRef(0);
+  const categoriesSeenRef = useRef(0);
+  const scrollToY = (y, offset = 8) => {
+    const node = scrollRef.current;
+    if (!node) return;
+    const target = Math.max(0, y - offset);
+    if (typeof node.scrollTo === 'function') {
+      node.scrollTo({ y: target, animated: true });
+      return;
+    }
+    const dom = typeof node.getScrollableNode === 'function' ? node.getScrollableNode() : node;
+    if (dom && typeof dom.scrollTo === 'function') {
+      dom.scrollTo({ top: target, behavior: 'smooth' });
+    }
+  };
+  useEffect(() => {
+    if (!categoriesFocus || categoriesSeenRef.current === categoriesFocus) return undefined;
+    categoriesSeenRef.current = categoriesFocus;
+    const timer = setTimeout(() => scrollToY(categoriesYRef.current), 140);
+    return () => clearTimeout(timer);
+  }, [categoriesFocus]);
   useEffect(() => {
     if (!accountFocus || accountSeenRef.current === accountFocus) return undefined;
     accountSeenRef.current = accountFocus;
-    const timer = setTimeout(() => {
-      const node = scrollRef.current;
-      if (!node) return;
-      const y = Math.max(0, accountYRef.current - 8);
-      if (typeof node.scrollTo === 'function') {
-        node.scrollTo({ y, animated: true });
-        return;
-      }
-      const dom =
-        typeof node.getScrollableNode === 'function' ? node.getScrollableNode() : node;
-      if (dom && typeof dom.scrollTo === 'function') {
-        dom.scrollTo({ top: y, behavior: 'smooth' });
-      }
-    }, 140);
+    const timer = setTimeout(() => scrollToY(accountYRef.current), 140);
     return () => clearTimeout(timer);
   }, [accountFocus]);
   // v2.10 — 무료 플랜 10개 한도를 없앴습니다. 이제 누구나 개수 제한 없이 저장합니다.
@@ -615,14 +625,21 @@ export default function ProfileScreen({
         </View>
 
         {/* v2.2 — 분류 관리 (만들기 · 이름 바꾸기 · 지우기) */}
-        <CategoryManager
-          categories={categories}
-          pins={pins}
-          onAddCategory={onAddCategory}
-          onRenameCategory={onRenameCategory}
-          onRemoveCategory={onRemoveCategory}
-          onToast={onToast}
-        />
+        <View
+          onLayout={(e) => {
+            categoriesYRef.current =
+              (e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0) || 0;
+          }}
+        >
+          <CategoryManager
+            categories={categories}
+            pins={pins}
+            onAddCategory={onAddCategory}
+            onRenameCategory={onRenameCategory}
+            onRemoveCategory={onRemoveCategory}
+            onToast={onToast}
+          />
+        </View>
 
         {/* 지도 공유 */}
         <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button">
@@ -701,7 +718,7 @@ export default function ProfileScreen({
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
             <Text style={styles.infoKey}>앱 버전</Text>
-            <Text style={styles.infoValue}>릴스핀 v2.15.0</Text>
+            <Text style={styles.infoValue}>릴스핀 v2.16.0</Text>
           </View>
           <View style={styles.infoDivider} />
           <View style={styles.infoRow}>

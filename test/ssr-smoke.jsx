@@ -19,8 +19,25 @@ import PinListView from '../src/components/PinListView';
 import PinSearchResults from '../src/components/PinSearchResults';
 import TabBar from '../src/components/TabBar';
 // v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
-import AppHeader, { alertBadgeLabel, HEADER_TABS } from '../src/components/AppHeader';
+// v2.16 — 호갱노노처럼 헤더(🔍 · 🔔 · ☰) + 🔍 검색 레이어 팝업 · ☰ 메뉴 시트
+import AppHeader, { HEADER_ACTIONS, alertBadgeLabel, HEADER_TABS } from '../src/components/AppHeader';
 import AlertInbox from '../src/components/AlertInbox';
+import SearchOverlayModal from '../src/components/SearchOverlayModal';
+import MenuDrawerModal, { APP_VERSION_LABEL } from '../src/components/MenuDrawerModal';
+import {
+  OVERLAY_RESULT_MAX,
+  RECOMMEND_MAX,
+  overlaySearchResults,
+  popularPlaceRows,
+  recommendPlaces,
+} from '../src/utils/searchOverlay';
+import {
+  POPULAR_PLACES,
+  POPULAR_PLACES_SUB,
+  POPULAR_PLACES_TITLE,
+  popularPlaceLabel,
+  popularPlaceQuery,
+} from '../src/data/popularPlaces';
 import { ALERT_FEED_LIMIT, buildAlertFeed } from '../src/utils/alertFeed';
 import MapCanvas from '../src/components/MapCanvas';
 import RealMapViewWeb, {
@@ -213,7 +230,7 @@ const contentCases = [
   ['PinDetailSheet: 공유받은 핀은 분류 변경 없음', <PinDetailSheet pin={SHARED_PINS[0]} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} readOnly onChangeCategory={noop} />, ['공유받은 맛집이에요']],
   ['ProfileScreen: 분류 관리 카드(수정·삭제·추가)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />, ['분류 관리', '아이랑', '기본', '수정', '삭제', '새 분류 이름', '핀 1개']],
   // v2.5 — 🔍 검색 · 📋 목록 보기
-  ['MapScreen: 내 핀 검색창', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['내 핀 검색', '내 핀 검색 · 가게명 · 지역 · 메뉴']],
+  ['MapScreen: 헤더 🔍 돋보기(지도 위 검색창은 없음)', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} header={{ onPressSearch: noop, onPressAlerts: noop, onPressMenu: noop }} />, ['장소 검색', '알림 모음', '메뉴', '맛집']],
   ['MapScreen: [목록 보기] 버튼', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['목록 보기']],
   ['PinListView: 가까운 순 + 거리 + 분류 색 점', <PinListView pins={SEED_PINS} categories={['맛집', '카페', '가볼곳', '아이랑']} filter="전체" myCoords={{ lat: 37.5828, lng: 126.7141 }} onSelectPin={noop} onToggleView={noop} />, ['가까운 순', '지도 보기', '성수동 소금빵집', '맛집']],
   ['PinListView: 내 위치 없으면 최신순', <PinListView pins={SEED_PINS} filter="전체" myCoords={null} onSelectPin={noop} onToggleView={noop} />, ['최신순']],
@@ -606,8 +623,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.15.0', pkg.version === '2.15.0', pkg.version],
-  ['버전: app.json 2.15.0', expoConfig.version === '2.15.0', expoConfig.version],
+  ['버전: package.json 2.16.0', pkg.version === '2.16.0', pkg.version],
+  ['버전: app.json 2.16.0', expoConfig.version === '2.16.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -856,12 +873,19 @@ const nativeModalSource211 = fs.readFileSync(path.join(process.cwd(), 'src/compo
 
 /** 헤더에 ✕ 닫기 버튼이 있는 화면들 — 소스에서 같은 다크 차콜 헤더를 쓰는지 봅니다. */
 const headerSource215 = fs.readFileSync(path.join(process.cwd(), 'src/components/AppHeader.js'), 'utf8');
+// v2.16 — 🔍 검색 레이어 팝업도 저장 화면과 같은 다크 차콜 헤더 + ✕ 를 씁니다.
+const searchOverlaySource216 = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/SearchOverlayModal.js'),
+  'utf8'
+);
 const CLOSE_HEADER_FILES = [
   // v2.15 — 저장 화면의 ✕ 헤더는 공통 AppHeader 로 옮겼습니다(지도·내 정보 탭도 같은 헤더).
   ['공통 헤더(AppHeader)', headerSource215, 'styles.header'],
   ['핀 상세 시트', sheetSource211, 'styles.headerBar'],
   ['인앱 매장 정보 모달(웹)', webModalSource211, 'styles.header'],
   ['인앱 매장 정보 모달(iOS·안드로이드)', nativeModalSource211, 'styles.header'],
+  // v2.16 — 저장 화면 형태의 검색 레이어 팝업
+  ['검색 레이어 팝업(🔍)', searchOverlaySource216, 'styles.header'],
 ];
 // v2.14.1 — 핀 상세 시트만 상훈 님 요청으로 **브랜드 주황 헤더**를 씁니다(나머지 3곳은 다크 차콜).
 const CHARCOAL_HEADER_FILES = CLOSE_HEADER_FILES.filter(([label]) => label !== '핀 상세 시트');
@@ -869,7 +893,7 @@ const CHARCOAL_HEADER_FILES = CLOSE_HEADER_FILES.filter(([label]) => label !== '
 const v211HeaderChecks = [
   ['헤더 통일: 공통 헤더가 다크 차콜', /header: \{[\s\S]{0,400}?backgroundColor: colors\.charcoal,/.test(headerSource215)],
   ['헤더 통일: 공통 헤더 로고 흰색 · 탭 뱃지 반투명', /brandText: \{[\s\S]{0,120}?color: colors\.white/.test(headerSource215) && /brandBadge: \{[\s\S]{0,80}?backgroundColor: colors\.charcoalPill/.test(headerSource215)],
-  ['헤더 통일: 공통 헤더 닫기 = 반투명 원 + 흰 ✕', /closeBtn: \{[\s\S]{0,160}?backgroundColor: colors\.charcoalPill/.test(headerSource215) && /name="close" size=\{18\} color=\{colors\.white\}/.test(headerSource215)],
+  ['헤더 통일: 공통 헤더 닫기 = 반투명 원 + 흰 ✕', /iconBtn: \{[\s\S]{0,200}?backgroundColor: colors\.charcoalPill/.test(headerSource215) && /name="close" size=\{18\} color=\{colors\.white\}/.test(headerSource215)],
   // v2.14.1 — 상세 시트 헤더는 다크 차콜이 아니라 브랜드 주황입니다(아래 v2.14.1 검사에서 확인).
   // ✕ 헤더를 가진 나머지 화면은 빠짐없이 charcoal 을 써야 합니다 (색을 되돌리면 여기서 걸립니다)
   ...CHARCOAL_HEADER_FILES.map(([label, source, styleKey]) => [
@@ -881,7 +905,7 @@ const v211HeaderChecks = [
   ['헤더 통일: ✕ 닫기 아이콘은 모두 흰색', CLOSE_HEADER_FILES.every(([, source]) => !/name="close"[^>]*color=\{colors\.(textSub|textMuted|text)\}/.test(source))],
   // 앱 전체(src)에서 ✕ 닫기를 가진 헤더 화면을 빠짐없이 찾습니다 — 새로 생기면 여기서 확인하게 됩니다
   [
-    '헤더 통일: ✕ 닫기 헤더는 넣은 4곳뿐 (전수 검사)',
+    '헤더 통일: ✕ 닫기 헤더는 넣은 5곳뿐 (전수 검사)',
     (() => {
       const files = [];
       const walk = (dir) => {
@@ -896,7 +920,7 @@ const v211HeaderChecks = [
       const withCloseHeader = files.filter((f) =>
         /accessibilityLabel="(닫기|상세 닫기)"|accessibilityLabel=\{closeLabel\}/.test(fs.readFileSync(f, 'utf8'))
       );
-      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'PinDetailSheet.js'];
+      const wanted = ['AppHeader.js', 'InAppPlaceModal.js', 'InAppPlaceModal.web.js', 'PinDetailSheet.js', 'SearchOverlayModal.js'];
       return (
         withCloseHeader.length === wanted.length &&
         wanted.every((w) => withCloseHeader.some((f) => f.endsWith(w)))
@@ -940,7 +964,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.15.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.15.0') > 0],
+  ['프로필: 버전 표기 v2.16.0', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf('릴스핀 v2.16.0') > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1239,11 +1263,13 @@ const feedFar = buildAlertFeed(ALERT_PINS, { lat: 37.9, lng: 127.9 });
 const feedNoLocation = buildAlertFeed(ALERT_PINS, null);
 
 const headerAlertsHtml = stripSpaces(
-  renderToString(<AppHeader badge="지도" alertCount={3} onPressAlerts={noop} onPressAccount={noop} />)
+  renderToString(
+    <AppHeader badge="지도" alertCount={3} onPressSearch={noop} onPressAlerts={noop} onPressMenu={noop} />
+  )
 );
 const headerSignedHtml = stripSpaces(
   renderToString(
-    <AppHeader badge="내 정보" alertCount={0} signedIn accountInitial="A" onPressAccount={noop} />
+    <AppHeader badge="내 정보" alertCount={0} signedIn onPressSearch={noop} onPressAlerts={noop} onPressMenu={noop} />
   )
 );
 const inboxOpenHtml = renderToString(
@@ -1270,8 +1296,10 @@ const v215Checks = [
   // ② 공통 헤더 (컴포넌트)
   ['공통 헤더: Reelspin + 지금 탭 뱃지', headerAlertsHtml.indexOf('reelspin') > 0 && headerAlertsHtml.indexOf('지도') > 0],
   ['공통 헤더: 🔔 알림 모음 버튼 + 숫자 뱃지', headerAlertsHtml.indexOf('알림모음') > 0 && headerSource215.indexOf('testID="header-alert-badge"') > 0 && headerSource215.indexOf('colors.coral') > 0],
-  ['공통 헤더: 비로그인 = [로그인] 알약 버튼', headerAlertsHtml.indexOf('로그인') > 0 && headerSource215.indexOf('loginBtn') > 0],
-  ['공통 헤더: 로그인 = 이니셜 아바타 + 초록 점', headerSignedHtml.indexOf('>a<') > 0 && headerSignedHtml.indexOf('header-account-dot') > 0 && headerSource215.indexOf('colors.visit') > 0],
+  ['공통 헤더: 비로그인에도 🔍 · 🔔 · ☰ 세 아이콘', headerAlertsHtml.indexOf('장소검색') > 0 && headerAlertsHtml.indexOf('알림모음') > 0 && headerAlertsHtml.indexOf('메뉴') > 0 && headerSource215.indexOf('loginBtn') < 0],
+  ['공통 헤더: 👤 알약/아바타는 헤더에서 사라짐(☰ 메뉴로 통합)', headerAlertsHtml.indexOf('로그인') < 0 && headerSource215.indexOf('header-account') < 0 && headerSource215.indexOf('accountDot') < 0],
+  ['공통 헤더: 오른쪽 순서 = 🔍 → 🔔 → ☰', HEADER_ACTIONS.join('|') === 'search|alerts|menu' && HEADER_ACTIONS.length === 3, HEADER_ACTIONS.join('|')],
+  ['공통 헤더: 로그인 상태 = ☰ 초록 점', headerSignedHtml.indexOf('header-menu-dot') > 0 && headerSource215.indexOf('colors.visit') > 0],
   ['공통 헤더: 뱃지 없으면 숫자 안 그림', stripSpaces(renderToString(<AppHeader badge="저장" alertCount={0} />)).indexOf('header-alert-badge') < 0],
   ['공통 헤더: ✕ 는 넘긴 화면에만', headerSource215.indexOf('{onPressClose ?') > 0 && headerAlertsHtml.indexOf('✕') < 0],
   // ③ 세 탭에 같은 헤더
@@ -1297,6 +1325,145 @@ const v215Checks = [
 ];
 
 for (const [label, ok, extra] of v215Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.16: 호갱노노처럼 헤더(🔍 · 🔔 · ☰) · 🔍 검색 레이어 팝업 · ☰ 메뉴 시트 ──
+const menuSource216 = fs.readFileSync(
+  path.join(process.cwd(), 'src/components/MenuDrawerModal.js'),
+  'utf8'
+);
+const popularSource216 = fs.readFileSync(
+  path.join(process.cwd(), 'src/data/popularPlaces.js'),
+  'utf8'
+);
+const overlayUtilSource216 = fs.readFileSync(
+  path.join(process.cwd(), 'src/utils/searchOverlay.js'),
+  'utf8'
+);
+const mapSource216 = mapSource215;
+
+const PIN_216 = [
+  { id: 's-0', name: '베통 성수', area: '성수동', category: '카페', menuTags: ['소금빵'], lat: 37.5429, lng: 127.0552, visited: false, createdAt: '2026-11-16T17:00:00+09:00' },
+  { id: 's-1', name: '영등포아바이순대국', area: '영등포동', category: '맛집', menuTags: ['순대국'], memo: '아기의자 있음', lat: 37.5194, lng: 126.904, visited: true, createdAt: '2026-11-16T16:00:00+09:00' },
+  { id: 's-2', name: '문래동 소금빵', area: '문래동', category: '카페', menuTags: ['소금빵'], lat: 37.5212, lng: 126.9041, visited: false, createdAt: '2026-11-16T15:00:00+09:00' },
+  { id: 's-3', name: '화목순대국 여의도', area: '여의도', category: '맛집', lat: 37.5284, lng: 126.924, visited: false, createdAt: '2026-11-16T14:00:00+09:00' },
+];
+const ORIGIN_216 = { lat: 37.5194, lng: 126.904 };
+
+const overlayHtml216 = renderToString(
+  <SearchOverlayModal
+    visible
+    pins={PIN_216}
+    myCoords={ORIGIN_216}
+    onClose={noop}
+    onOpenPin={noop}
+    onGoPasteSearch={noop}
+    onLocate={noop}
+  />
+);
+const overlayNoLocationHtml216 = stripSpaces(
+  renderToString(<SearchOverlayModal visible pins={PIN_216} onClose={noop} onOpenPin={noop} onLocate={noop} />)
+);
+const overlayEmptyHtml216 = renderToString(
+  <SearchOverlayModal visible pins={[]} onClose={noop} onOpenPin={noop} />
+);
+const menuHtml216 = renderToString(
+  <MenuDrawerModal
+    visible
+    pins={PIN_216}
+    signedIn={false}
+    cloudConfigured
+    onClose={noop}
+    onOpenAccount={noop}
+    onOpenCategories={noop}
+    onShareMap={noop}
+  />
+);
+const menuSignedHtml216 = renderToString(
+  <MenuDrawerModal
+    visible
+    pins={PIN_216}
+    signedIn
+    accountEmail="andy@example.com"
+    cloudConfigured
+    cloudPinCount={4}
+    onClose={noop}
+    onOpenAccount={noop}
+    onOpenCategories={noop}
+    onShareMap={noop}
+  />
+);
+const mapHtml216 = renderToString(
+  <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />
+);
+
+const recNear216 = recommendPlaces(PIN_216, ORIGIN_216);
+const recNoLoc216 = recommendPlaces(PIN_216, null);
+const recAllVisited216 = recommendPlaces(
+  PIN_216.map((pin) => ({ ...pin, visited: true })),
+  null
+);
+const resSalt216 = overlaySearchResults(PIN_216, ' 소금빵 ');
+const resMemo216 = overlaySearchResults(PIN_216, '아기의자');
+const resNone216 = overlaySearchResults(PIN_216, '');
+const resLimit216 = overlaySearchResults(PIN_216, '맛집', { limit: 1 });
+const pops216 = popularPlaceRows(PIN_216, POPULAR_PLACES);
+const popBetong216 = pops216.find((row) => row.place.id === 'betong');
+
+const v216Checks = [
+  // ① 헤더 — 🔍 · 🔔 · ☰ (호갱노노처럼)
+  ['헤더: 오른쪽은 🔍 · 🔔 · ☰ 세 아이콘만', headerSource215.indexOf('testID="header-search"') > 0 && headerSource215.indexOf('testID="header-alerts"') > 0 && headerSource215.indexOf('testID="header-menu"') > 0],
+  ['헤더: ☰ 에 로그인 초록 점(작은 점)', headerSource215.indexOf('testID="header-menu-dot"') > 0 && /menuDot: \{[\s\S]{0,200}?colors\.visit/.test(headerSource215)],
+  ['헤더: 흰색 라인 아이콘(search·notifications-outline·menu)', headerSource215.indexOf('name="search"') > 0 && headerSource215.indexOf('name="notifications-outline"') > 0 && headerSource215.indexOf('name="menu"') > 0],
+  ['헤더: 저장 탭은 ✕ 포함 4개까지 그린다', headerSource215.indexOf('{onPressClose ? (') > 0 && headerSource215.indexOf('iconBtn') > 0],
+  // ② 지도 탭 — 검색창 제거 + 칩 바만
+  ['지도 탭: 지도 위 검색창 제거(헤더 🔍 로)', mapSource216.indexOf('<PinSearchBar') < 0 && mapSource216.indexOf('styles.searchWrap') < 0],
+  ['지도 탭: 필터 칩 바가 헤더 바로 아래(배너보다 위)', mapSource216.indexOf('styles.chipWrap') > 0 && mapSource216.indexOf('styles.chipWrap') < mapSource216.indexOf('<GeofenceBanner')],
+  ['지도 탭: 그려진 화면에 검색 인풋 없음', mapHtml216.indexOf('pin-search-input') < 0],
+  ['지도 탭: 분류·방학 칩은 그대로', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') > 0],
+  // ③ 🔍 검색 레이어 팝업
+  ['검색 팝업: 저장 화면과 같은 전체 레이어(absoluteFill)', /overlay: \{[\s\S]{0,80}?StyleSheet\.absoluteFillObject/.test(searchOverlaySource216) && searchOverlaySource216.indexOf('colors.charcoal') > 0],
+  ['검색 팝업: 헤더 `🔍 장소 검색` + ✕', overlayHtml216.indexOf('장소 검색') > 0 && overlayHtml216.indexOf('검색어 지우기') < 0 && searchOverlaySource216.indexOf('testID="search-overlay-close"') > 0],
+  ['검색 팝업: 검색 인풋 + ✕ 지우기', searchOverlaySource216.indexOf('testID="search-overlay-input"') > 0 && searchOverlaySource216.indexOf('testID="search-overlay-clear"') > 0],
+  ['검색 팝업: 추천 장소 · 인기 검색 장소 섹션', overlayHtml216.indexOf('추천 장소') > 0 && overlayHtml216.indexOf(POPULAR_PLACES_TITLE) > 0],
+  ['검색 팝업: 추천 = 내 위치에서 가까운 저장 장소(가까운 순)', recNear216.kind === 'near' && recNear216.items[0].pin.id === 's-1' && recNear216.items.length === Math.min(RECOMMEND_MAX, PIN_216.length), recNear216.items.map((i) => i.pin.id).join(',')],
+  ['검색 팝업: 위치 없으면 아직 안 가본(!visited) 곳', recNoLoc216.kind === 'todo' && recNoLoc216.items.every((i) => i.pin.visited !== true) && recNoLoc216.items[0].pin.id === 's-0', recNoLoc216.items.map((i) => i.pin.id).join(',')],
+  ['검색 팝업: 둘 다 없으면 empty 안내', recAllVisited216.kind === 'empty' && recAllVisited216.items.length === 0],
+  ['검색 팝업: 검색 결과 — 메뉴·메모까지 매칭', resSalt216.total === 2 && resSalt216.items[0].pin.id === 's-0' && resMemo216.total === 1 && resMemo216.items[0].pin.id === 's-1', resSalt216.total + '/' + resMemo216.total],
+  ['검색 팝업: 빈 검색어면 결과 0(추천·인기 먼저)', resNone216.total === 0 && resNone216.items.length === 0],
+  ['검색 팝업: 결과는 6행까지 + truncate 표기', resLimit216.items.length === 1 && resLimit216.total === 2 && resLimit216.truncated === true && OVERLAY_RESULT_MAX === 6],
+  ['검색 팝업: 추천 행을 누르면 그 핀으로(onOpenPin)', searchOverlaySource216.indexOf('onPress={() => openPin(item.pin)}') > 0 && appSource215.indexOf('onOpenPin={openPinFromSearch}') > 0],
+  ['검색 팝업: 핀을 고르면 닫고 지도 탭 + 상세 시트', appSource215.indexOf('setSearchOpen(false)') > 0 && appSource215.indexOf('setTab(\'map\')') > 0 && appSource215.indexOf('setPinFocus({ id: pin.id, key: pinFocusId.current })') > 0],
+  ['검색 팝업: 내 핀에 없으면 저장 탭 가게명 찾기로 이어짐', searchOverlaySource216.indexOf('search-overlay-go-paste') > 0 && appSource215.indexOf('mode: \'search\'') > 0 && pasteSource215.indexOf('request.mode') > 0 && pasteSource215.indexOf('setQuery(String(request.query') > 0],
+  ['검색 팝업: 저장한 핀이 없으면 안내', overlayEmptyHtml216.indexOf('아직 저장한 장소가 없어요') > 0],
+  ['검색 팝업: 위치를 모르면 [내 위치] 칩', stripSpaces(overlayNoLocationHtml216).indexOf('내위치') > 0],
+  // ④ 인기 검색 장소
+  ['인기 장소: 요청한 4곳(베통·어니언·영화장·화목순대국) 수록', ['betong', 'onion', 'yeonghwajang', 'hwamok'].every((id) => POPULAR_PLACES.some((p) => p.id === id)), POPULAR_PLACES.map((p) => p.id).join(',')],
+  ['인기 장소: 라벨은 `이름 동네 · 메뉴`', popularPlaceLabel(POPULAR_PLACES[0]) === '베통 성수 · 소금빵', popularPlaceLabel(POPULAR_PLACES[0])],
+  ['인기 장소: 검색어는 동네까지 붙임', popularPlaceQuery(POPULAR_PLACES[0]) === '베통 성수', popularPlaceQuery(POPULAR_PLACES[0])],
+  ['인기 장소: 내 핀에 있으면 그 핀 표시', popBetong216.pin && popBetong216.pin.id === 's-0' && pops216.filter((r) => r.pin).length === 2, pops216.filter((r) => r.pin).map((r) => r.place.id).join(',')],
+  ['인기 장소: 화면에 칩으로 그려지고 개수는 지어내지 않음', overlayHtml216.indexOf('베통 성수 · 소금빵') > 0 && overlayHtml216.indexOf('내 지도') > 0 && searchOverlaySource216.indexOf('조회수') < 0 && popularSource216.indexOf('POPULAR_PLACES_SUB') > 0],
+  ['인기 장소: 섹션 설명 문구(고른 목록임을 밝힘)', POPULAR_PLACES_SUB.indexOf('골라') > 0 && overlayHtml216.indexOf(POPULAR_PLACES_SUB) >= 0, POPULAR_PLACES_SUB],
+  // ⑤ ☰ 메뉴
+  ['메뉴: 시트 · 다크 차콜 헤더 · ☰', menuSource216.indexOf('testID="menu-drawer"') > 0 && menuSource216.indexOf('colors.charcoal') > 0 && menuSource216.indexOf('Ionicons name="menu"') > 0],
+  ['메뉴: 비로그인 = [로그인 / 계정 연결]', menuHtml216.indexOf('로그인 / 계정 연결') > 0 && menuSource216.indexOf('testID="menu-account-card"') > 0],
+  ['메뉴: 로그인 = 이메일 + 동기화 상태', menuSignedHtml216.indexOf('andy@example.com') > 0 && menuSignedHtml216.indexOf('클라우드 동기화 켜짐') > 0 && menuSignedHtml216.indexOf('개 저장됨') > 0],
+  ['메뉴: 분류 관리 · 지도 공유 바로가기', menuHtml216.indexOf('분류 관리') > 0 && menuHtml216.indexOf('지도 공유') > 0 && appSource215.indexOf('onOpenCategories={openCategories}') > 0 && appSource215.indexOf('onShareMap={shareMyMapFromMenu}') > 0],
+  ['메뉴: 분류 관리 → 내 정보 탭 분류 카드로', appSource215.indexOf('setCategoriesFocus(') > 0 && profileSource215.indexOf('categoriesYRef') > 0 && profileSource215.indexOf('categoriesFocus') > 0],
+  ['메뉴: 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && menuSource216.indexOf('visited === true') > 0],
+  ['메뉴: 릴스핀 v2.16.0 표기', menuHtml216.indexOf('릴스핀 v2.16.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.16.0', APP_VERSION_LABEL],
+  ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
+  // ⑥ 앱 배선 · 순수 계산
+  ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
+  ['앱: 검색 팝업·메뉴를 최상위에 한 번만', appSource215.indexOf('<SearchOverlayModal') > 0 && appSource215.indexOf('<MenuDrawerModal') > 0],
+  ['순수 계산: 검색 팝업 유틸은 화면을 import 하지 않음', overlayUtilSource216.indexOf('react') < 0 && overlayUtilSource216.indexOf('react-native') < 0],
+];
+for (const [label, ok, extra] of v216Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -1331,6 +1498,7 @@ const total =
   v214RenderChecks.length +
   v2141Checks.length +
   v215Checks.length +
+  v216Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);
