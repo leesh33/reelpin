@@ -194,11 +194,12 @@ npm run test:live                  # 라이브 E2E: 실제 유튜브 → oEmbed+
 - `POST /api/gemini` · body `{ url, title, description }` → `{ storeName, area, menu, category, places: [{ name, area, menu }] }`
 - Google Gemini REST `v1beta/models/gemini-3.8-flash:generateContent` 에 **`fileData: { fileUri: "https://www.youtube.com/watch?v=…", mimeType: "video/*" }`** 로 영상을 직접 넘기고, 제목·설명글은 참고 텍스트로 함께 보냅니다. (모델은 `GEMINI_MODEL` 로 교체 가능)
 - **`responseMimeType: "application/json"`** 로 JSON 을 강제하고(프롬프트가 키·형식을 지정), 혹시 ```json 울타리·앞뒤 잡담이 붙어도 벗겨서 파싱합니다. 응답에는 `elapsedMs`(걸린 시간)도 함께 담아 옵니다.
-- **타임아웃 50초** · 전체 예산 56초 · `vercel.json` 의 `api/gemini.js` 만 **`maxDuration: 60`** (다른 API 는 10초 유지 · Vercel 은 파일마다 **처음 매칭되는 키** 하나만 쓰므로 구체 패턴을 와이드 `api/*.js` **앞**에 둡니다 — 뒤에 두면 `unused_function` 빌드 오류). 실측: `responseSchema` 까지 붙이면 26초를 넘겨 타임아웃 → **`responseMimeType` + 프롬프트로 형식 고정**이 더 빠르고 안정적이었습니다. — 영상 분석은 실측 10~25초가 걸립니다.
+- **타임아웃 55초** · 전체 예산 57초 · `vercel.json` 의 `api/gemini.js` 만 **`maxDuration: 60`** (다른 API 는 10초 유지 · Vercel 은 파일마다 **처음 매칭되는 키** 하나만 쓰므로 구체 패턴을 와이드 `api/*.js` **앞**에 둡니다 — 뒤에 두면 `unused_function` 빌드 오류). 실측: `responseSchema` 까지 붙이면 26초를 넘겨 타임아웃 → **`responseMimeType` + 프롬프트로 형식 고정**이 더 빠르고 안정적이었습니다. — 영상 분석은 실측 **24~50초+** 로 흔들립니다(무료 등급 대기열 영향으로 보임). 넘기면 앱은 조용히 기존 폴백으로 이어집니다.
 - 모델이 폐기·미제공(404/400)이면 **`gemini-3.8-flash` → `gemini-2.5-flash` → `gemini-2.0-flash`** 순서로 자동 폴백(`GEMINI_MODEL` 로 고정 가능), 쿼타(429)·5xx 는 모델을 바꿔도 같으므로 바로 빈 결과입니다. (2026-11 기준 `gemini-2.5-flash` 는 **신규 키에 404** — "no longer available to new users" — 이므로 기본 모델을 3.8 로 두었습니다)
 - **키 없음 → `503 { error: 'gemini-not-configured' }`**, 유튜브 아님/가게 미확인/업스트림 실패/JSON 아님 → **모두 `200` + 빈 결과**로 조용히 폴백(앱이 멈추지 않음). 실패 응답·로그에 **키와 업스트림 본문을 담지 않습니다.**
 - 키는 쿼리스트링이 아니라 **`x-goog-api-key` 헤더**로 보냅니다(프록시 로그·Referer 에 남지 않게). 유튜브 URL은 `shorts`·`youtu.be`·`watch`·`embed` 를 **watch 주소로 정규화**하고, 유튜브 사칭 호스트(`youtube.com.evil.com`)는 거부합니다.
-- '생각' 토큰은 영상 분석 지연의 가장 큰 몫이라 **`thinkingLevel: LOW`(Gemini 3) → `thinkingBudget: 0`(2.5) → 옵션 없음** 순서로 시도합니다(400 이면 다음 옵션, 세 번 다 400 이면 중단). (`maxOutputTokens` 4096 — 생각 토큰까지 넉넉히)
+- '생각' 토큰은 영상 분석 지연의 큰 몫이라 **`thinkingLevel: LOW`(Gemini 3) → `thinkingBudget: 0`(2.5) → 옵션 없음** 순서로 시도합니다(400 이면 다음 옵션, 세 번 다 400 이면 중단). 실측에서 `thinkingLevel: LOW` 가 그대로 받아들여졌습니다(400 없음). `maxOutputTokens` 4096 — 생각 토큰까지 넉넉히.
+- 400/404 실패에는 `upstreamMessage`(Google 오류 메시지, 키 없음)를 함께 담아 현장에서 원인을 바로 볼 수 있게 했습니다.
 
 ### 3. 🧠 추출기 흐름 (`src/services/extractor.js`)
 

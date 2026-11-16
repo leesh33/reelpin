@@ -26,10 +26,14 @@ const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models
 const DEFAULT_MODEL = 'gemini-3.8-flash';
 /** 모델이 폐기·미제공이면(404/400) 이 순서로 내려갑니다. */
 const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-2.5-flash', 'gemini-2.0-flash'];
-/** 한 번의 영상 분석 응답 타임아웃 — Gemini 3 영상 분석은 30초를 넘기도 합니다(실측). */
-const GEMINI_TIMEOUT_MS = 50000;
+/**
+ * 한 번의 영상 분석 응답 타임아웃.
+ *   실측: 같은 영상·같은 요청이 24초 ~ 50초+ 로 흔들립니다(무료 등급 대기열 영향으로 보임).
+ *   → 55초까지 기다리고, 넘기면 앱은 조용히 기존 폴백으로 이어집니다.
+ */
+const GEMINI_TIMEOUT_MS = 55000;
 /** 모델 폴백까지 포함한 전체 예산 — Vercel maxDuration 60초 안 */
-const TOTAL_BUDGET_MS = 56000;
+const TOTAL_BUDGET_MS = 57000;
 /** 요청 본문 상한 (제목·설명글 몇 줄이면 충분) */
 const MAX_BODY_BYTES = 16 * 1024;
 const MAX_TITLE_CHARS = 200;

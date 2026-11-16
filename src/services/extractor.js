@@ -585,7 +585,7 @@ export async function fetchYouTubeProxy(parsed, options = {}) {
  *     (네이티브 앱 번들에는 키를 넣지 않습니다 — 노출 0건 원칙)
  *   · 영상 길이·모델에 따라 10초 넘게 걸리므로 프록시 타임아웃을 길게 잡습니다.
  */
-export const GEMINI_PROXY_TIMEOUT_MS = 58000;
+export const GEMINI_PROXY_TIMEOUT_MS = 59000;
 
 /**
  * `/api/gemini` 로 영상을 보내 가게명·지역·메뉴를 받아 옵니다.
