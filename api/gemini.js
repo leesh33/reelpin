@@ -249,7 +249,15 @@ async function callGemini({ apiKey, model, body, timeoutMs }) {
   } catch (e) {
     json = null;
   }
-  return { ok: Boolean(res.ok), status: Number(res.status) || 0, json };
+  // 400/404(잘못된 인자·없는 모델)일 때는 업스트림이 준 **오류 메시지**를 함께 보관합니다.
+  //   → 어떤 옵션 이름이 틀렸는지 서버 로그·진단 필드로 바로 알 수 있습니다. (키는 담기지 않음)
+  let message = '';
+  try {
+    message = String((json && json.error && json.error.message) || '').slice(0, 240);
+  } catch (e) {
+    message = '';
+  }
+  return { ok: Boolean(res.ok), status: Number(res.status) || 0, json, message };
 }
 
 /** 시도할 모델 목록 — GEMINI_MODEL 이 있으면 그것부터, 그 뒤 기본 모델·구형 모델 */
@@ -320,7 +328,9 @@ module.exports = async function handler(req, res) {
     return sendJson(res, 200, {
       ...emptyResult(attempt.status ? 'gemini-upstream-' + attempt.status : 'gemini-timeout'),
       model: usedModel,
+      thinking: usedThinking,
       elapsedMs: Date.now() - startedAt,
+      ...(attempt.status === 400 || attempt.status === 404 ? { upstreamMessage: attempt.message || '' } : {}),
     });
   }
 
