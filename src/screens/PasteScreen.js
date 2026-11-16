@@ -758,6 +758,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.charcoal,
     borderBottomWidth: 1,
     borderBottomColor: colors.charcoalLine,
+    // 스크롤할 때 본문이 다크 헤더 '밑으로' 들어가는 게 보이게 얇은 그림자를 드리웁니다.
+    shadowColor: '#000000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+    zIndex: 2,
   },
   brand: {
     flexDirection: 'row',
