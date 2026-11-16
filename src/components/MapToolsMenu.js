@@ -31,13 +31,13 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, tabBar, typography } from '../theme';
+import { colors, mapControls, radius, typography } from '../theme';
 
 /** 카드가 펼쳐지는 애니메이션 길이(ms) */
 export const TOOLS_ANIM_MS = 150;
 
-/** 토글 버튼 크기(오른쪽 '내 위치' FAB 과 같은 결) */
-export const TOOLS_TOGGLE_SIZE = 44;
+/** 토글 버튼 크기 — v2.19.3: 오른쪽 `내 위치` FAB 과 **같은 46px** (theme.mapControls.fabSize) */
+export const TOOLS_TOGGLE_SIZE = mapControls.fabSize;
 
 /**
  * 개수 요약 알약 문구 — 'N / N 핀 표시 중' (가본 곳만 켜져 있으면 '가본 곳만 N / M').
@@ -198,10 +198,13 @@ export default function MapToolsMenu({
 const styles = StyleSheet.create({
   // 아래 끝을 고정한 세로 스택 — 요약 알약 → (펼친 카드) → 토글 버튼
   // v2.18 — 플로팅 탭바가 화면 아래를 덮으므로, 그 위로 올려 겹치지 않게 합니다.
+  // v2.19.3 — 상훈 님 지적: "내위치랑 가본곳만보기(왼쪽 동그라미 버튼) 하단 정렬 좀 맞춰줘".
+  //           오른쪽 `내 위치` FAB 과 **같은 바닥선·같은 46px** (theme.mapControls).
+  //           예전엔 tabBar.controlsBottom(76) · 44px 라 왼쪽이 16px 더 내려와 있었습니다.
   col: {
     position: 'absolute',
     left: 12,
-    bottom: tabBar.controlsBottom,
+    bottom: mapControls.toolsToggleBottom,
     alignItems: 'flex-start',
     gap: 8,
   },
@@ -359,6 +362,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     height: TOOLS_TOGGLE_SIZE,
+    // v2.19.3 — 오른쪽 `내 위치` FAB 과 같은 46×46 원 (아이콘만일 때 폭 12+20+12=44 → minWidth 46)
     minWidth: TOOLS_TOGGLE_SIZE,
     paddingHorizontal: 12,
     borderRadius: 999,

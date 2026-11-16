@@ -123,6 +123,9 @@ export const tabBar = (() => {
  * v2.19.2 — 상훈 님 요청 "확대축소 버튼과 내위치 버튼 위치를 바꾸자":
  *   예전(위=FAB · 아래=+/−) → 지금(**위=+/− · 아래=내 위치 FAB**).
  *   스택의 바닥값은 `stackBottom`(탭바·NAVER 로고 위 26px)이고, 그 위로 FAB → +/− 순서입니다.
+ * v2.19.3 — 상훈 님 요청 "내위치랑 가본곳만보기(왼쪽 동그라미 버튼) 하단 정렬 좀 맞춰줘":
+ *   왼쪽 `🎛️` 토글(MapToolsMenu)도 **같은 `actionBottom` 과 같은 `fabSize`** 를 씁니다.
+ *   그래서 왼쪽·오른쪽 원형 버튼의 top/bottom 이 390×844 에서 정확히 한 줄(차이 0px)에 놓입니다.
  */
 export const mapControls = (() => {
   const rightInset = 12; // 세 컨트롤 공통 오른쪽 여백
@@ -143,6 +146,9 @@ export const mapControls = (() => {
     rightInset,
     controlSize,
     fabSize,
+    // v2.19.3 — 왼쪽 하단 `🎛️` 토글도 이 두 값을 그대로 씁니다(leftInset 은 MapToolsMenu 의 left: 12)
+    toolsToggleSize: fabSize,
+    toolsToggleBottom: actionBottom,
     colGap,
     floatLift,
     stackBottom,
