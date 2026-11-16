@@ -164,6 +164,8 @@ export function pinLabelHtml(pin, selected, categories) {
     ';font-size:' +
     PIN_LABEL_FONT_SIZE +
     'px;font-weight:800;line-height:13px;letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:0 1px 4px rgba(15,23,42,0.22);">' +
+    // v2.10 — 가봤어요 핀은 라벨 앞에도 ✓ (동그라미의 초록 배지와 같은 뜻)
+    (visited ? '✓ ' : '') +
     escapeHtml(name) +
     '</div>'
   );
