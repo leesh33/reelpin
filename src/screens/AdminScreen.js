@@ -2566,6 +2566,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 460,
     maxHeight: '90%',
+    flexGrow: 0,
     backgroundColor: colors.white,
     borderRadius: 18,
   },
