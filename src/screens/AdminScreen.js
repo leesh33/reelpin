@@ -445,10 +445,14 @@ export default function AdminScreen({ preview = false }) {
 
   // ── 데이터 불러오기 ──────────────────────────────
   const loadTab =useCallback(
-    async (which) => {
+    async (which, overrides) => {
+      // 필터 칩은 state 반영보다 먼저 불러오므로, 이번 요청의 값을 직접 넘겨받습니다.
+      const o = overrides || {};
+      const fbKind = o.kind !== undefined ? o.kind : feedbackKind;
+      const fbStatus = o.status !== undefined ? o.status : feedbackStatus;
       if (preview) {
         // 미리보기 — 모의 제보도 필터가 실제로 걸리는 것처럼 보이도록 화면에서 직접 거릅니다.
-        if (which === 'feedback') setFeedback(filterPreviewFeedback(PREVIEW_DATA.feedback, feedbackKind, feedbackStatus));
+        if (which === 'feedback') setFeedback(filterPreviewFeedback(PREVIEW_DATA.feedback, fbKind, fbStatus));
         return;
       }
       const token = await currentToken();
@@ -476,7 +480,7 @@ export default function AdminScreen({ preview = false }) {
         } else if (which === 'feedback') {
           const res = await callAdmin({
             view: 'feedback',
-            query: { kind: feedbackKind, status: feedbackStatus },
+            query: { kind: fbKind, status: fbStatus },
             token,
           });
           if (!res.ok) throw res;
@@ -998,7 +1002,7 @@ export default function AdminScreen({ preview = false }) {
                 key={'kind-' + (opt.id || 'all')}
                 onPress={() => {
                   setFeedbackKind(opt.id);
-                  setTimeout(() => loadTab('feedback'), 0);
+                  loadTab('feedback', { kind: opt.id });
                 }}
                 style={[styles.chip, on && styles.chipOn]}
                 accessibilityRole="button"
@@ -1019,7 +1023,7 @@ export default function AdminScreen({ preview = false }) {
                 key={'status-' + (opt.id || 'all')}
                 onPress={() => {
                   setFeedbackStatus(opt.id);
-                  setTimeout(() => loadTab('feedback'), 0);
+                  loadTab('feedback', { status: opt.id });
                 }}
                 style={[styles.chip, on && styles.chipOn]}
                 accessibilityRole="button"
