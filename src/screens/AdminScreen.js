@@ -56,7 +56,7 @@ const FEEDBACK_KIND_OPTIONS = [
 ];
 const FEEDBACK_STATUS_LABEL = { open: '접수됨', applied: '반영됨', fixed: '수정됨' };
 const FEEDBACK_KIND_LABEL = { idea: '제안', bug: '버그' };
-const FEEDBACK_STATUS_TONE = { open: 'muted', applied: 'coral', fixed: 'visit' };
+const FEEDBACK_STATUS_TONE = { open: 'muted', applied: 'brand', fixed: 'visit' };
 
 /** 미리보기용 모의 데이터 — 실제 회원·핀이 아닙니다. */
 const PREVIEW_DATA = {
@@ -206,7 +206,7 @@ async function callAdmin({ view, query, method = 'GET', body, token }) {
 function Pill({ text, tone = 'muted' }) {
   const tones = {
     muted: { bg: colors.lineSoft, fg: colors.mutedBadgeText },
-    coral: { bg: colors.coralSoft, fg: colors.coralDark },
+    brand: { bg: colors.brandSoft, fg: colors.brandDark },
     pro: { bg: '#EEF2FF', fg: '#3B4CCA' },
     visit: { bg: colors.visitSoft, fg: colors.visitDark },
   };
@@ -702,7 +702,7 @@ export default function AdminScreen({ preview = false }) {
     if (gate === 'checking') {
       return (
         <View style={styles.centerBox}>
-          <ActivityIndicator color={colors.coral} />
+          <ActivityIndicator color={colors.brand} />
           <Text style={styles.centerText}>어드민 권한을 확인하는 중…</Text>
         </View>
       );
@@ -711,7 +711,7 @@ export default function AdminScreen({ preview = false }) {
       return (
         <View style={styles.centerBox}>
           <View style={styles.lockIcon}>
-            <Ionicons name="shield-checkmark" size={26} color={colors.coral} />
+            <Ionicons name="shield-checkmark" size={26} color={colors.brand} />
           </View>
           <Text style={styles.gateTitle}>관리자 로그인이 필요해요</Text>
           <Text style={styles.gateText}>
@@ -782,7 +782,7 @@ export default function AdminScreen({ preview = false }) {
             label="최근 7일 신규"
             value={data.newUsers7d != null ? data.newUsers7d : '—'}
             sub="지난 일주일 가입"
-            accent={colors.coralDark}
+            accent={colors.brandDark}
           />
           <StatCard label="전체 핀" value={data.totalPins != null ? data.totalPins : '—'} sub="저장된 장소 전체" />
           <StatCard
@@ -947,7 +947,7 @@ export default function AdminScreen({ preview = false }) {
                   <Text style={styles.pinName} numberOfLines={1}>
                     {pin.name}
                   </Text>
-                  {pin.category ? <Pill text={pin.category} tone="coral" /> : null}
+                  {pin.category ? <Pill text={pin.category} tone="brand" /> : null}
                   {pin.visited ? <Pill text="가봤어요" tone="visit" /> : null}
                 </View>
                 <Text style={styles.pinAddress} numberOfLines={1}>
@@ -1044,7 +1044,7 @@ export default function AdminScreen({ preview = false }) {
               <View key={item.id || i} style={[styles.feedbackRow, i === rows.length - 1 && styles.rowLast]} testID={'admin-feedback-' + item.id}>
                 <View style={styles.feedbackBody}>
                   <View style={styles.pinTitleRow}>
-                    <Pill text={FEEDBACK_KIND_LABEL[item.kind] || '제안'} tone={item.kind === 'bug' ? 'coral' : 'muted'} />
+                    <Pill text={FEEDBACK_KIND_LABEL[item.kind] || '제안'} tone={item.kind === 'bug' ? 'brand' : 'muted'} />
                     <Pill text={FEEDBACK_STATUS_LABEL[item.status] || '접수됨'} tone={FEEDBACK_STATUS_TONE[item.status] || 'muted'} />
                     <Text style={styles.feedbackLikes}>👍 {item.likes != null ? item.likes : 0}</Text>
                   </View>
@@ -1103,7 +1103,7 @@ export default function AdminScreen({ preview = false }) {
   const renderSchemaSetup = () => (
     <View style={styles.setupCard}>
       <View style={styles.setupHead}>
-        <Ionicons name="construct" size={18} color={colors.coralDark} />
+        <Ionicons name="construct" size={18} color={colors.brandDark} />
         <Text style={styles.setupTitle}>어드민 DB 준비가 한 단계 남았어요</Text>
       </View>
       <Text style={styles.setupText}>
@@ -1142,7 +1142,7 @@ export default function AdminScreen({ preview = false }) {
         accessibilityRole="button"
         accessibilityLabel={t.label}
       >
-        <Ionicons name={t.icon} size={wide ? 16 : 15} color={on ? (wide ? colors.white : colors.coralDark) : colors.textSub} />
+        <Ionicons name={t.icon} size={wide ? 16 : 15} color={on ? (wide ? colors.white : colors.brandDark) : colors.textSub} />
         <Text style={[wide ? styles.sideText : styles.tabText, on && (wide ? styles.sideTextOn : styles.tabTextOn)]}>
           {t.label}
         </Text>
@@ -1265,7 +1265,7 @@ const styles = StyleSheet.create({
     width: 30,
     height: 30,
     borderRadius: 9,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1317,9 +1317,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
   },
-  tabItemOn: { backgroundColor: colors.coralSoft, borderColor: colors.coralSoft2 },
+  tabItemOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandSoft2 },
   tabText: { fontSize: 12, fontWeight: '700', color: colors.textSub },
-  tabTextOn: { color: colors.coralDark },
+  tabTextOn: { color: colors.brandDark },
 
   sectionTitle: { fontSize: 14, fontWeight: '800', color: colors.text, letterSpacing: -0.2 },
   sectionHint: { fontSize: 11, color: colors.textMuted },
@@ -1360,14 +1360,14 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.lineSoft,
   },
   rankBadge: { width: 22, height: 22, borderRadius: 7, backgroundColor: colors.lineSoft, alignItems: 'center', justifyContent: 'center' },
-  rankBadgeTop: { backgroundColor: colors.coral },
+  rankBadgeTop: { backgroundColor: colors.brand },
   rankNumber: { fontSize: 11, fontWeight: '800', color: colors.textSub },
   rankNumberTop: { color: colors.white },
   rankBody: { flex: 1 },
   rankName: { fontSize: 13, fontWeight: '700', color: colors.text },
   rankMeta: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
   rankCount: { alignItems: 'flex-end' },
-  rankSaves: { fontSize: 14, fontWeight: '800', color: colors.coralDark },
+  rankSaves: { fontSize: 14, fontWeight: '800', color: colors.brandDark },
   rankUsers: { fontSize: 10, color: colors.textMuted },
 
   toolbar: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 10 },
@@ -1456,7 +1456,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.lineSoft,
   },
   feedbackBody: { flex: 1 },
-  feedbackLikes: { fontSize: 10.5, fontWeight: '800', color: colors.coralDark },
+  feedbackLikes: { fontSize: 10.5, fontWeight: '800', color: colors.brandDark },
   feedbackTitle: { fontSize: 13.5, fontWeight: '800', color: colors.text, marginTop: 5 },
   feedbackContent: { fontSize: 11.5, color: colors.textSub, lineHeight: 17, marginTop: 3 },
   feedbackStatusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
@@ -1504,7 +1504,7 @@ const styles = StyleSheet.create({
   setupHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   setupTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
   setupText: { fontSize: 12.5, color: colors.textSub, lineHeight: 20 },
-  setupCode: { fontWeight: '800', color: colors.coralDark },
+  setupCode: { fontWeight: '800', color: colors.brandDark },
   setupSub: { marginTop: 10, fontSize: 11, color: colors.textMuted },
   centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 26, minHeight: 420 },
   centerText: { marginTop: 10, fontSize: 12, color: colors.textSub },
@@ -1512,7 +1512,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 18,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 14,

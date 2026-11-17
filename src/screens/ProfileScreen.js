@@ -110,7 +110,7 @@ function AccountCard({
           <Ionicons
             name={signedIn ? 'cloud-done' : 'cloud-offline-outline'}
             size={11}
-            color={signedIn ? colors.coralDark : colors.textMuted}
+            color={signedIn ? colors.brandDark : colors.textMuted}
           />
           <Text style={[styles.syncChipText, signedIn && styles.syncChipTextOn]}>
             {signedIn ? '켜짐' : '꺼짐'}
@@ -445,7 +445,7 @@ export function CategoryManager({
             </View>
             {confirming === category && (
               <View style={styles.catConfirm}>
-                <Ionicons name="alert-circle" size={13} color={colors.coralDark} />
+                <Ionicons name="alert-circle" size={13} color={colors.brandDark} />
                 <Text style={styles.catConfirmText}>
                   {count > 0
                     ? '지울까요? 핀 ' + count + '개는 맛집으로 옮겨요'
@@ -508,7 +508,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.26.0';
+export const APP_INFO_VERSION = '릴스핀 v2.27.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -522,7 +522,7 @@ export function SettingsRow({ icon, title, sub, onPress, testID }) {
       testID={testID}
     >
       <View style={styles.settingIcon}>
-        <Ionicons name={icon} size={17} color={colors.coralDark} />
+        <Ionicons name={icon} size={17} color={colors.brandDark} />
       </View>
       <View style={styles.settingText}>
         <Text style={styles.settingTitle} numberOfLines={1}>
@@ -911,7 +911,7 @@ export default function ProfileScreen({
         {/* 지도 공유 */}
         <Pressable style={styles.shareCard} onPress={shareMap} accessibilityRole="button" testID="menu-share">
           <View style={styles.shareIcon}>
-            <Ionicons name={copied ? 'checkmark' : 'share-social'} size={18} color={colors.coral} />
+            <Ionicons name={copied ? 'checkmark' : 'share-social'} size={18} color={colors.brand} />
           </View>
           <View style={styles.shareText}>
             <Text style={styles.shareTitle}>{copied ? '링크를 복사했어요!' : '내 지도 공유하기'}</Text>
@@ -1000,7 +1000,7 @@ export default function ProfileScreen({
           </View>
           {PRO_FEATURES.map((f) => (
             <View key={f} style={styles.featureRow}>
-              <Ionicons name="checkmark" size={15} color={colors.coral} />
+              <Ionicons name="checkmark" size={15} color={colors.brand} />
               <Text style={styles.featureText}>{f}</Text>
             </View>
           ))}
@@ -1097,7 +1097,7 @@ const styles = StyleSheet.create({
   },
   summaryLabel: { ...typography.tiny, fontSize: 10 },
   headerBadge: {
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
@@ -1105,7 +1105,7 @@ const styles = StyleSheet.create({
   headerBadgeText: {
     fontSize: 10,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   content: {
     paddingHorizontal: 20,
@@ -1155,7 +1155,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 10,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1228,11 +1228,11 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // v2.20.1 — 로그아웃(게스트) 아바타는 코랄 대신 차분한 회색 + 사람 아이콘
+  // v2.20.1 — 로그아웃(게스트) 아바타는 브랜드 색 대신 차분한 회색 + 사람 아이콘
   avatarGuest: {
     backgroundColor: colors.lineSoft,
   },
@@ -1263,7 +1263,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   planChipPro: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   planChipText: {
     fontSize: 10,
@@ -1348,7 +1348,7 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: 12,
     fontWeight: '800',
-    color: colors.coral,
+    color: colors.brand,
   },
   counterRow: {
     flexDirection: 'row',
@@ -1393,7 +1393,7 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: 4,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   cardHint: {
     fontSize: 12,
@@ -1402,7 +1402,7 @@ const styles = StyleSheet.create({
   },
   // ── v2.2 분류 관리 카드 ──────────────────────
   catCountChip: {
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
@@ -1410,7 +1410,7 @@ const styles = StyleSheet.create({
   catCountChipText: {
     fontSize: 10,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   catRow: {
     flexDirection: 'row',
@@ -1466,7 +1466,7 @@ const styles = StyleSheet.create({
     color: colors.textSub,
   },
   catDeleteText: {
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   catEditBox: {
     paddingVertical: 9,
@@ -1494,7 +1494,7 @@ const styles = StyleSheet.create({
     height: 34,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1520,7 +1520,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     borderRadius: radius.sm,
     paddingHorizontal: 9,
     paddingVertical: 7,
@@ -1530,13 +1530,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   catConfirmBtn: {
     height: 28,
     paddingHorizontal: 11,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1568,7 +1568,7 @@ const styles = StyleSheet.create({
   catError: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
     marginTop: 5,
   },
   // ── v2.1 계정 · 클라우드 동기화 카드 ──────────────────────
@@ -1582,7 +1582,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   syncChipOn: {
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
   },
   syncChipText: {
     fontSize: 10,
@@ -1590,7 +1590,7 @@ const styles = StyleSheet.create({
     color: colors.mutedBadgeText,
   },
   syncChipTextOn: {
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   accountRow: {
     flexDirection: 'row',
@@ -1627,14 +1627,14 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 40,
     borderRadius: radius.md,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
   },
   syncBtnBusy: {
-    backgroundColor: colors.coralSoft2,
+    backgroundColor: colors.brandSoft2,
   },
   syncBtnText: {
     fontSize: 13,
@@ -1713,7 +1713,7 @@ const styles = StyleSheet.create({
   magicLink: {
     fontSize: 12,
     fontWeight: '700',
-    color: colors.coral,
+    color: colors.brand,
     textAlign: 'center',
     paddingVertical: 2,
   },
@@ -1772,7 +1772,7 @@ const styles = StyleSheet.create({
   cloudMessage: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
     lineHeight: 16,
   },
   segment: {
@@ -1790,8 +1790,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   segmentItemOn: {
-    borderColor: colors.coral,
-    backgroundColor: colors.coralSoft,
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
   },
   segmentLabel: {
     fontSize: 14,
@@ -1799,7 +1799,7 @@ const styles = StyleSheet.create({
     color: colors.textSub,
   },
   segmentLabelOn: {
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   segmentHint: {
     fontSize: 10,
@@ -1807,7 +1807,7 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   segmentHintOn: {
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   noticeRow: {
     flexDirection: 'row',
@@ -1840,7 +1840,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     paddingHorizontal: 7,
     paddingVertical: 3,
     borderRadius: 6,
@@ -1885,7 +1885,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     height: 44,
     borderRadius: radius.md,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1910,7 +1910,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },

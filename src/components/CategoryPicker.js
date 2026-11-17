@@ -102,7 +102,7 @@ export default function CategoryPicker({
           accessibilityState={{ expanded: open }}
           accessibilityLabel="분류 추가"
         >
-          <Ionicons name="add" size={13} color={colors.coralDark} />
+          <Ionicons name="add" size={13} color={colors.brandDark} />
           <Text style={styles.addChipText}>분류 추가</Text>
         </Pressable>
       </View>
@@ -140,7 +140,7 @@ export default function CategoryPicker({
 
       {!!error && (
         <View style={styles.errorRow}>
-          <Ionicons name="alert-circle" size={12} color={colors.coralDark} />
+          <Ionicons name="alert-circle" size={12} color={colors.brandDark} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       )}
@@ -211,17 +211,17 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: colors.coralSoft2,
-    backgroundColor: colors.coralSoft,
+    borderColor: colors.brandSoft2,
+    backgroundColor: colors.brandSoft,
   },
   addChipOn: {
     borderStyle: 'solid',
-    borderColor: colors.coral,
+    borderColor: colors.brand,
   },
   addChipText: {
     fontSize: 12,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   addBox: {
     flexDirection: 'row',
@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     marginTop: 9,
     backgroundColor: colors.card,
     borderWidth: 1,
-    borderColor: colors.coralSoft2,
+    borderColor: colors.brandSoft2,
     borderRadius: radius.md,
     paddingLeft: 11,
     paddingRight: 8,
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
     height: 30,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -266,6 +266,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
 });

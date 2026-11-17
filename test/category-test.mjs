@@ -13,6 +13,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { colors } from '../src/theme.js';
 import {
   CATEGORY_ALL,
   CATEGORY_FALLBACK,
@@ -191,8 +192,8 @@ const CUSTOMS = ['아이랑', '술집', '데이트'];
 const baseColorList = BASE.map((c) => getCategoryColor(c, CUSTOMS));
 check('맛집·카페·가볼곳 색이 모두 다름', new Set(baseColorList).size === 3, baseColorList);
 check(
-  '맛집=코랄 #FF5A36 · 카페=민트 #14B8A6 · 가볼곳=블루 #3B82F6',
-  baseColorList[0] === '#FF5A36' && baseColorList[1] === '#14B8A6' && baseColorList[2] === '#3B82F6',
+  '맛집=딥 틸 #0D9488 · 카페=앰버 #D97706 · 가볼곳=블루 #3B82F6',
+  baseColorList[0] === '#0D9488' && baseColorList[1] === '#D97706' && baseColorList[2] === '#3B82F6',
   baseColorList
 );
 const customColorList = CUSTOMS.map((c) => getCategoryColor(c, CUSTOMS));
@@ -211,8 +212,8 @@ check(
   CUSTOM_CATEGORY_COLORS.indexOf(getCategoryColor('처음보는분류', CUSTOMS)) >= 0,
   getCategoryColor('처음보는분류', CUSTOMS)
 );
-check('베이커리·디저트는 맛집 색', getCategoryColor('베이커리', CUSTOMS) === '#FF5A36' && getCategoryColor('디저트', CUSTOMS) === '#FF5A36');
-check('분류 없는 예전 핀은 맛집 색', getCategoryColor('', CUSTOMS) === '#FF5A36' && getCategoryColor(undefined, CUSTOMS) === '#FF5A36');
+check('베이커리·디저트는 맛집 색', getCategoryColor('베이커리', CUSTOMS) === '#0D9488' && getCategoryColor('디저트', CUSTOMS) === '#0D9488');
+check('분류 없는 예전 핀은 맛집 색', getCategoryColor('', CUSTOMS) === '#0D9488' && getCategoryColor(undefined, CUSTOMS) === '#0D9488');
 check('같은 분류는 언제 불러도 같은 색', getCategoryColor('술집', CUSTOMS) === getCategoryColor(' 술집 ', CUSTOMS));
 check('틴트는 rgba, 글씨색은 같은 계열 더 진하게', /^rgba\(\d+,\d+,\d+,0\.13\)$/.test(categoryTint('가볼곳', CUSTOMS)) && categoryTextColor('가볼곳', CUSTOMS) !== '#3B82F6');
 check('hexToRgba — 짧은 표기·잘못된 값도 안전', hexToRgba('#fff', 0.5) === 'rgba(255,255,255,0.5)' && hexToRgba('nope', 0.2).indexOf('rgba(') === 0);
@@ -267,6 +268,44 @@ const wiring = [
 for (const [label, ok] of wiring) {
   check(label, ok);
 }
+
+
+// ── 12. v2.27.0 브랜드 색 — 딥 틸(#0D9488) ───────────────────
+const rgbOf = (hex) => [1, 3, 5].map((i) => parseInt(String(hex).replace('#', '').slice(i - 1, i + 1), 16));
+const colorGap = (a, b) => {
+  const [x, y] = [rgbOf(a), rgbOf(b)];
+  return Math.sqrt(x.reduce((sum, v, i) => sum + (v - y[i]) ** 2, 0));
+};
+check(
+  '브랜드: 딥 틸 #0D9488 · 눌림 #0F766E · 연한 틴트 #E6F7F5 · #CCFBF1',
+  colors.brand === '#0D9488' && colors.brandDark === '#0F766E' && colors.brandSoft === '#E6F7F5' && colors.brandSoft2 === '#CCFBF1',
+  colors.brand
+);
+check(
+  '브랜드: 예전 이름(colors.coral*)은 같은 딥 틸을 가리키는 별칭',
+  colors.coral === colors.brand && colors.coralDark === colors.brandDark && colors.coralSoft === colors.brandSoft && colors.coralSoft2 === colors.brandSoft2
+);
+const oldCoral = ['#FF5A36', '#E8461F', '#FFEDE8', '#FFE2DA'];
+const stillCoral = ['src/components/TabBar.js', 'src/components/AppHeader.js', 'src/components/PinDetailSheet.js', 'src/components/FilterChips.js', 'src/screens/MapScreen.js', 'src/screens/PasteScreen.js']
+  .filter((rel) => oldCoral.some((hex) => read(rel).toUpperCase().indexOf(hex) >= 0));
+check('브랜드: 화면 소스에 옛 코랄 값이 남지 않음', stillCoral.length === 0, stillCoral.join(' '));
+check(
+  '브랜드: 아이콘·매니페스트·앱 설정이 같은 딥 틸',
+  JSON.parse(read('public/manifest.json')).theme_color === colors.brand &&
+    JSON.parse(read('app.json')).expo.android.adaptiveIcon.backgroundColor === colors.brand &&
+    read('scripts/patch-web-html.mjs').indexOf("PWA_THEME_COLOR = '" + colors.brand + "'") > 0
+);
+const pinPalette = [DEFAULT_CATEGORY_COLORS['맛집'], DEFAULT_CATEGORY_COLORS['카페'], DEFAULT_CATEGORY_COLORS['가볼곳'], colors.visit];
+let closest = Infinity;
+for (let i = 0; i < pinPalette.length; i += 1) {
+  for (let j = i + 1; j < pinPalette.length; j += 1) closest = Math.min(closest, colorGap(pinPalette[i], pinPalette[j]));
+}
+check(
+  '지도: 맛집·카페·가볼곳·가봤어요 네 색이 서로 구분됨 (RGB 거리 60 이상)',
+  closest >= 60,
+  pinPalette.join(' ') + ' · 최소 ' + Math.round(closest)
+);
+check('지도: 맛집 핀 = 브랜드 딥 틸', DEFAULT_CATEGORY_COLORS['맛집'] === colors.brand && getCategoryColor('맛집', []) === colors.brand);
 
 if (fails) {
   console.log('CATEGORY_FAILED=' + fails);

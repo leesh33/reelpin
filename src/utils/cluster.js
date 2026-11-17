@@ -163,9 +163,15 @@ export function clusterLabel(count) {
 }
 
 /**
- * 클러스터 배지의 **테두리(헤일로) 색** — 무리 안 핀이 **한 분류**면 그 분류 색, 섞여 있으면 코랄.
+ * 클러스터 배지의 **테두리(헤일로) 색** — 무리 안 핀이 **한 분류**면 그 분류 색, 섞여 있으면 슬레이트 그레이.
  * (배지 본체는 어디서나 다크 네이비 + 흰 숫자 — 지도 핀·칩과 색이 어긋나지 않습니다)
+ *
+ * v2.27.0 — 섞인 무리는 예전 코랄(브랜드 색)을 썼습니다. 브랜드가 딥 틸이 되면서
+ * 맛집 핀과 같은 색이 되어 버리므로, **어느 분류 색도 아닌 중립**인 슬레이트 그레이(#64748B)로 바꿨습니다.
+ * → 한 분류 무리(딥 틸·앰버·블루)와 섞인 무리가 한눈에 갈라집니다.
  */
+export const CLUSTER_MIXED_COLOR = '#64748B';
+
 export function clusterColor(members, categories) {
   const list = Array.isArray(members) ? members : [];
   const names = [];
@@ -174,5 +180,5 @@ export function clusterColor(members, categories) {
     if (name && names.indexOf(name) < 0) names.push(name);
   });
   if (names.length === 1) return getCategoryColor(names[0], categories);
-  return '#FF5A36';
+  return CLUSTER_MIXED_COLOR;
 }

@@ -22,7 +22,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 /** 배포 기본 origin — 미리보기 도메인이어도 링크는 https 로 열립니다. */
-export const PWA_THEME_COLOR = '#FF5A36';
+export const PWA_THEME_COLOR = '#0D9488';
 export const PWA_APP_TITLE = '릴스핀';
 
 /** `public/` 에서 dist 로 반드시 있어야 하는 파일 */

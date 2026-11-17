@@ -25,19 +25,28 @@ export const LEGACY_CATEGORY_LABELS = { 베이커리: '맛집', 디저트: '맛�
  * 분류 색은 **getCategoryColor 한 곳**에서만 정합니다.
  * 지도 핀 · 상단 필터 칩 · 분류 고르기 칩 · 핀 상세 배지 · 내 정보 '분류 관리' 점이
  * 모두 같은 함수를 쓰므로, 같은 분류는 어디서나 같은 색입니다.
- *   · 기본 3개 … 확실히 구분되는 고유 색 (코랄 · 민트 · 블루)
+ *   · 기본 3개 … 확실히 구분되는 고유 색 (딥 틸 · 앰버 · 블루)
  *   · 커스텀    … 기본 3색과 겹치지 않는 팔레트에서 **목록 순서대로** 서로 다른 색
+ *
+ * v2.27.0 — 브랜드 색이 딥 틸(#0D9488)로 바뀌면서 기본 3색도 함께 손봤습니다.
+ *   · 맛집 = 딥 틸 … 브랜드 색과 같은 색. 지도에서 가장 많은 핀이 앱 색을 그대로 입습니다.
+ *   · 카페 = 앰버(#D97706) … 예전 민트(#14B8A6)는 딥 틸과 거의 같은 색이라 지도에서 맛집과
+ *     구분되지 않아, 색상환 반대편의 따뜻한 캐러멜로 옮겼습니다. (흰 글씨 대비 3.2:1 — 예전 코랄과 같은 수준)
+ *   · 가볼곳 = 블루(#3B82F6) … 그대로.
+ *   · '가봤어요' 초록(colors.visit #0FA968)은 **체크 표시·라벨과 함께** 쓰이므로 딥 틸과 색만으로 헷갈리지 않습니다.
  */
 export const DEFAULT_CATEGORY_COLORS = {
-  맛집: '#FF5A36', // 코랄 오렌지
-  카페: '#14B8A6', // 민트 그린
+  맛집: '#0D9488', // 딥 틸 (브랜드 색)
+  카페: '#D97706', // 앰버 캐러멜
   가볼곳: '#3B82F6', // 선명한 블루
 };
 /**
- * 커스텀 분류 팔레트 — 기본 3색(코랄·민트·블루)과 겹치지 않는 색만 모았습니다.
+ * 커스텀 분류 팔레트 — 기본 3색(딥 틸·앰버·블루)과 겹치지 않는 색만 모았습니다.
  * 앞쪽 색부터 차례로 배정되어, 새로 만든 분류가 앞선 분류와 같은 색이 되지 않습니다.
+ * v2.27.0 — 기본색이 바뀌며 겹치던 #F59E0B(카페 앰버와 혼동) → #F97316,
+ *          #06B6D4(맛집 딥 틸과 혼동) → #84CC16 으로 교체했습니다.
  */
-export const CUSTOM_CATEGORY_COLORS = ['#8B5CF6', '#F59E0B', '#EC4899', '#22C55E', '#06B6D4', '#6366F1'];
+export const CUSTOM_CATEGORY_COLORS = ['#8B5CF6', '#F97316', '#EC4899', '#22C55E', '#84CC16', '#6366F1'];
 /** 예전 이름(호환) — 커스텀 분류 팔레트 */
 export const CUSTOM_PIN_COLORS = CUSTOM_CATEGORY_COLORS;
 
@@ -324,7 +333,7 @@ export function hexToRgba(hex, alpha) {
   const a = typeof alpha === 'number' ? Math.min(1, Math.max(0, alpha)) : 1;
   const raw = String(hex == null ? '' : hex).replace('#', '').trim();
   const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
-  if (!/^[0-9a-fA-F]{6}$/.test(full)) return 'rgba(255,90,54,' + a + ')';
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return 'rgba(13,148,136,' + a + ')';
   const r = parseInt(full.slice(0, 2), 16);
   const g = parseInt(full.slice(2, 4), 16);
   const b = parseInt(full.slice(4, 6), 16);

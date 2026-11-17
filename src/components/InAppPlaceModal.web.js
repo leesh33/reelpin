@@ -208,7 +208,7 @@ export default function InAppPlaceModal({ pin, onClose }) {
         {/* ── 차단 안내 + 원탭 폴백 ── */}
         {blocked && (
           <View style={styles.blockBanner}>
-            <Ionicons name="alert-circle" size={15} color={colors.coralDark} />
+            <Ionicons name="alert-circle" size={15} color={colors.brandDark} />
             <View style={styles.blockTextWrap}>
               <Text style={styles.blockTitle}>{BLOCKED_NOTICE}</Text>
               <Text style={styles.blockHint}>{BLOCKED_HINT}</Text>
@@ -223,7 +223,7 @@ export default function InAppPlaceModal({ pin, onClose }) {
         <View style={styles.body}>
           {!loaded && !blocked && (
             <View style={styles.loading}>
-              <ActivityIndicator color={colors.coral} />
+              <ActivityIndicator color={colors.brand} />
               <Text style={styles.loadingText}>네이버 플레이스 불러오는 중…</Text>
             </View>
           )}
@@ -253,7 +253,7 @@ export default function InAppPlaceModal({ pin, onClose }) {
           </Text>
           <ExternalLink href={mapUrl} label="네이버 지도로 열기" style={styles.footerBtn}>
             <Text style={styles.footerBtnText}>네이버 지도로 열기</Text>
-            <Ionicons name="chevron-forward" size={11} color={colors.coralDark} />
+            <Ionicons name="chevron-forward" size={11} color={colors.brandDark} />
           </ExternalLink>
         </View>
       </View>
@@ -346,20 +346,20 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: 12,
     paddingVertical: 9,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     borderBottomWidth: 1,
-    borderBottomColor: colors.coralSoft2,
+    borderBottomColor: colors.brandSoft2,
   },
   blockTextWrap: { flex: 1, minWidth: 0 },
   blockTitle: {
     fontSize: 12,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   blockHint: {
     fontSize: 10.5,
     fontWeight: '600',
-    color: colors.coralDark,
+    color: colors.brandDark,
     opacity: 0.8,
     marginTop: 1,
   },
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     height: 30,
     paddingHorizontal: 10,
     borderRadius: radius.sm,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -422,11 +422,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
   },
   footerBtnText: {
     fontSize: 10.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
 });

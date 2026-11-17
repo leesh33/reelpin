@@ -14,7 +14,7 @@
  *     name: '검단 점심 코스',   // 28자까지
  *     desc: '회사 근처 12시~1시',// 한 줄 설명 · 40자까지 (없으면 '')
  *     emoji: '🍜',             // 테마 이모지 (없으면 📂)
- *     color: '#FF5A36',        // 카드 포인트 색 (없으면 코랄)
+ *     color: '#0D9488',        // 카드 포인트 색 (없으면 딥 틸)
  *     pinIds: ['pin-1', …],    // 담긴 핀 id — 담은 순서를 그대로 지킵니다
  *     createdAt: ISO, updatedAt: ISO,
  *   }
@@ -26,8 +26,8 @@ export const COLLECTION_MAX_PINS = 200;
 
 /** 컬렉션 카드에 고를 수 있는 테마 이모지 (첫 번째가 기본) */
 export const COLLECTION_EMOJIS = ['📂', '🍜', '☕', '🍰', '🍱', '🏞️', '🛍️', '🎬', '🚗', '🧸'];
-/** 카드 포인트 색 (첫 번째가 기본 코랄) */
-export const COLLECTION_COLORS = ['#FF5A36', '#F2A03D', '#0FA968', '#3B82F6', '#8B5CF6', '#EC4899'];
+/** 카드 포인트 색 (첫 번째가 기본 딥 틸) */
+export const COLLECTION_COLORS = ['#0D9488', '#F2A03D', '#0FA968', '#3B82F6', '#8B5CF6', '#EC4899'];
 export const DEFAULT_COLLECTION_EMOJI = COLLECTION_EMOJIS[0];
 export const DEFAULT_COLLECTION_COLOR = COLLECTION_COLORS[0];
 

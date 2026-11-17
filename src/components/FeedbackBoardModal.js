@@ -50,10 +50,10 @@ import {
   validateFeedback,
 } from '../services/feedback';
 
-/** 상태 배지 색 — 접수됨(회색) · 반영됨(코랄) · 수정됨(초록) */
+/** 상태 배지 색 — 접수됨(회색) · 반영됨(딥 틸) · 수정됨(초록) */
 const STATUS_STYLE = {
   open: { bg: colors.lineSoft, fg: colors.mutedBadgeText },
-  applied: { bg: colors.coralSoft, fg: colors.coralDark },
+  applied: { bg: colors.brandSoft, fg: colors.brandDark },
   fixed: { bg: colors.visitSoft, fg: colors.visitDark },
 };
 
@@ -448,7 +448,7 @@ export default function FeedbackBoardModal({
       >
         {loading ? (
           <View style={styles.centerBox}>
-            <ActivityIndicator color={colors.coral} />
+            <ActivityIndicator color={colors.brand} />
             <Text style={styles.centerText}>글을 불러오는 중…</Text>
           </View>
         ) : error ? (
@@ -565,9 +565,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   sortBtn: { paddingHorizontal: 11, paddingVertical: 5, borderRadius: radius.pill },
-  sortBtnOn: { backgroundColor: colors.coralSoft },
+  sortBtnOn: { backgroundColor: colors.brandSoft },
   sortText: { fontSize: 11.5, fontWeight: '700', color: colors.textMuted },
-  sortTextOn: { color: colors.coralDark },
+  sortTextOn: { color: colors.brandDark },
   writeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -614,9 +614,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     backgroundColor: colors.white,
   },
-  likeBtnOn: { backgroundColor: colors.coralSoft, borderColor: colors.coralSoft2 },
+  likeBtnOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandSoft2 },
   likeText: { fontSize: 11, fontWeight: '800', color: colors.textSub },
-  likeTextOn: { color: colors.coralDark },
+  likeTextOn: { color: colors.brandDark },
   likeCount: { fontSize: 11, fontWeight: '800', color: colors.textMuted },
 
   centerBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 44, gap: 8 },
@@ -659,7 +659,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  composeKind: { fontSize: 12.5, fontWeight: '800', color: colors.coralDark },
+  composeKind: { fontSize: 12.5, fontWeight: '800', color: colors.brandDark },
   composeCooldown: { fontSize: 10.5, color: colors.textMuted },
   fieldHead: {
     flexDirection: 'row',
@@ -696,7 +696,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
     paddingVertical: 13,
     borderRadius: radius.md,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

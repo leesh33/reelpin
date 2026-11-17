@@ -22,7 +22,7 @@
  *   │ ──────────────────── │
  *   │ ↗ 지도 공유하기       │  ← 기존 shareMyMap 그대로
  *   └──────────────────────┘
- *                    [🎛]      ← 토글 버튼(켜져 있으면 코랄 + `가본 곳만` 표시)
+ *                    [🎛]      ← 토글 버튼(켜져 있으면 딥 틸 + `가본 곳만` 표시)
  *
  * · 세로 column(아래 끝 고정)으로 쌓아 **개수 알약 · 카드 · 버튼이 절대 겹치지 않습니다.**
  * · 카드는 위로 펼쳐지고(150ms 페이드 + 살짝 올라오기), 버튼을 다시 누르거나
@@ -145,7 +145,7 @@ export default function MapToolsMenu({
             testID="map-tools-nearby"
           >
             <View style={styles.nearbyIcon}>
-              <Ionicons name="storefront-outline" size={14} color={colors.coral} />
+              <Ionicons name="storefront-outline" size={14} color={colors.brand} />
             </View>
             <View style={styles.nearbyTextWrap}>
               <Text style={styles.nearbyLabel}>{'주변 ' + nearbyRadius + 'm 보기'}</Text>
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   summaryText: {
     color: '#AEB9CC',
@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 8,
-    backgroundColor: 'rgba(255,90,54,0.16)',
+    backgroundColor: 'rgba(13,148,136,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -345,11 +345,11 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     paddingHorizontal: 8,
     borderRadius: radius.sm,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     justifyContent: 'center',
   },
   shareRowPressed: {
-    backgroundColor: colors.coralDark,
+    backgroundColor: colors.brandDark,
   },
   shareText: {
     color: colors.white,

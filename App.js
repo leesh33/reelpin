@@ -1077,7 +1077,7 @@ export default function App() {
         </View>
         <Text style={styles.splashTitle}>Reelspin</Text>
         <Text style={styles.splashSub}>저장한 릴스 맛집을 지도에 꽂는 중…</Text>
-        <ActivityIndicator color={colors.coral} style={{ marginTop: 18 }} />
+        <ActivityIndicator color={colors.brand} style={{ marginTop: 18 }} />
       </View>
     );
   }
@@ -1265,7 +1265,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

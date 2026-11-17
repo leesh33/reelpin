@@ -86,7 +86,7 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
 
           <View style={styles.body}>
             <View style={styles.noticeCard}>
-              <Ionicons name="phone-portrait-outline" size={16} color={colors.coralDark} />
+              <Ionicons name="phone-portrait-outline" size={16} color={colors.brandDark} />
               <View style={styles.noticeTextWrap}>
                 <Text style={styles.noticeTitle}>{NATIVE_PREVIEW_NOTICE}</Text>
                 <Text style={styles.noticeHint}>{NATIVE_PREVIEW_HINT}</Text>
@@ -104,7 +104,7 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
             </Pressable>
 
             <Pressable style={styles.secondaryBtn} onPress={openPlaceWeb} accessibilityRole="link">
-              <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
+              <Ionicons name="storefront-outline" size={15} color={colors.brandDark} />
               <Text style={styles.secondaryBtnText}>네이버 플레이스 웹으로 열기</Text>
               <Text style={styles.secondaryMeta}>m.place.naver.com</Text>
             </Pressable>
@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
   secondaryBtnText: {
     fontSize: 12.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   secondaryMeta: {
     marginLeft: 'auto',

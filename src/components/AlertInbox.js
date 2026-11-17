@@ -89,7 +89,7 @@ export default function AlertInbox({
       >
           {!feed.hasLocation ? (
             <View style={styles.needsLocation}>
-              <Ionicons name="locate-outline" size={20} color={colors.coral} />
+              <Ionicons name="locate-outline" size={20} color={colors.brand} />
               <Text style={styles.needsTitle}>내 위치를 켜면 가까운 저장 장소가 모여요</Text>
               <Text style={styles.needsSub}>
                 {'지금 있는 곳 기준 반경 ' + distanceText + 'm 안의 저장 장소를 가까운 순으로 보여드려요.'}
@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 11,
     fontWeight: '700',
     textAlign: 'center',
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -217,7 +217,7 @@ const styles = StyleSheet.create({
     borderRadius: 3.5,
   },
   dotIn: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   dotOut: {
     backgroundColor: colors.textMuted,
@@ -241,7 +241,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   distanceIn: {
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   distanceOut: {
     color: colors.textMuted,

@@ -11,7 +11,7 @@
   "display_override": ["standalone", "minimal-ui", "browser"],
   "orientation": "portrait",
   "background_color": "#F7F7F9",
-  "theme_color": "#FF5A36",
+  "theme_color": "#0D9488",
   "categories": ["food", "travel", "lifestyle"],
   "icons": [
     {

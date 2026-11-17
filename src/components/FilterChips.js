@@ -25,7 +25,7 @@ export { matchesFilter };
  *
  *   · 칩 = `rgba(255,255,255,0.90)` + 은은한 테두리·그림자 + **어두운 글씨**(`#1C1C1E`)
  *   · 칩마다 그 분류의 **컬러 점**이 붙고, 켜지면 그 분류 색 배경 + 흰 글씨
- *     (`전체` 칩은 브랜드 코랄) — 예전 어두운 남색 알약(`#1C1C1E` 계열)은 없어졌습니다
+ *     (`전체` 칩은 브랜드 딥 틸) — 예전 어두운 남색 알약(`#1C1C1E` 계열)은 없어졌습니다
  *   · `onToggleView` 를 넘기면 가로 스크롤 **맨 앞(왼쪽 끝)** 에 같은 흰색 반투명
  *     **목록 아이콘 버튼**(☰)이 서고, 누르면 기존 목록 보기로 전환합니다
  *     (오른쪽 하단에 있던 주황 `목록 보기` 버튼은 없어졌습니다)
@@ -148,10 +148,10 @@ const styles = StyleSheet.create({
     elevation: 2,
     ...(Platform.OS === 'web' ? { backdropFilter: 'blur(8px)' } : null),
   },
-  // '전체' — 브랜드 코랄로 켜집니다.
+  // '전체' — 브랜드 딥 틸로 켜집니다.
   chipAllOn: {
-    backgroundColor: colors.coral,
-    borderColor: colors.coral,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   dot: {
     width: 7,

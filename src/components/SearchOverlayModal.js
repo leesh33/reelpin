@@ -10,7 +10,7 @@
  *       동일하게 구현 (높이 및 배경 딤처리도 동일하게)"
  *
  *   · v2.19.1 부터 **내 정보·알림 모음·목록 보기와 같은 `LayerSheet` 틀**을 씁니다 —
- *     높이 86% · 같은 딤 · 같은 둥근 모서리 · 다크 차콜 헤더(코랄 원 아이콘 + `내 장소 검색` + ✕) ·
+ *     높이 86% · 같은 딤 · 같은 둥근 모서리 · 다크 차콜 헤더(딥 틸 원 아이콘 + `내 장소 검색` + ✕) ·
  *     바깥을 누르면 닫힘
  *   · v2.20.2 — 상훈 님 요청: "돋보기 버튼의 타이틀은 내장소 검색 으로 해줘" → 헤더 타이틀 `내 장소 검색`
  *   · ① 검색 인풋 … 내 핀(가게명·지역·주소·분류·메뉴·한줄 메모) 실시간 검색 + ✕ 지우기
@@ -197,7 +197,7 @@ export default function SearchOverlayModal({
                   <View
                     style={[
                       styles.dot,
-                      { backgroundColor: getCategoryColor(item.pin.category) || colors.coral },
+                      { backgroundColor: getCategoryColor(item.pin.category) || colors.brand },
                     ]}
                   />
                   <View style={styles.rowText}>
@@ -231,9 +231,9 @@ export default function SearchOverlayModal({
                   testID="search-overlay-locate"
                 >
                   {locating ? (
-                    <ActivityIndicator color={colors.coralDark} size="small" />
+                    <ActivityIndicator color={colors.brandDark} size="small" />
                   ) : (
-                    <Ionicons name="locate" size={11} color={colors.coralDark} />
+                    <Ionicons name="locate" size={11} color={colors.brandDark} />
                   )}
                   <Text style={styles.locateText}>내 위치</Text>
                 </Pressable>
@@ -257,7 +257,7 @@ export default function SearchOverlayModal({
                     <Ionicons
                       name={recommend.kind === 'near' ? 'navigate' : 'bookmark-outline'}
                       size={12}
-                      color={colors.coralDark}
+                      color={colors.brandDark}
                     />
                   </View>
                   <View style={styles.rowText}>
@@ -394,10 +394,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
   },
   locateText: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 10,
     fontWeight: '800',
   },
@@ -422,7 +422,7 @@ const styles = StyleSheet.create({
     width: 20,
     height: 20,
     borderRadius: 7,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   rowDistance: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 11.5,
     fontWeight: '800',
   },

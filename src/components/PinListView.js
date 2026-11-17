@@ -169,7 +169,7 @@ export default function PinListView({
         <View style={styles.emptyWrap}>
           <View style={styles.emptyCard}>
             <View style={styles.emptyIcon}>
-              <Ionicons name={keyword ? 'search' : 'document-text-outline'} size={20} color={colors.coral} />
+              <Ionicons name={keyword ? 'search' : 'document-text-outline'} size={20} color={colors.brand} />
             </View>
             <Text style={styles.emptyTitle}>
               {keyword
@@ -322,7 +322,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   distance: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 11.5,
     fontWeight: '800',
   },
@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     paddingHorizontal: 13,
     paddingVertical: 9,
     borderRadius: radius.md,

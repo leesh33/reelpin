@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   },
   right: {
     maxWidth: 96,
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 11,
     fontWeight: '800',
   },

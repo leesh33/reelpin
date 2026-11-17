@@ -5,7 +5,7 @@
  *
  * 상훈 님 요청: "저장 화면 … 상단 헤더를 돋보기(검색) 화면과 동일하게 해줘"
  *
- *   · 왼쪽 : 코랄 원 안의 아이콘 (`search` / `link`)
+ *   · 왼쪽 : 딥 틸 원 안의 아이콘 (`search` / `link`)
  *   · 가운데: 제목 한 줄 + 그 아래 회색 보조 줄(잘리면 말줄임)
  *   · 오른쪽: 반투명 흰 원 안의 `✕` 닫기 버튼
  *   · 배경 `#1C1C1E` · 아래 테두리 `#33333A` · 좌우 16 / 위아래 13 여백
@@ -73,7 +73,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

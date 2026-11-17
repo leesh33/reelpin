@@ -975,7 +975,7 @@ export default function MapScreen({
                 <Ionicons
                   name={alertsOn ? 'notifications' : 'notifications-outline'}
                   size={12}
-                  color={alertsOn ? colors.white : colors.coralDark}
+                  color={alertsOn ? colors.white : colors.brandDark}
                 />
                 <Text style={[styles.alertToggleText, alertsOn && styles.alertToggleTextOn]}>
                   {alertsOn ? '근처 알림 켜짐' : '🔔 근처 알림 켜기'}
@@ -1204,7 +1204,7 @@ const styles = StyleSheet.create({
     width: 26,
     height: 26,
     borderRadius: 9,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1224,7 +1224,7 @@ const styles = StyleSheet.create({
     height: 30,
     paddingHorizontal: 10,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1301,7 +1301,7 @@ const styles = StyleSheet.create({
   // v2.18 — 핀 목록 보기는 상단 칩 줄의 흰 아이콘 버튼(FilterChips)이 맡습니다.
   //          남은 오른쪽 버튼(내 위치 FAB)만 플로팅 탭바 위로 올립니다.
   viewToggleBtn: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     borderColor: 'rgba(255,255,255,0.30)',
   },
   errorChip: {
@@ -1310,7 +1310,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 5,
-    backgroundColor: 'rgba(232,70,31,0.92)',
+    backgroundColor: 'rgba(15,118,110,0.92)',
     borderRadius: 10,
     paddingHorizontal: 9,
     paddingVertical: 6,
@@ -1351,7 +1351,7 @@ const styles = StyleSheet.create({
     width: mapControls.fabSize,
     height: mapControls.fabSize,
     borderRadius: mapControls.fabSize / 2,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -1394,13 +1394,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 5,
     borderRadius: 999,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
   },
   alertToggleOn: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   alertToggleText: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 10,
     fontWeight: '800',
   },
@@ -1439,7 +1439,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   nearbyDistance: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -1458,7 +1458,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     borderRadius: radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1501,7 +1501,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: radius.md,
@@ -1559,7 +1559,7 @@ const styles = StyleSheet.create({
     height: 34,
     paddingHorizontal: 16,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

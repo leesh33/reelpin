@@ -11,7 +11,7 @@
  *   · 묶음 계산 자체는 `src/utils/cluster.js` 의 순수 함수 — 네이버·Leaflet 이 같은 규칙을 씁니다.
  *
  * v2.4 — 분류별 **핀 색을 getCategoryColor 하나로 통일** (상단 필터 칩·상세 배지·내 정보 점과 같은 색)
- *   · 맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 고유 색
+ *   · 맛집 #0D9488 · 카페 #D97706 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 고유 색
  *   · 선택된 핀도 분류 색을 유지 — 강조는 크기(18→26) + 두꺼운 흰 테두리 + 라벨이 그 분류 색으로 채워짐
  *
  * v2.3 — 핀 **아래에 가게 이름 라벨**을 붙였습니다(흰 알약 + 진한 글씨 + 분류 색 얇은 테두리).
@@ -203,7 +203,7 @@ export function pinIconHtml(pin, selected, categories) {
 
 /**
  * 분류별 핀 색 — **getCategoryColor 하나**로 지도·칩·배지가 같은 색을 씁니다.
- *   맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 고유 색
+ *   맛집 #0D9488 · 카페 #D97706 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 고유 색
  * 선택된 핀도 같은 분류 색을 유지합니다(강조는 크기·테두리·라벨 색으로).
  */
 export function pinColor(pin, selected, categories) {
@@ -217,12 +217,12 @@ export function clusterBadgeSize(count) {
 }
 
 /**
- * 클러스터 배지 HTML — 다크 네이비 원 + 흰 숫자 + 흰 테두리 + 분류 색 헤일로(코랄 기본).
- * 무리 안 핀이 모두 같은 분류면 그 분류 색, 섞여 있으면 코랄. (핀·칩과 색이 어긋나지 않음)
+ * 클러스터 배지 HTML — 다크 네이비 원 + 흰 숫자 + 흰 테두리 + 분류 색 헤일로(분류 색 기본).
+ * 무리 안 핀이 모두 같은 분류면 그 분류 색, 섞여 있으면 슬레이트 그레이. (핀·칩과 색이 어긋나지 않음)
  */
 export function clusterIconHtml(count, color) {
   const size = clusterBadgeSize(count);
-  const halo = typeof color === 'string' && /^#/.test(color) ? color : colors.coral;
+  const halo = typeof color === 'string' && /^#/.test(color) ? color : colors.brand;
   return (
     '<div data-cluster="' +
     escapeHtml(clusterLabel(count)) +
@@ -1559,7 +1559,7 @@ export default function RealMapView({
       {summary && (
         <View style={styles.overlay} pointerEvents="none">
           <View style={styles.overlayCard}>
-            {summary.spinner && <ActivityIndicator color={colors.coral} />}
+            {summary.spinner && <ActivityIndicator color={colors.brand} />}
             <Text style={styles.overlayTitle}>{summary.title}</Text>
             <Text style={styles.overlaySub}>{summary.sub}</Text>
           </View>

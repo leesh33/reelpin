@@ -58,7 +58,7 @@ const PARKS = [
 ];
 
 // v2.4 — 카테고리 색은 웹 지도·필터 칩·상세 배지와 같은 getCategoryColor 하나로 정합니다.
-//   맛집 #FF5A36 · 카페 #14B8A6 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 색
+//   맛집 #0D9488 · 카페 #D97706 · 가볼곳 #3B82F6 · 커스텀은 팔레트에서 서로 다른 색
 //   선택된 핀도 분류 색을 유지하고, 강조는 크기·라벨 색으로 합니다.
 function pinColor(pin, selected, categories) {
   return getCategoryColor((pin && pin.category) || '', categories);

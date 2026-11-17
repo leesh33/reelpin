@@ -282,7 +282,7 @@ export default function CollectionsScreen({
           {!list.length ? (
             <View style={styles.emptyCard} testID="collections-empty">
               <View style={styles.emptyIcon}>
-                <Ionicons name="folder-open-outline" size={26} color={colors.coral} />
+                <Ionicons name="folder-open-outline" size={26} color={colors.brand} />
               </View>
               <Text style={styles.emptyTitle}>아직 컬렉션이 없어요</Text>
               <Text style={styles.emptySub}>
@@ -523,7 +523,7 @@ export default function CollectionsScreen({
                     accessibilityLabel="컬렉션 삭제"
                     testID="collection-delete"
                   >
-                    <Ionicons name="trash-outline" size={13} color={colors.coralDark} />
+                    <Ionicons name="trash-outline" size={13} color={colors.brandDark} />
                     <Text style={styles.deleteBtnText}>컬렉션 지우기</Text>
                   </Pressable>
                 )}
@@ -733,7 +733,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     ...cardShadow,
   },
   newBtnText: {
@@ -756,7 +756,7 @@ const styles = StyleSheet.create({
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -979,8 +979,8 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
   },
   emojiChipOn: {
-    borderColor: colors.coral,
-    backgroundColor: colors.coralSoft,
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
   },
   emojiText: {
     fontSize: 18,
@@ -1006,7 +1006,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     paddingVertical: 12,
     borderRadius: 12,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
   },
   saveBtnText: {
@@ -1017,7 +1017,7 @@ const styles = StyleSheet.create({
   errorText: {
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
     marginTop: 6,
   },
   deleteRow: {
@@ -1039,7 +1039,7 @@ const styles = StyleSheet.create({
   deleteBtnText: {
     fontSize: 11,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   deleteWarn: {
     flex: 1,
@@ -1051,7 +1051,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 11,
     paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: colors.coralDark,
+    backgroundColor: colors.brandDark,
   },
   deleteConfirmText: {
     color: colors.white,
@@ -1094,12 +1094,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
   },
   pinCountText: {
     fontSize: 10.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   pinHint: {
     ...typography.tiny,
@@ -1153,8 +1153,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxOn: {
-    backgroundColor: colors.coral,
-    borderColor: colors.coral,
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pinText: {
     flex: 1,
@@ -1215,7 +1215,7 @@ const styles = StyleSheet.create({
     width: 18,
     fontSize: 11,
     fontWeight: '800',
-    color: colors.coral,
+    color: colors.brand,
   },
   orderName: {
     flex: 1,
@@ -1253,7 +1253,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

@@ -20,7 +20,7 @@ import { colors, radius, typography } from '../theme';
  * 탭하면 해당 핀으로 포커스(상세 시트) — 상위 화면이 onPress 로 처리합니다.
  *
  * v2.1.2 — 흰 지도·밝은 타일 위에서 묻히지 않도록 **다크 차콜 카드 + 흰 글씨**로 바꿨습니다.
- *   · 반경 안(진입, `지금`): 코랄 아이콘 + 진한 코랄 테두리 + 코랄 배지로 한 번 더 강조
+ *   · 반경 안(진입, `지금`): 딥 틸 아이콘 + 진한 딥 틸 테두리 + 딥 틸 배지로 한 번 더 강조
  *   · 반경 밖(가장 가까운 곳, tone='muted'): 차콜 카드 + 회색 배지
  *
  * v2.1.3 — '반경 300m 앞, 저장한 맛집이 있어요 / 뚝섬 카페 · 크루아상' 처럼 **없는 사실을
@@ -319,7 +319,7 @@ export default function GeofenceBanner({
           accessibilityLabel="지금 있는 곳 기준으로 보기"
         >
           <View style={[styles.iconWrap, styles.iconNeeds]}>
-            <Ionicons name="locate-outline" size={22} color={colors.coral} />
+            <Ionicons name="locate-outline" size={22} color={colors.brand} />
           </View>
           <View style={styles.textWrap}>
             <Text style={styles.title} numberOfLines={2}>
@@ -444,9 +444,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 10,
   },
-  // 반경 500m 안(지금 근처) — 코랄 테두리로 한 번 더 눈에 띄게
+  // 반경 500m 안(지금 근처) — 딥 틸 테두리로 한 번 더 눈에 띄게
   wrapLive: {
-    borderColor: 'rgba(255,90,54,0.72)',
+    borderColor: 'rgba(13,148,136,0.72)',
   },
   wrapMuted: {
     borderColor: 'rgba(255,255,255,0.18)',
@@ -466,7 +466,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconLive: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   // 위치를 아직 모를 때 — 채우지 않고 테두리만(아직 '켜짐'이 아니라는 표시)
   iconNeeds: {
@@ -535,7 +535,7 @@ const styles = StyleSheet.create({
     minWidth: 62,
     paddingHorizontal: 12,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   nowChipLive: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   nowChipMuted: {
     backgroundColor: 'rgba(255,255,255,0.16)',

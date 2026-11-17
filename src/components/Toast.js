@@ -85,7 +85,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   pillPro: {
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   text: {
     color: colors.white,

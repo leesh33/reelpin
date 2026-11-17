@@ -150,7 +150,7 @@ export default function PinDetailSheet({
   return (
     <View style={styles.sheet}>
       {/* 헤더 바 — v2.19.2: 상훈 님 요청으로 헤더 배경을 **그 핀의 분류 색**으로 맞췄습니다.
-          (맛집 = 코랄 #FF5A36 · 카페 = 민트 #14B8A6 · 가볼곳 = 블루 #3B82F6 · 커스텀 분류 = 각 분류 색)
+          (맛집 = 딥 틸 #0D9488 · 카페 = 앰버 #D97706 · 가볼곳 = 블루 #3B82F6 · 커스텀 분류 = 각 분류 색)
           분류를 바꾸면 헤더 색도 즉시 따라 바뀌고, 흰 가게 이름·반투명 흰 원 ✕ 는 그대로라
           어떤 분류 색 위에서도 또렷합니다. 시트 위쪽 둥근 모서리도 그대로 이어집니다. */}
       <View style={[styles.headerBar, { backgroundColor: headerColor }]} testID="pin-sheet-header">
@@ -178,13 +178,13 @@ export default function PinDetailSheet({
         <View style={styles.chipRow}>
           <View
             style={[
-              styles.chipCoral,
+              styles.chipBrand,
               { backgroundColor: categoryBadgeBg, borderColor: categoryBadgeBorder },
             ]}
             testID="pin-category-badge"
           >
             <View style={[styles.chipDot, { backgroundColor: categoryDot }]} />
-            <Text style={[styles.chipCoralText, { color: categoryBadgeText }]}>
+            <Text style={[styles.chipBrandText, { color: categoryBadgeText }]}>
               {categoryName}
             </Text>
           </View>
@@ -199,7 +199,7 @@ export default function PinDetailSheet({
           </View>
           {hasDistance && !!distanceLabel && (
             <View style={styles.chipLive}>
-              <Ionicons name="locate" size={11} color={colors.coralDark} />
+              <Ionicons name="locate" size={11} color={colors.brandDark} />
               <Text style={styles.chipLiveText}>{'내 위치에서 ' + distanceLabel}</Text>
             </View>
           )}
@@ -286,7 +286,7 @@ export default function PinDetailSheet({
         {!readOnly && (
           <View style={styles.memoBox} testID="pin-memo-box">
             <View style={styles.memoHead}>
-              <Ionicons name="create-outline" size={13} color={colors.coralDark} />
+              <Ionicons name="create-outline" size={13} color={colors.brandDark} />
               <Text style={styles.memoLabel}>한줄 메모</Text>
               <Text style={styles.memoHint}>{memoDirty ? '저장을 누르면 반영돼요' : savedMemo ? '저장됨' : '선택 입력'}</Text>
             </View>
@@ -356,7 +356,7 @@ export default function PinDetailSheet({
         {!pin.sourceUrl && pin.platform === 'photo' && (
           <View style={styles.sourceRow} testID="pin-photo-source">
             <View style={styles.sourceIcon}>
-              <Ionicons name="image" size={12} color={colors.coral} />
+              <Ionicons name="image" size={12} color={colors.brand} />
             </View>
             <View style={styles.sourceTextWrap}>
               <Text style={styles.sourceLabel}>{platform}</Text>
@@ -373,7 +373,7 @@ export default function PinDetailSheet({
             accessibilityLabel="원본 릴스 열기"
           >
             <View style={styles.sourceIcon}>
-              <Ionicons name="play" size={12} color={colors.coral} />
+              <Ionicons name="play" size={12} color={colors.brand} />
             </View>
             <View style={styles.sourceTextWrap}>
               <Text style={styles.sourceLabel}>{platform}</Text>
@@ -393,7 +393,7 @@ export default function PinDetailSheet({
             accessibilityRole="link"
             accessibilityLabel={'전화 걸기 ' + phone}
           >
-            <Ionicons name="call-outline" size={14} color={colors.coralDark} />
+            <Ionicons name="call-outline" size={14} color={colors.brandDark} />
             <Text style={styles.infoValue} numberOfLines={1}>
               {phone}
             </Text>
@@ -422,10 +422,10 @@ export default function PinDetailSheet({
           accessibilityRole="button"
           accessibilityLabel="매장 정보 보기"
         >
-          <Ionicons name="storefront-outline" size={15} color={colors.coralDark} />
+          <Ionicons name="storefront-outline" size={15} color={colors.brandDark} />
           <Text style={styles.placeBtnText}>매장 정보 보기</Text>
           <Text style={styles.placeBtnMeta}>{pin.naverPlaceId ? '네이버 플레이스 상세' : '네이버 플레이스'}</Text>
-          <Ionicons name="expand-outline" size={14} color={colors.coralDark} />
+          <Ionicons name="expand-outline" size={14} color={colors.brandDark} />
         </Pressable>
 
         {/* v2.25.0 — 🗺️ 지도에서 보기: 앱 안에서 이 장소로 지도를 옮깁니다.
@@ -547,7 +547,7 @@ const styles = StyleSheet.create({
     ...typography.h2,
     fontSize: 19,
     color: colors.white,
-    // v2.19.2 — 민트(카페)처럼 밝은 분류 색 위에서도 흰 이름이 또렷하게 (얇은 그림자)
+    // v2.19.2 — 앰버(카페)처럼 밝은 분류 색 위에서도 흰 이름이 또렷하게 (얇은 그림자)
     textShadowColor: 'rgba(15,23,42,0.30)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
@@ -570,13 +570,13 @@ const styles = StyleSheet.create({
     gap: 6,
     flexWrap: 'wrap',
   },
-  chipCoral: {
+  chipBrand: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     borderWidth: 1,
-    borderColor: colors.coralSoft2,
+    borderColor: colors.brandSoft2,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
@@ -586,8 +586,8 @@ const styles = StyleSheet.create({
     height: 6,
     borderRadius: 3,
   },
-  chipCoralText: {
-    color: colors.coralDark,
+  chipBrandText: {
+    color: colors.brandDark,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -609,13 +609,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 3,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     paddingHorizontal: 9,
     paddingVertical: 4,
     borderRadius: 999,
   },
   chipLiveText: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -758,7 +758,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   memoHint: {
     fontSize: 10,
@@ -793,7 +793,7 @@ const styles = StyleSheet.create({
     height: 26,
     paddingHorizontal: 11,
     borderRadius: 999,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -876,7 +876,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 8,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -884,7 +884,7 @@ const styles = StyleSheet.create({
   sourceLabel: {
     fontSize: 10,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
     marginBottom: 1,
   },
   sourceUrl: {
@@ -922,7 +922,7 @@ const styles = StyleSheet.create({
   infoAction: {
     fontSize: 11,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   sharedNote: {
     marginTop: 10,
@@ -939,20 +939,20 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: radius.md,
     borderWidth: 1.5,
-    borderColor: colors.coralSoft2,
-    backgroundColor: colors.coralSoft,
+    borderColor: colors.brandSoft2,
+    backgroundColor: colors.brandSoft,
     paddingHorizontal: 12,
   },
   placeBtnText: {
     fontSize: 13.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   placeBtnMeta: {
     flex: 1,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
     opacity: 0.7,
     textAlign: 'right',
   },

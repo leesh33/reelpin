@@ -10,8 +10,8 @@
  *   · **한글 라벨 없음** — 아이콘만. 화면 낭독기용 `accessibilityLabel`·`aria-label` 은 그대로
  *   · 폭은 `theme.tabBar.width`(190px) — 예전 358px 의 절반 남짓, 화면 가운데 정렬
  *     (`alignSelf:'center'`, `borderRadius:999`, `rgba(255,255,255,0.92)`, `blur(12px)`, 그림자)
- *   · 켜진 탭은 **연한 코랄 원형 하이라이트 + 코랄 아이콘**
- *   · 가운데 `＋` 저장은 코랄(켜지면 딥 네이비) 원형 버튼으로 균형을 잡습니다
+ *   · 켜진 탭은 **연한 딥 틸 원형 하이라이트 + 딥 틸 아이콘**
+ *   · 가운데 `＋` 저장은 딥 틸(켜지면 딥 네이비) 원형 버튼으로 균형을 잡습니다
  *
  * 높이·폭·여백은 모두 `theme.tabBar` 한 곳에서 옵니다 — 지도 왼쪽/오른쪽 하단 컨트롤도
  * 같은 값을 써서 알약 위로 올라갑니다(`theme.mapControls`).
@@ -68,7 +68,7 @@ export default function TabBar({ active, onChange }) {
                 <Ionicons
                   name={on ? tab.iconOn : tab.icon}
                   size={21}
-                  color={on ? colors.coral : '#8A8F9C'}
+                  color={on ? colors.brand : '#8A8F9C'}
                 />
               </View>
             </Pressable>
@@ -116,7 +116,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // 켜진 탭 — 연한 코랄 알약(원형) 하이라이트
+  // 켜진 탭 — 연한 딥 틸 알약(원형) 하이라이트
   iconPill: {
     width: 44,
     height: 34,
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   iconPillOn: {
-    backgroundColor: 'rgba(255, 90, 54, 0.12)',
+    backgroundColor: 'rgba(13, 148, 136, 0.12)',
   },
   // 가운데 ＋ 저장 — v2.18 과 같은 포인트 원형
   centerIcon: {
@@ -134,8 +134,8 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.coral,
-    shadowColor: '#FF5A36',
+    backgroundColor: colors.brand,
+    shadowColor: colors.brand,
     shadowOpacity: 0.28,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },

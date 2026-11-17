@@ -14,7 +14,7 @@
  *
  *   · 바깥 : 화면 전체를 덮는 어두운 딤(`SHEET_BACKDROP`) — 누르면 닫힙니다
  *   · 시트 : 화면 높이의 `SHEET_HEIGHT`(86%) · 위쪽 둥근 모서리(`radius.xxl`) · 시트 그림자
- *   · 머리 : 다크 차콜 바 — 코랄 원 아이콘 + 제목/보조줄 + 반투명 흰 원 `✕`
+ *   · 머리 : 다크 차콜 바 — 딥 틸 원 아이콘 + 제목/보조줄 + 반투명 흰 원 `✕`
  *            (`onBack` 을 주면 아이콘 자리가 `‹` 화살표 하나로 바뀝니다 — 서브 페이지)
  *            v2.19.2 — 상훈 님 요청 "레이어팝업의 뒤로 버튼의 한글은 없애줘(< 만 나오게)"
  *            → 화면에는 `‹` 만. 읽어 주는 이름은 `accessibilityLabel`(기본 `뒤로`)에 그대로 남습니다.
@@ -146,7 +146,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
   },

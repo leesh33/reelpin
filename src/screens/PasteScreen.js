@@ -501,7 +501,7 @@ export default function PasteScreen({
                 accessibilityLabel={m.label + ' 탭'}
                 testID={'paste-tab-' + m.key}
               >
-                {tabs.length > 2 ? null : <Ionicons name={m.icon} size={13} color={on ? colors.coralDark : colors.textSub} />}
+                {tabs.length > 2 ? null : <Ionicons name={m.icon} size={13} color={on ? colors.brandDark : colors.textSub} />}
                 <Text
                   style={[styles.modeText, tabs.length > 2 && styles.modeTextTight, on && styles.modeTextOn]}
                   numberOfLines={1}
@@ -529,7 +529,7 @@ export default function PasteScreen({
             >
               <View style={styles.photoDropIcon}>
                 {photoBusy ? (
-                  <ActivityIndicator color={colors.coralDark} size="small" />
+                  <ActivityIndicator color={colors.brandDark} size="small" />
                 ) : (
                   <Text style={styles.photoDropEmoji}>📸</Text>
                 )}
@@ -672,7 +672,7 @@ export default function PasteScreen({
 
         {!!error && (
           <View style={styles.errorBox}>
-            <Ionicons name="alert-circle-outline" size={15} color={colors.coralDark} />
+            <Ionicons name="alert-circle-outline" size={15} color={colors.brandDark} />
             <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
@@ -760,7 +760,7 @@ export default function PasteScreen({
             {/* v2.9 — Gemini 가 영상 속 말·자막을 읽어 찾은 경우의 한 줄 근거 */}
             {meta && meta.aiNote ? (
               <View style={styles.aiLine}>
-                <Ionicons name="sparkles" size={12} color={colors.coralDark} />
+                <Ionicons name="sparkles" size={12} color={colors.brandDark} />
                 <Text style={styles.aiLineText} numberOfLines={2}>
                   {meta.aiNote}
                 </Text>
@@ -884,7 +884,7 @@ export default function PasteScreen({
                         그대로 [저장]만 눌러도 되고, 한 글자 고쳐도 됩니다. */}
             {memoAutoFilled && !!memo.trim() && (
               <View style={styles.memoAutoLine} testID="paste-memo-auto-line">
-                <Ionicons name="sparkles" size={12} color={colors.coralDark} />
+                <Ionicons name="sparkles" size={12} color={colors.brandDark} />
                 <Text style={styles.memoAutoText} numberOfLines={2}>
                   AI가 한줄 메모 초안을 채웠어요 · 그대로 저장해도 되고, 고쳐도 돼요
                 </Text>
@@ -895,7 +895,7 @@ export default function PasteScreen({
                 <Ionicons
                   name={memoAutoFilled ? 'sparkles-outline' : 'create-outline'}
                   size={13}
-                  color={colors.coralDark}
+                  color={colors.brandDark}
                 />
                 <Text style={styles.memoLabel}>한줄 메모</Text>
                 <Text style={styles.memoHint}>
@@ -990,7 +990,7 @@ const styles = StyleSheet.create({
     color: colors.textSub,
   },
   modeTextOn: {
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontWeight: '800',
   },
   // v2.14 — 3탭(릴스·사진·가게명)을 390px 한 줄에 넣기 위한 조금 작은 라벨
@@ -1004,21 +1004,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     borderWidth: 1.5,
-    borderColor: colors.coralSoft2,
+    borderColor: colors.brandSoft2,
     borderStyle: 'dashed',
     paddingHorizontal: 18,
     paddingVertical: 22,
     gap: 6,
   },
   photoDropBusy: {
-    borderColor: colors.coral,
-    backgroundColor: colors.coralSoft,
+    borderColor: colors.brand,
+    backgroundColor: colors.brandSoft,
   },
   photoDropIcon: {
     width: 54,
     height: 54,
     borderRadius: 27,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 2,
@@ -1087,11 +1087,11 @@ const styles = StyleSheet.create({
   primaryBtn: {
     height: 52,
     borderRadius: radius.md,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 12,
-    shadowColor: colors.coralDark,
+    shadowColor: colors.brandDark,
     shadowOpacity: 0.22,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
@@ -1114,7 +1114,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     borderRadius: radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 9,
@@ -1124,7 +1124,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 12,
     fontWeight: '600',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   presetHead: {
     flexDirection: 'row',
@@ -1187,14 +1187,14 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
   guideNumText: {
     fontSize: 11,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   guideTextWrap: { flex: 1 },
   guideText: {
@@ -1240,7 +1240,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: colors.coralSoft,
+    backgroundColor: colors.brandSoft,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 6,
@@ -1250,7 +1250,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 10.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   heroCard: {
     height: 132,
@@ -1329,7 +1329,7 @@ const styles = StyleSheet.create({
   selectCount: {
     fontSize: 11.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   checkbox: {
     width: 22,
@@ -1342,8 +1342,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxOn: {
-    borderColor: colors.coral,
-    backgroundColor: colors.coral,
+    borderColor: colors.brand,
+    backgroundColor: colors.brand,
   },
   unmatchedNote: {
     fontSize: 11,
@@ -1356,7 +1356,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   candCardOn: {
-    borderColor: colors.coral,
+    borderColor: colors.brand,
     backgroundColor: colors.white,
     ...cardShadow,
   },
@@ -1398,13 +1398,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   radioOn: {
-    borderColor: colors.coral,
+    borderColor: colors.brand,
   },
   radioDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
   },
   adapterNote: {
     fontSize: 11,
@@ -1442,7 +1442,7 @@ const styles = StyleSheet.create({
   memoAutoText: {
     flex: 1,
     fontSize: 11,
-    color: colors.coralDark,
+    color: colors.brandDark,
     fontWeight: '600',
   },
   memoCard: {
@@ -1465,7 +1465,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11.5,
     fontWeight: '800',
-    color: colors.coralDark,
+    color: colors.brandDark,
   },
   memoHint: {
     fontSize: 10,

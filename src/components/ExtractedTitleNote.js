@@ -36,7 +36,7 @@ export default function ExtractedTitleNote({
 
       {hasNotice ? (
         <View style={styles.row}>
-          <Ionicons name="lock-closed-outline" size={13} color={colors.coralDark} />
+          <Ionicons name="lock-closed-outline" size={13} color={colors.brandDark} />
           <Text style={styles.notice} numberOfLines={2}>
             {notice}
           </Text>
@@ -83,7 +83,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: '700',
-    color: colors.coralDark,
+    color: colors.brandDark,
     lineHeight: 16,
   },
   btn: {
@@ -91,7 +91,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: colors.coral,
+    backgroundColor: colors.brand,
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 9,

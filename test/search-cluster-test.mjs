@@ -28,6 +28,7 @@ import {
 import {
   CLUSTER_LABEL_MAX,
   CLUSTER_MIN_SIZE,
+  CLUSTER_MIXED_COLOR,
   CLUSTER_THRESHOLD_PX,
   clusterLabel,
   clusterPoints,
@@ -239,7 +240,7 @@ check(
   clusterColor(sameCat[0].members, [])
 );
 const mixedCat = clusterPoints([{ ...pt('a', 0, 0), category: '카페' }, { ...pt('b', 10, 0), category: '맛집' }]);
-check('클러스터 색: 섞이면 코랄', clusterColor(mixedCat[0].members, []) === '#FF5A36', clusterColor(mixedCat[0].members, []));
+check('클러스터 색: 섞이면 슬레이트 그레이(분류 색 아님)', clusterColor(mixedCat[0].members, []) === CLUSTER_MIXED_COLOR && ['#0D9488', '#D97706', '#3B82F6'].indexOf(CLUSTER_MIXED_COLOR) < 0, clusterColor(mixedCat[0].members, []));
 
 // ── 8. 지도 컴포넌트가 쓰는 조립 함수 ───────────────────────
 const project = (lat, lng) => ({ x: lng * 1000, y: lat * 1000 });
@@ -272,10 +273,10 @@ check('지도: 지문(signature)은 무리 구성이 같으면 동일', clusterS
 check('지도: 투영 함수가 없으면 빈 목록 (예외 없음)', projectPinPoints([{ id: 'x', lat: 1, lng: 1 }], null, null).length === 0);
 
 // 배지 HTML — 숫자·다크 배경·흰 테두리
-const badge = clusterIconHtml(3, '#FF5A36');
+const badge = clusterIconHtml(3, '#0D9488');
 check('배지 HTML: 숫자 표시', badge.indexOf('>3<') > 0, badge.slice(0, 80));
 check('배지 HTML: 다크 네이비 원 + 두꺼운 흰 링', badge.indexOf('background:#0F172A') > 0 && badge.indexOf('0 0 0 2.5px #FFFFFF') > 0);
-check('배지 HTML: 분류 색 헤일로(코랄)', badge.indexOf('rgba(255,90,54,0.5)') > 0);
+check('배지 HTML: 분류 색 헤일로(딥 틸)', badge.indexOf('rgba(13,148,136,0.5)') > 0);
 check('배지 HTML: 100곳이면 99+', clusterIconHtml(120, null).indexOf('99+') > 0);
 
 // ── 9. 화면 배선 ────────────────────────────────────────────

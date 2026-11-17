@@ -1,4 +1,21 @@
-// 릴스핀 디자인 토큰 — 화이트 클린 베이스 + 코랄 포인트 + 딥 네이비 지도
+// 릴스핀 디자인 토큰 — 화이트 클린 베이스 + 딥 틸 포인트 + 딥 네이비 지도
+//
+// v2.27.0 — 브랜드 색을 코랄(#FF5A36) → **딥 틸(#0D9488)** 로 바꿨습니다.
+//   상훈 님: "우리 아이덴티티 색상을 아예 바꿔보는건 어떨까?" · "캐치테이블이랑 색상이 좀 유사해보이네"
+//   → 맛집 앱이 주황(캐치테이블 #FF3D00)에 몰려 있어, 홈화면에서도 갈라지는 딥 틸로 통일했습니다.
+//
+//   brand      = #0D9488 ... 주 버튼·선택 탭·배지·로고 포인트
+//   brandDark  = #0F766E ... 눌림·연한 배경 위 진한 글씨 (흰 배경 대비 5.5:1)
+//   brandSoft  = #E6F7F5 ... 연한 배경 틴트
+//   brandSoft2 = #CCFBF1 ... 테두리 틴트
+//
+//   `coral*` 은 v2.27.0 이전 이름의 **호환 별칭**입니다 — 값은 모두 위 브랜드 색과 같습니다.
+//   (예전 컴포넌트·문서·테스트가 colors.coral 을 그대로 불러도 같은 딥 틸이 나옵니다)
+const BRAND = '#0D9488';
+const BRAND_DARK = '#0F766E';
+const BRAND_SOFT = '#E6F7F5';
+const BRAND_SOFT2 = '#CCFBF1';
+
 export const colors = {
   // base
   bg: '#F7F7F9',
@@ -6,11 +23,17 @@ export const colors = {
   line: '#EDEDF2',
   lineSoft: '#F2F2F6',
 
-  // point
-  coral: '#FF5A36',
-  coralDark: '#E8461F',
-  coralSoft: '#FFEDE8',
-  coralSoft2: '#FFE2DA',
+  // point — v2.27.0 딥 틸
+  brand: BRAND,
+  brandDark: BRAND_DARK,
+  brandSoft: BRAND_SOFT,
+  brandSoft2: BRAND_SOFT2,
+
+  // 예전 이름(호환)
+  coral: BRAND,
+  coralDark: BRAND_DARK,
+  coralSoft: BRAND_SOFT,
+  coralSoft2: BRAND_SOFT2,
 
   // map (딥 네이비)
   navy: '#0F172A',
@@ -23,8 +46,10 @@ export const colors = {
   mint: '#4ECDB4',
 
   // v2.10 — ✅ '가봤어요' 방문 완료 표시 (초록 계열 · 분류 색과 겹치지 않게 따로 둡니다)
-  visit: '#0FA968',
-  visitDark: '#0A7D4E',
+  // v2.27.0 — 맛집 핀이 딥 틸이 되면서 예전 초록(#0FA968)은 지도에서 거의 같은 색이 됐습니다
+  //   (RGB 거리 38 → 64). 색상환을 초록 쪽(142°)으로 옮겨 한눈에 갈라지게 했습니다.
+  visit: '#16A34A',
+  visitDark: '#15803D',
   visitSoft: '#E4F7EF',
   visitLine: '#B7E8D2',
 
