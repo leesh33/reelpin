@@ -184,6 +184,17 @@ if (!only || only === 'admin') {
   });
 }
 
+if (!only || only === 'feedback') {
+  // v2.23 — 💬 제안·버그 제보: 글 검사·쿨다운·정렬·공감 RPC·화면/어드민 연결
+  failed += await runSuite({
+    name: '제안·버그 제보 게시판 테스트',
+    entry: 'feedback-test.mjs',
+    out: 'feedback-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

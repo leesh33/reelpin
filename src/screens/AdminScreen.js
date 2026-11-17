@@ -6,7 +6,7 @@
  *
  * 화면 구성
  *   · 로그인 전 … 관리자 계정으로 로그인 안내 (구글 로그인)
- *   · 로그인 후 … ① 📊 대시보드 ② 👥 회원 관리 ③ 📍 장소(핀) 관리
+ *   · 로그인 후 … ① 📊 대시보드 ② 👥 회원 관리 ③ 📍 장소(핀) 관리 ④ 💬 제보 (v2.23)
  *     - 데스크톱: 왼쪽 내비 + 넓은 표 / 모바일(390px): 상단 탭 + 카드형 목록
  *   · 권한은 **서버(`/api/admin`)와 DB 함수**가 최종 판단합니다.
  *     이 화면은 안내만 하고, 401·403 이 오면 그대로 잠금 화면으로 돌아갑니다.
@@ -38,7 +38,25 @@ const TABS = [
   { id: 'dashboard', label: '대시보드', icon: 'stats-chart' },
   { id: 'members', label: '회원 관리', icon: 'people' },
   { id: 'pins', label: '장소 관리', icon: 'location' },
+  // v2.23 — 💬 제안 · 버그 제보
+  { id: 'feedback', label: '제보', icon: 'chatbubble-ellipses' },
 ];
+
+/** v2.23 — 제보 상태·유형 라벨 (DB check 제약과 같은 값) */
+const FEEDBACK_STATUS_OPTIONS = [
+  { id: '', label: '전체' },
+  { id: 'open', label: '접수됨' },
+  { id: 'applied', label: '반영됨' },
+  { id: 'fixed', label: '수정됨' },
+];
+const FEEDBACK_KIND_OPTIONS = [
+  { id: '', label: '전체' },
+  { id: 'idea', label: '제안' },
+  { id: 'bug', label: '버그' },
+];
+const FEEDBACK_STATUS_LABEL = { open: '접수됨', applied: '반영됨', fixed: '수정됨' };
+const FEEDBACK_KIND_LABEL = { idea: '제안', bug: '버그' };
+const FEEDBACK_STATUS_TONE = { open: 'muted', applied: 'coral', fixed: 'visit' };
 
 /** 미리보기용 모의 데이터 — 실제 회원·핀이 아닙니다. */
 const PREVIEW_DATA = {
@@ -79,6 +97,13 @@ const PREVIEW_DATA = {
     { pinId: 'p-3', userId: 'u-2', email: 'hyeyeon.kim@gmail.com', nickname: '희연', name: '디오디아', category: '카페', area: '연남동', address: '서울 마포구 동교로 00', visited: true, createdAt: '2026-11-16T21:12:00+09:00' },
     { pinId: 'p-4', userId: 'u-3', email: 'shhy@kakao.com', nickname: '상훈', name: '런던베이글 연남', category: '베이커리', area: '연남동', address: '서울 마포구 성미산로 00', visited: false, createdAt: '2026-11-16T09:05:00+09:00' },
     { pinId: 'p-5', userId: 'u-4', email: 'tester01@gmail.com', nickname: '맛집탐험가', name: '광어1마리15000원', category: '맛집', area: '', address: '부산 해운대구 00', visited: false, createdAt: '2026-11-16T08:44:00+09:00' },
+  ],
+  // v2.23 — 💬 제보 탭 미리보기 (실제 글이 아닙니다)
+  feedback: [
+    { id: 'f-1', kind: 'bug', title: '지도가 가끔 흰 화면이 돼요', content: '아이폰 사파리에서 앱을 다시 열면 지도가 잠깐 흰 화면으로 보이다가 돌아와요. 2~3초 정도 걸립니다.', author: '꼬야네', userEmail: 'guest@kakao.com', appVersion: '2.23.0', likes: 7, status: 'open', createdAt: '2026-11-17T09:12:00+09:00' },
+    { id: 'f-2', kind: 'idea', title: '컬렉션을 친구에게 같이 보여 주기', content: '만든 컬렉션을 링크로 보낼 때 제목과 설명이 같이 보이면 좋겠어요. 지금은 핀만 보입니다.', author: '맛집탐험가', userEmail: 'tester01@gmail.com', appVersion: '2.23.0', likes: 5, status: 'applied', createdAt: '2026-11-16T22:40:00+09:00' },
+    { id: 'f-3', kind: 'bug', title: '알림이 두 번 와요', content: '500m 안에 들어갔을 때 같은 가게 알림이 두 번 뜬 적이 있어요.', author: '익명', userEmail: '', appVersion: '2.22.0', likes: 2, status: 'fixed', createdAt: '2026-11-16T18:05:00+09:00' },
+    { id: 'f-4', kind: 'idea', title: '영업시간 지금 열었는지 핀에 바로 표시', content: '목록에서도 영업 중인지 한눈에 보이면 좋을 것 같아요.', author: '희연', userEmail: 'hyeyeon.kim@gmail.com', appVersion: '2.23.0', likes: 3, status: 'open', createdAt: '2026-11-16T12:20:00+09:00' },
   ],
 };
 
@@ -343,6 +368,10 @@ export default function AdminScreen({ preview = false }) {
   const [memberQuery, setMemberQuery] = useState('');
   const [pinQuery, setPinQuery] = useState('');
   const [pinCategory, setPinCategory] = useState('');
+  // v2.23 — 💬 제보 탭 (유형·상태 필터)
+  const [feedback, setFeedback] = useState(preview ? PREVIEW_DATA.feedback : []);
+  const [feedbackKind, setFeedbackKind] = useState('');
+  const [feedbackStatus, setFeedbackStatus] = useState('');
 
   const [schemaMissing, setSchemaMissing] = useState('');
   const [confirm, setConfirm] = useState(null); // { kind, target }
@@ -433,6 +462,15 @@ export default function AdminScreen({ preview = false }) {
           if (!res.ok) throw res;
           setSchemaMissing('');
           setPins(Array.isArray(res.data) ? res.data : []);
+        } else if (which === 'feedback') {
+          const res = await callAdmin({
+            view: 'feedback',
+            query: { kind: feedbackKind, status: feedbackStatus },
+            token,
+          });
+          if (!res.ok) throw res;
+          setSchemaMissing('');
+          setFeedback(Array.isArray(res.data) ? res.data : []);
         }
       } catch (e) {
         if (e && e.error === 'admin-schema-missing') {
@@ -453,7 +491,7 @@ export default function AdminScreen({ preview = false }) {
         setLoading(false);
       }
     },
-    [preview, currentToken, memberQuery, pinQuery, pinCategory, showToast]
+    [preview, currentToken, memberQuery, pinQuery, pinCategory, feedbackKind, feedbackStatus, showToast]
   );
 
   useEffect(() => {
@@ -593,6 +631,56 @@ export default function AdminScreen({ preview = false }) {
     const list = (overview && overview.categories) || [];
     return list.map((c) => c.name).filter(Boolean);
   }, [overview]);
+
+  // ── v2.23 💬 제보 상태 변경 · 삭제 ────────────────────────
+  const changeFeedbackStatus = useCallback(
+    async (item, status) => {
+      if (!item || !status || item.status === status) return;
+      if (preview) {
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      setBusy(true);
+      const token = await currentToken();
+      const res = await callAdmin({
+        method: 'POST',
+        token,
+        body: { action: 'update-feedback-status', id: item.id, status },
+      });
+      setBusy(false);
+      if (!res.ok) {
+        showToast(res.message || '상태를 바꾸지 못했어요');
+        return;
+      }
+      setFeedback((list) => list.map((row) => (row.id === item.id ? { ...row, status } : row)));
+      showToast('“' + item.title + '” 상태를 ' + (FEEDBACK_STATUS_LABEL[status] || status) + ' 으로 바꿨어요');
+      loadTab('feedback');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const removeFeedback = useCallback(
+    async (item) => {
+      setBusy(true);
+      if (preview) {
+        setBusy(false);
+        setConfirm(null);
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      const token = await currentToken();
+      const res = await callAdmin({ method: 'POST', token, body: { action: 'delete-feedback', id: item.id } });
+      setBusy(false);
+      setConfirm(null);
+      if (!res.ok) {
+        showToast(res.message || '제보를 지우지 못했어요');
+        return;
+      }
+      showToast('“' + item.title + '” 제보를 지웠어요');
+      loadTab('feedback');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
 
   // ── 잠금 화면들 ──────────────────────────────────
   const renderGate = () => {
@@ -881,6 +969,121 @@ export default function AdminScreen({ preview = false }) {
     </>
   );
 
+  /** v2.23 — 💬 제보 관리 (유형·상태 필터 · 상태 변경 · 삭제) */
+  const renderFeedback = () => {
+    const rows = feedback;
+    return (
+      <>
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>제보 {rows.length}건</Text>
+          <Text style={styles.sectionHint}>최근 글 순 · 최대 500건</Text>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chipScrollInner}>
+          {FEEDBACK_KIND_OPTIONS.map((opt) => {
+            const on = feedbackKind === opt.id;
+            return (
+              <Pressable
+                key={'kind-' + (opt.id || 'all')}
+                onPress={() => {
+                  setFeedbackKind(opt.id);
+                  setTimeout(() => loadTab('feedback'), 0);
+                }}
+                style={[styles.chip, on && styles.chipOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                testID={'admin-feedback-kind-' + (opt.id || 'all')}
+              >
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.chipScrollInner}>
+          {FEEDBACK_STATUS_OPTIONS.map((opt) => {
+            const on = feedbackStatus === opt.id;
+            return (
+              <Pressable
+                key={'status-' + (opt.id || 'all')}
+                onPress={() => {
+                  setFeedbackStatus(opt.id);
+                  setTimeout(() => loadTab('feedback'), 0);
+                }}
+                style={[styles.chip, on && styles.chipOn]}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                testID={'admin-feedback-status-' + (opt.id || 'all')}
+              >
+                <Text style={[styles.chipText, on && styles.chipTextOn]}>{opt.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        <View style={styles.card}>
+          {rows.length === 0 ? (
+            <Text style={styles.emptyText}>{loading ? '불러오는 중…' : '조건에 맞는 제보가 없어요.'}</Text>
+          ) : (
+            rows.map((item, i) => (
+              <View key={item.id || i} style={[styles.feedbackRow, i === rows.length - 1 && styles.rowLast]} testID={'admin-feedback-' + item.id}>
+                <View style={styles.feedbackBody}>
+                  <View style={styles.pinTitleRow}>
+                    <Pill text={FEEDBACK_KIND_LABEL[item.kind] || '제안'} tone={item.kind === 'bug' ? 'coral' : 'muted'} />
+                    <Pill text={FEEDBACK_STATUS_LABEL[item.status] || '접수됨'} tone={FEEDBACK_STATUS_TONE[item.status] || 'muted'} />
+                    <Text style={styles.feedbackLikes}>👍 {item.likes != null ? item.likes : 0}</Text>
+                  </View>
+                  <Text style={styles.feedbackTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.feedbackContent} numberOfLines={2}>
+                    {item.content}
+                  </Text>
+                  <Text style={styles.pinMeta} numberOfLines={1}>
+                    {item.author || '익명'}
+                    {item.userEmail ? ' (' + item.userEmail + ')' : ''}
+                    {' · '}v{String(item.appVersion || '—').replace(/^v/i, '')}
+                    {' · '}{sinceLabel(item.createdAt)}
+                  </Text>
+
+                  <View style={styles.feedbackStatusRow}>
+                    {['open', 'applied', 'fixed'].map((status) => {
+                      const on = item.status === status;
+                      return (
+                        <Pressable
+                          key={status}
+                          style={[styles.statusBtn, on && styles.statusBtnOn]}
+                          onPress={() => changeFeedbackStatus(item, status)}
+                          disabled={busy || on}
+                          accessibilityRole="button"
+                          accessibilityLabel={FEEDBACK_STATUS_LABEL[status] + ' 으로 바꾸기'}
+                          testID={'admin-feedback-' + item.id + '-' + status}
+                        >
+                          <Text style={[styles.statusBtnText, on && styles.statusBtnTextOn]}>
+                            {FEEDBACK_STATUS_LABEL[status]}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+                <Pressable
+                  style={styles.deleteBtn}
+                  onPress={() => setConfirm({ kind: 'feedback', target: item })}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel="제보 삭제"
+                >
+                  <Ionicons name="trash-outline" size={15} color="#B42318" />
+                </Pressable>
+              </View>
+            ))
+          )}
+        </View>
+      </>
+    );
+  };
+
   /** DB 함수가 아직 없을 때 — SQL 한 번만 실행하면 된다는 안내 */
   const renderSchemaSetup = () => (
     <View style={styles.setupCard}>
@@ -905,8 +1108,10 @@ export default function AdminScreen({ preview = false }) {
         renderDashboard()
       ) : tab === 'members' ? (
         renderMembers()
-      ) : (
+      ) : tab === 'pins' ? (
         renderPins()
+      ) : (
+        renderFeedback()
       )
     ) : (
       renderGate()
@@ -977,7 +1182,7 @@ export default function AdminScreen({ preview = false }) {
         <ScrollView style={styles.content} contentContainerStyle={[styles.contentInner, wide && styles.contentInnerWide]}>
           {!wide && gate === 'ready' ? <View style={styles.tabsRow}>{navItems}</View> : null}
           {body}
-          <Text style={styles.footNote}>릴스핀 v2.21 · 관리자 화면은 서버에서 권한을 다시 확인합니다</Text>
+          <Text style={styles.footNote}>릴스핀 v2.23 · 관리자 화면은 서버에서 권한을 다시 확인합니다</Text>
         </ScrollView>
       </View>
 
@@ -991,16 +1196,29 @@ export default function AdminScreen({ preview = false }) {
         open={!!confirm}
         danger
         busy={busy}
-        title={confirm && confirm.kind === 'member' ? '회원을 삭제할까요?' : '핀을 삭제할까요?'}
+        title={
+          confirm && confirm.kind === 'member'
+            ? '회원을 삭제할까요?'
+            : confirm && confirm.kind === 'feedback'
+            ? '제보를 삭제할까요?'
+            : '핀을 삭제할까요?'
+        }
         message={
           confirm && confirm.kind === 'member'
             ? (confirm.target.nickname || '') + ' (' + (confirm.target.email || '') + ') 님과 저장한 핀 ' + (confirm.target.pinCount || 0) + '개가 함께 지워집니다. 되돌릴 수 없어요.'
+            : confirm && confirm.kind === 'feedback'
+            ? '“' + (confirm.target.title || '') + '” 제보가 게시판에서 지워집니다. 되돌릴 수 없어요.'
             : confirm
             ? '“' + (confirm.target.name || '') + '” 핀이 ' + (confirm.target.nickname || confirm.target.email || '') + ' 님의 지도에서 지워집니다. 되돌릴 수 없어요.'
             : ''
         }
         confirmLabel="삭제"
-        onConfirm={() => (confirm && confirm.kind === 'member' ? removeMember(confirm.target) : removePin(confirm.target))}
+        onConfirm={() => {
+          if (!confirm) return;
+          if (confirm.kind === 'member') return removeMember(confirm.target);
+          if (confirm.kind === 'feedback') return removeFeedback(confirm.target);
+          return removePin(confirm.target);
+        }}
         onCancel={() => setConfirm(null)}
       />
 
@@ -1211,6 +1429,33 @@ const styles = StyleSheet.create({
   pinAddress: { fontSize: 11.5, color: colors.textSub, marginTop: 3 },
   pinMeta: { fontSize: 10.5, color: colors.textMuted, marginTop: 3 },
   pinActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+
+  // v2.23 — 💬 제보 탭
+  feedbackRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lineSoft,
+  },
+  feedbackBody: { flex: 1 },
+  feedbackLikes: { fontSize: 10.5, fontWeight: '800', color: colors.coralDark },
+  feedbackTitle: { fontSize: 13.5, fontWeight: '800', color: colors.text, marginTop: 5 },
+  feedbackContent: { fontSize: 11.5, color: colors.textSub, lineHeight: 17, marginTop: 3 },
+  feedbackStatusRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 9 },
+  statusBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+  },
+  statusBtnOn: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
+  statusBtnText: { fontSize: 10.5, fontWeight: '800', color: colors.textSub },
+  statusBtnTextOn: { color: colors.white },
 
   chipScroll: { maxHeight: 40, marginBottom: 10 },
   chipScrollInner: { gap: 6, alignItems: 'center', paddingRight: 8 },

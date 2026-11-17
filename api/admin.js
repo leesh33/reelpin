@@ -7,10 +7,13 @@
  *   GET  /api/admin?view=overview                    … 대시보드 요약(회원·핀·인기 장소 TOP 10)
  *   GET  /api/admin?view=members&q=<이메일|이름>       … 회원 목록
  *   GET  /api/admin?view=pins&q=<검색>&category=<분류>  … 장소(핀) 목록
+ *   GET  /api/admin?view=feedback&kind=<idea|bug>&status=<open|applied|fixed>  … 💬 제보 목록 (v2.23)
  *   POST /api/admin  { action:'set-plan',    userId, plan:'free'|'pro' }
  *   POST /api/admin  { action:'delete-user', userId }
  *   POST /api/admin  { action:'update-pin',  userId, pinId, name, category }
  *   POST /api/admin  { action:'delete-pin',  userId, pinId }
+ *   POST /api/admin  { action:'update-feedback-status', id, status:'open'|'applied'|'fixed' }  … v2.23
+ *   POST /api/admin  { action:'delete-feedback', id }                                          … v2.23
  *
  * 보안 (이 파일이 지키는 선)
  *   1. 모든 요청은 **서버에서** Supabase `/auth/v1/user` 로 토큰을 검증합니다.
@@ -23,6 +26,9 @@
 const { sendJson, queryParam, warn } = require('../server/http.js');
 const { authorizeAdmin, readSupabaseEnv, adminEmails } = require('../server/admin-auth.js');
 const adminDb = require('../server/admin-db.js');
+
+/** v2.23 — 제보 상태 값 (DB check 제약과 같습니다) */
+const FEEDBACK_STATUSES = ['open', 'applied', 'fixed'];
 
 /** 요청 본문(JSON) — Vercel 이 파싱해 둔 경우와 스트림인 경우를 모두 받습니다. */
 async function readJsonBody(req) {
@@ -99,6 +105,21 @@ async function handleGet(req, res, ctx) {
     return sendJson(res, 200, { ok: true, data: result.data, query: search, category });
   }
 
+  // v2.23 — 💬 제안 · 버그 제보 목록 (유형·상태 필터)
+  if (view === 'feedback') {
+    const kind = clean(queryParam(req, 'kind', 8)).toLowerCase();
+    const status = clean(queryParam(req, 'status', 10)).toLowerCase();
+    if (kind && kind !== 'idea' && kind !== 'bug') {
+      return sendJson(res, 400, { ok: false, error: 'bad-request', message: '유형은 idea · bug 중 하나예요.' });
+    }
+    if (status && !FEEDBACK_STATUSES.includes(status)) {
+      return sendJson(res, 400, { ok: false, error: 'bad-request', message: '상태는 open · applied · fixed 중 하나예요.' });
+    }
+    const result = await adminDb.feedback({ kind, status }, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data, kind, status });
+  }
+
   return sendJson(res, 400, { ok: false, error: 'unknown-view', message: '알 수 없는 요청이에요.' });
 }
 
@@ -144,6 +165,27 @@ async function handlePost(req, res, ctx) {
     const pinId = clean(body.pinId, 80);
     if (!userId || !pinId) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '지울 핀을 확인해 주세요.' });
     const result = await adminDb.deletePin({ userId, pinId }, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data });
+  }
+
+  // v2.23 — 💬 제보 상태 변경 (접수됨 ↔ 반영됨 ↔ 수정됨)
+  if (action === 'update-feedback-status') {
+    const id = clean(body.id, 64);
+    const status = clean(body.status, 10).toLowerCase();
+    if (!id || !FEEDBACK_STATUSES.includes(status)) {
+      return sendJson(res, 400, { ok: false, error: 'bad-request', message: '제보와 상태(open·applied·fixed)를 확인해 주세요.' });
+    }
+    const result = await adminDb.updateFeedbackStatus({ id, status }, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data });
+  }
+
+  // v2.23 — 💬 제보 삭제
+  if (action === 'delete-feedback') {
+    const id = clean(body.id, 64);
+    if (!id) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '지울 제보를 확인해 주세요.' });
+    const result = await adminDb.deleteFeedback(id, ctx.db);
     if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
     return sendJson(res, 200, { ok: true, data: result.data });
   }

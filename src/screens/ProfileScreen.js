@@ -508,7 +508,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.22.0';
+export const APP_INFO_VERSION = '릴스핀 v2.23.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -720,6 +720,8 @@ export default function ProfileScreen({
   // v2.21 🛡️ 어드민 진입점 — 관리자 계정으로 로그인했을 때만 보입니다.
   isAdminAccount = false,
   onGoAdmin = null,
+  // v2.23 💬 제안 · 버그 제보 게시판 — 설정 목록 맨 아래(앱 정보 다음)에서 엽니다.
+  onOpenFeedback = null,
 }) {
   const [copied, setCopied] = useState(false);
   // v2.18 — 설정 서브 페이지: null | 'categories' | 'radius' | 'about'
@@ -954,6 +956,19 @@ export default function ProfileScreen({
             sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
             onPress={() => openSub('about')}
             testID="profile-row-about"
+          />
+          {/* ── v2.23 💬 제안 · 버그 제보 ─────────────────────────────────
+              상훈 님 요청: "제안/버그 제보 게시판 있으면 좋겠다"
+              앱 정보 바로 아래(버전 근처)에 두어 설정 끝에서 자연스럽게 이어집니다. */}
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="chatbubble-ellipses-outline"
+            title="제안 · 버그 제보"
+            sub="기능 아이디어 · 버그 신고 · 👍 공감"
+            onPress={() => {
+              if (typeof onOpenFeedback === 'function') onOpenFeedback();
+            }}
+            testID="profile-row-feedback"
           />
           {/* v2.21 — 관리자 계정에만 보이는 어드민 진입점 (일반 사용자 화면에는 노출하지 않음) */}
           {isAdminAccount && typeof onGoAdmin === 'function' ? (

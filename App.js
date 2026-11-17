@@ -24,6 +24,8 @@ import MenuDrawerModal from './src/components/MenuDrawerModal';
 // v2.21 🛡️ 어드민 — /admin 경로면 앱 대신 어드민 화면을, 관리자 계정이면 ☰ 메뉴에 진입점을 보여 줍니다.
 import AdminScreen from './src/screens/AdminScreen';
 import { ADMIN_PATH_PATTERN, isAdminAccount, isAdminPreview } from './src/utils/adminAccess';
+// v2.23 💬 제안 · 버그 제보 게시판 (내 정보 → 제안 · 버그 제보)
+import FeedbackBoardModal from './src/components/FeedbackBoardModal';
 import { buildAlertFeed } from './src/utils/alertFeed';
 // v2.20.1 — 프로필 이름의 출처는 **로그인한 계정 하나** (로그아웃 = 게스트)
 import { profileIdentity } from './src/utils/profileIdentity';
@@ -131,6 +133,8 @@ export default function App() {
   //                  ({ id, mode:'search', query }) — PasteScreen 이 id 가 바뀔 때만 적용
   const [searchOpen, setSearchOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // v2.23 — ☰ 내 정보에서 여는 💬 제안 · 버그 제보 시트 (내 정보 위에 겹쳐 올라갑니다)
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
   // v2.21 — 지금 주소가 /admin 인지 (웹). 네이티브에서는 항상 false.
   const adminRoute = useMemo(() => (Platform.OS === 'web' ? ADMIN_PATH_PATTERN.test(typeof window !== 'undefined' && window.location ? window.location.pathname : '') : false), []);
   const adminPreview = useMemo(() => (adminRoute && Platform.OS === 'web' ? isAdminPreview() : false), [adminRoute]);
@@ -1186,6 +1190,7 @@ export default function App() {
             closeMenu();
             if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.href = '/admin';
           }}
+          onOpenFeedback={() => setFeedbackOpen(true)}
           onSignIn={handleSignIn}
           onSignUp={handleSignUp}
           onMagicLink={handleMagicLink}
@@ -1203,6 +1208,14 @@ export default function App() {
           }}
           onToast={showToast}
           onShareMap={shareMyMapFromMenu}
+        />
+        {/* v2.23 — 💬 제안 · 버그 제보 (내 정보 시트 위 레이어 · zIndex 48 < 토스트 50) */}
+        <FeedbackBoardModal
+          visible={feedbackOpen}
+          onClose={() => setFeedbackOpen(false)}
+          userName={profile.name}
+          userEmail={cloudUser && cloudUser.email ? cloudUser.email : ''}
+          onToast={showToast}
         />
       </View>
     </SafeAreaView>

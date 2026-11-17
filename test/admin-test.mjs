@@ -263,7 +263,94 @@ check('admin/db: 네트워크 실패 502', netFail.ok === false && netFail.statu
 const noTokenRpc = await setPlan('u1', 'pro', { cfg: { url: 'https://x.supabase.co', anonKey: 'k' }, token: '' });
 check('admin/db: 토큰 없으면 호출하지 않음', noTokenRpc.ok === false && noTokenRpc.status === 503, JSON.stringify(noTokenRpc));
 
-// ── 5. service_role 미사용 (보안) ───────────────────────────
+// ── 5. v2.23 💬 제보 — 목록 조회 · 상태 변경 · 삭제 ─────────
+authUser = { id: 'user-admin', email: 'andy.leesh33@gmail.com' };
+rpcReply = { ok: true, body: [{ id: 'f1', kind: 'bug', title: '지도 흰 화면', content: '사파리에서 흰 화면', author: '꼬야네', userEmail: '', appVersion: '2.23.0', likes: 3, status: 'open', createdAt: '2026-11-17T09:00:00+09:00' }] };
+calls = [];
+res = makeRes();
+await adminHandler(
+  { method: 'GET', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin?view=feedback&kind=bug&status=open' },
+  res
+);
+const feedbackBody = res.jsonBody();
+const feedbackRpc = calls.find((c) => c.url.indexOf('/rest/v1/rpc/reelpin_admin_feedback') >= 0);
+check('admin/api: 제보 목록 200', successful(res, 200) && feedbackBody.ok === true && feedbackBody.data.length === 1, res.body && res.body.slice(0, 140));
+check(
+  'admin/api: 제보 필터가 RPC 인자로 전달',
+  !!feedbackRpc && JSON.parse(feedbackRpc.init.body).p_kind === 'bug' && JSON.parse(feedbackRpc.init.body).p_status === 'open',
+  feedbackRpc && feedbackRpc.init.body
+);
+calls = [];
+rpcReply = { ok: true, body: [] };
+res = makeRes();
+await adminHandler({ method: 'GET', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin?view=feedback' }, res);
+const plainRpc = calls.find((c) => c.url.indexOf('/rest/v1/rpc/reelpin_admin_feedback') >= 0);
+check(
+  'admin/api: 필터 없는 제보 목록은 null 로 전달',
+  !!plainRpc && JSON.parse(plainRpc.init.body).p_kind === null && JSON.parse(plainRpc.init.body).p_status === null,
+  plainRpc && plainRpc.init.body
+);
+
+res = makeRes();
+await adminHandler({ method: 'GET', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin?view=feedback&kind=vip' }, res);
+check('admin/api: 잘못된 제보 유형 400', successful(res, 400) && res.jsonBody().error === 'bad-request', res.body);
+
+res = makeRes();
+await adminHandler({ method: 'GET', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin?view=feedback&status=done' }, res);
+check('admin/api: 잘못된 제보 상태 400', successful(res, 400) && res.jsonBody().error === 'bad-request', res.body);
+
+calls = [];
+rpcReply = { ok: true, body: { ok: true, id: 'f1', status: 'applied' } };
+res = makeRes();
+await adminHandler(
+  { method: 'POST', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin', body: { action: 'update-feedback-status', id: 'f1', status: 'applied' } },
+  res
+);
+const statusRpc = calls.find((c) => c.url.indexOf('/rest/v1/rpc/reelpin_admin_update_feedback_status') >= 0);
+check('admin/api: 제보 상태 변경 200', successful(res, 200) && res.jsonBody().data.status === 'applied', res.body);
+check(
+  'admin/api: 상태 변경 인자 그대로',
+  !!statusRpc && JSON.parse(statusRpc.init.body).p_id === 'f1' && JSON.parse(statusRpc.init.body).p_status === 'applied',
+  statusRpc && statusRpc.init.body
+);
+
+res = makeRes();
+await adminHandler(
+  { method: 'POST', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin', body: { action: 'update-feedback-status', id: 'f1', status: 'vip' } },
+  res
+);
+check('admin/api: 잘못된 상태 변경 400', successful(res, 400), res.body);
+
+calls = [];
+rpcReply = { ok: true, body: { ok: true, id: 'f1', title: '지도 흰 화면' } };
+res = makeRes();
+await adminHandler(
+  { method: 'POST', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin', body: { action: 'delete-feedback', id: 'f1' } },
+  res
+);
+const deleteRpc = calls.find((c) => c.url.indexOf('/rest/v1/rpc/reelpin_admin_delete_feedback') >= 0);
+check('admin/api: 제보 삭제 200', successful(res, 200) && res.jsonBody().data.id === 'f1', res.body);
+check('admin/api: 삭제 인자 그대로', !!deleteRpc && JSON.parse(deleteRpc.init.body).p_id === 'f1', deleteRpc && deleteRpc.init.body);
+
+res = makeRes();
+await adminHandler({ method: 'POST', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin', body: { action: 'delete-feedback' } }, res);
+check('admin/api: 대상 없는 제보 삭제 400', successful(res, 400), res.body);
+
+rpcReply = { ok: false, status: 403, body: { code: '42501', message: 'forbidden' } };
+res = makeRes();
+await adminHandler({ method: 'GET', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin?view=feedback' }, res);
+check('admin/api: DB 가 비관리자면 403', successful(res, 403), res.body);
+
+rpcReply = { ok: false, status: 404, body: { code: 'PGRST202', message: 'Could not find the function public.reelpin_admin_feedback' } };
+res = makeRes();
+await adminHandler({ method: 'GET', headers: { authorization: 'Bearer admin-token' }, url: '/api/admin?view=feedback' }, res);
+check(
+  'admin/api: 제보 스키마 미적용 503 안내(feedback.sql)',
+  successful(res, 503) && res.jsonBody().error === 'admin-schema-missing' && /feedback\.sql/.test(res.jsonBody().message),
+  res.body
+);
+
+// ── 6. service_role 미사용 (보안) ───────────────────────────
 const apiSource = fs.readFileSync(path.join(process.cwd(), 'api/admin.js'), 'utf8');
 const authSource = fs.readFileSync(path.join(process.cwd(), 'server/admin-auth.js'), 'utf8');
 const dbSource = fs.readFileSync(path.join(process.cwd(), 'server/admin-db.js'), 'utf8');
@@ -280,13 +367,21 @@ check(
   ''
 );
 
-// ── 6. 화면(미리보기) 렌더 — 모의 데이터로 그려지는가 ────────
+// ── 7. 화면(미리보기) 렌더 — 모의 데이터로 그려지는가 ────────
 const adminScreenSource = fs.readFileSync(path.join(process.cwd(), 'src/screens/AdminScreen.js'), 'utf8');
-check('admin/화면: 3개 탭(대시보드·회원 관리·장소 관리)', ['대시보드', '회원 관리', '장소 관리'].every((t) => adminScreenSource.indexOf(t) >= 0), '');
+check('admin/화면: 4개 탭(대시보드·회원 관리·장소 관리·제보)', ['대시보드', '회원 관리', '장소 관리', '제보'].every((t) => adminScreenSource.indexOf(t) >= 0), '');
 check('admin/화면: 로그인 안내 · 권한 없음 화면', adminScreenSource.indexOf('관리자 로그인이 필요해요') > 0 && adminScreenSource.indexOf('관리자 권한이 없어요') > 0, '');
 check('admin/화면: 삭제 확인 모달 문구', adminScreenSource.indexOf('되돌릴 수 없어요') > 0, '');
 check('admin/화면: 인기 장소 TOP 10 · 회원 플랜 변경 버튼', adminScreenSource.indexOf('인기 장소 TOP 10') > 0 && adminScreenSource.indexOf('프로로') > 0, '');
 check('admin/화면: 미리보기 모드(모의 데이터)', adminScreenSource.indexOf('PREVIEW_DATA') > 0 && adminScreenSource.indexOf('미리보기') > 0, '');
+check(
+  'admin/화면: 제보 탭 필터·상태 변경·삭제',
+  adminScreenSource.indexOf('FEEDBACK_STATUS_OPTIONS') > 0 &&
+    adminScreenSource.indexOf('admin-feedback-status-') > 0 &&
+    adminScreenSource.indexOf("action: 'update-feedback-status'") > 0 &&
+    adminScreenSource.indexOf('제보를 삭제할까요?') > 0,
+  ''
+);
 
 if (fails) {
   console.log('\nADMIN_TEST_FAILED (' + fails + ')');

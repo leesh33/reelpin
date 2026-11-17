@@ -25,7 +25,7 @@ function errorInfo(status, body) {
     return {
       status: 503,
       error: 'admin-schema-missing',
-      message: '어드민 DB 함수가 아직 없어요. Supabase SQL Editor 에서 supabase/admin.sql 을 실행해 주세요.',
+      message: '어드민 DB 함수가 아직 없어요. Supabase SQL Editor 에서 supabase/admin.sql (제보 탭은 supabase/feedback.sql)을 실행해 주세요.',
     };
   }
   if (code === '42501' || /forbidden|권한/i.test(message)) {
@@ -145,6 +145,27 @@ function deletePin(target, options) {
   return rpcCall('reelpin_admin_delete_pin', { p_user_id: t.userId, p_pin_id: t.pinId }, options);
 }
 
+/** v2.23 — 제보 목록 (유형·상태 필터) */
+function feedback(filters, options) {
+  const f = filters || {};
+  return rpcCall(
+    'reelpin_admin_feedback',
+    { p_kind: String(f.kind || '') || null, p_status: String(f.status || '') || null },
+    options
+  );
+}
+
+/** v2.23 — 제보 상태 변경 (open ↔ applied ↔ fixed) */
+function updateFeedbackStatus(target, options) {
+  const t = target || {};
+  return rpcCall('reelpin_admin_update_feedback_status', { p_id: t.id, p_status: t.status }, options);
+}
+
+/** v2.23 — 제보 삭제 */
+function deleteFeedback(id, options) {
+  return rpcCall('reelpin_admin_delete_feedback', { p_id: id }, options);
+}
+
 module.exports = {
   RPC_TIMEOUT_MS,
   rpcCall,
@@ -155,4 +176,7 @@ module.exports = {
   deleteUser,
   updatePin,
   deletePin,
+  feedback,
+  updateFeedbackStatus,
+  deleteFeedback,
 };
