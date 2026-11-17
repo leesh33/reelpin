@@ -79,6 +79,15 @@ export default function PinDetailSheet({
     ? String(opening.sub || '')
     : todaySummary(pin.hours);
   const memoDirty = memoDraft !== savedMemo;
+  // v2.30.0 — 상단의 작은 [카카오]·[네이버] 배지가 곧 외부 지도 링크입니다.
+  //   영업시간 확인 여부와 상관없이 **항상 두 배지가 보이고 눌립니다** (예전 하단 보조 칩을 위로 올림).
+  //   카카오·네이버 외의 출처(구글·오프라인)는 뒤에 작은 회색 배지로만 덧붙입니다.
+  const otherProviders = (Array.isArray(pin.providers) && pin.providers.length
+    ? pin.providers
+    : pin.provider
+    ? [pin.provider]
+    : []
+  ).filter((id) => id !== 'kakao' && id !== 'naver');
   const visitedAtLabel = (() => {
     if (!visited || !pin.visitedAt) return '';
     const date = new Date(pin.visitedAt);
@@ -247,8 +256,44 @@ export default function PinDetailSheet({
           )}
         </View>
 
-        {/* 어느 지도에서 확인된 장소인지 — 두 곳 이상이면 배지가 나란히 붙습니다 */}
-        <ProviderBadges item={pin} size="sm" style={styles.badgeRow} />
+        {/* v2.30.0 — 상훈 님 요청: 상단의 작은 [카카오]·[네이버] 배지를 그대로 눌러
+            카카오맵·네이버지도로 나갈 수 있게 했습니다. (예전 하단 `네이버지도 / 카카오맵` 칩은 삭제)
+            · 영업시간이 확인되지 않은 매장(⚪ 영업시간 미확인)에서도 두 배지는 늘 보입니다.
+            · 브랜드 색은 그대로 두되 글자 9px · 아이콘 9px 로 작게 유지해, 아래 주 동작(🗺️ 지도에서 보기)
+              보다 눈에 덜 띄게 했습니다. 옆의 ↗ 는 "앱 밖으로 나간다"는 표시입니다. */}
+        <View style={styles.mapBadgeRow} testID="pin-map-badges">
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapBadge,
+              { backgroundColor: colors.kakao },
+              pressed && styles.mapBadgePressed,
+            ]}
+            onPress={() => handleMap('kakao')}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="카카오맵 열기"
+            testID="pin-open-kakao"
+          >
+            <Text style={[styles.mapBadgeText, { color: colors.kakaoText }]}>카카오</Text>
+            <Ionicons name="open-outline" size={9} color={colors.kakaoText} />
+          </Pressable>
+          <Pressable
+            style={({ pressed }) => [
+              styles.mapBadge,
+              { backgroundColor: colors.naver },
+              pressed && styles.mapBadgePressed,
+            ]}
+            onPress={() => handleMap('naver')}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="네이버지도 열기"
+            testID="pin-open-naver"
+          >
+            <Text style={[styles.mapBadgeText, { color: colors.naverText }]}>네이버</Text>
+            <Ionicons name="open-outline" size={9} color={colors.naverText} />
+          </Pressable>
+          {otherProviders.length > 0 && <ProviderBadges providers={otherProviders} size="sm" />}
+        </View>
 
         {/* v2.10 — ✅ 가봤어요: 탭 한 번으로 방문 완료 체크/해제
             v2.19.1 — 상훈 님 요청 "장소 상세 화면은 ‘가봤어요’ 체크로 변경 (지금과 반대로)"
@@ -429,7 +474,7 @@ export default function PinDetailSheet({
         </Pressable>
 
         {/* v2.25.0 — 🗺️ 지도에서 보기: 앱 안에서 이 장소로 지도를 옮깁니다.
-            (아래 네이버·카카오 버튼은 지도 **앱**을 밖에서 여는 것이라 역할이 다릅니다) */}
+            (위쪽의 작은 [카카오]·[네이버] 배지는 지도 **앱**을 밖에서 여는 것이라 역할이 다릅니다) */}
         <Pressable
           style={styles.showOnMapBtn}
           onPress={handleShowOnMap}
@@ -447,39 +492,9 @@ export default function PinDetailSheet({
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.65)" />
         </Pressable>
 
-        {/* v2.29.0 — 외부 지도 앱으로 **나가는** 동작은 조용한 보조 칩으로 낮춥니다.
-            예전엔 초록(#03C75A)·노랑(#FEE500) 꽉 찬 큰 버튼이라, 앱 안에서 지도를 옮기는
-            주 동작(🗺️ 지도에서 보기)보다 눈에 띄어 "나가기"를 권하는 것처럼 보였습니다.
-            지금은 회색 테두리 칩 + 작은 브랜드 점(N·K) 하나만 남겨, 주 동작은 하나로 둡니다. */}
-        <View style={styles.exitRow}>
-          <Pressable
-            style={({ pressed }) => [styles.exitChip, pressed && styles.exitChipPressed]}
-            onPress={() => handleMap('naver')}
-            accessibilityRole="button"
-            accessibilityLabel="네이버지도 열기"
-            testID="pin-open-naver"
-          >
-            <View style={[styles.exitDot, { backgroundColor: colors.naver }]}>
-              <Text style={[styles.exitDotText, { color: colors.naverText }]}>N</Text>
-            </View>
-            <Text style={styles.exitChipText}>네이버지도</Text>
-            <Ionicons name="open-outline" size={10} color={colors.textMuted} />
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.exitChip, pressed && styles.exitChipPressed]}
-            onPress={() => handleMap('kakao')}
-            accessibilityRole="button"
-            accessibilityLabel="카카오맵 열기"
-            testID="pin-open-kakao"
-          >
-            <View style={[styles.exitDot, { backgroundColor: colors.kakao }]}>
-              <Text style={[styles.exitDotText, { color: colors.kakaoText }]}>K</Text>
-            </View>
-            <Text style={styles.exitChipText}>카카오맵</Text>
-            <Ionicons name="open-outline" size={10} color={colors.textMuted} />
-          </Pressable>
-        </View>
-
+        {/* v2.30.0 — 하단 보조 칩(`네이버지도 / 카카오맵`)은 **완전히 삭제**했습니다.
+            외부 지도로 나가는 길은 시트 맨 위의 작은 [카카오]·[네이버] 배지 하나뿐이고,
+            바닥에는 주 동작 `🗺️ 지도에서 보기` 와 `핀 삭제` 만 남습니다. */}
         {!readOnly && (
           <Pressable style={styles.deleteBtn} onPress={() => onDelete(pin.id)} hitSlop={8}>
             <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
@@ -641,8 +656,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  badgeRow: {
+  // v2.30.0 — 상단 출처 겸 외부 지도 배지 (카카오 · 네이버)
+  mapBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
     marginTop: 8,
+  },
+  mapBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 5,
+  },
+  mapBadgePressed: {
+    opacity: 0.62,
+  },
+  mapBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: -0.2,
   },
   // v2.20 — 영업 상태 줄 (배지 + 오늘 영업시간 요약)
   openRow: {
@@ -997,46 +1033,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.charcoalSub,
     marginTop: 1,
-  },
-  // v2.29.0 — 보조(외부 지도 앱) 칩: 주 버튼과 경쟁하지 않는 회색 계열 · 높이 32
-  exitRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
-  },
-  exitChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    height: 32,
-    paddingHorizontal: 9,
-    borderRadius: radius.pill,
-    backgroundColor: '#F3F4F6',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-  },
-  exitChipPressed: {
-    backgroundColor: '#E5E7EB',
-  },
-  exitDot: {
-    width: 15,
-    height: 15,
-    borderRadius: radius.pill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  exitDotText: {
-    fontSize: 9,
-    fontWeight: '800',
-    lineHeight: 11,
-  },
-  exitChipText: {
-    fontSize: 11.5,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    color: colors.textSub,
   },
   deleteBtn: {
     marginTop: 8,
