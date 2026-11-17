@@ -34,6 +34,13 @@ import { Platform } from 'react-native';
 import { extractNaverPlaceId, isShortLinkUrl, naverPlaceDetailUrl } from '../utils/links';
 // v2.20 — 저장 화면 `한줄 메모` 초안 (AI·설명글 키워드, 확인된 값만)
 import { memoDraftFromText, memoDraftOfParts, mergeMemoDrafts } from '../utils/memoDraft';
+// v2.26 — 사진으로 찾기: 이미 허용된 브라우저 위치만 조용히 (권한 팝업 없이)
+import {
+  geolocationPermissionState,
+  readLocationGrantedFlag,
+  requestCurrentPosition,
+  shouldAutoLocate,
+} from './location';
 
 export const PLATFORMS = {
   instagram: { label: '인스타 릴스', host: 'instagram.com' },
@@ -695,8 +702,141 @@ export async function fetchGeminiAnalysis(parsed, meta, options = {}) {
   };
 }
 
-/** Gemini 가 찾은 가게로 지도에 **다시** 물어볼 검색어 — 지역+상호 → 상호 → 나머지 가게 순서 */
-export function geminiQueryList(analysis, limit = 3) {
+// ─────────────────────────────────────────────────────────────
+// v2.26 · 지역어 검증 — 사진/영상에서 읽은 `영등포로36길` 같은 도로명·세부 지명
+// ─────────────────────────────────────────────────────────────
+//  문제: 사진에서 `영등포로36길` + `한우국밥` 을 읽었을 때 `영등포로36길 한우국밥` 으로 지도에 물으면
+//        결과가 0~엉뚱한 곳이라, 지역어를 무시한 **전국 결과**(경주 고유한우국밥 · 평택 장수본가해장국 ·
+//        일산 참숯한우천국)가 그대로 후보 1~3위로 떴습니다.
+//  해결: ① 도로명·세부 지명에서 **핵심 구·동**(`영등포로36길` → `영등포`)을 뽑아 재검색하고,
+//        ② 후보 주소가 그 지역과 **전혀 맞지 않으면 걸러냅니다**. (지역 안에서 못 찾으면 타지역 결과를
+//        보여 주지 않고, 사진에서 읽은 상호를 좌표 없는 후보로 남깁니다)
+
+/** 시·도(넓은 지역) — 이 낱말만으로는 후보를 거르지 않습니다. (서울 매장을 경기에서 찾는 경우) */
+const BROAD_AREA_WORDS = [
+  '서울', '서울시', '서울특별시', '부산', '부산시', '대구', '대구시', '인천', '인천시',
+  '광주', '대전', '울산', '세종', '경기', '경기도', '강원', '충북', '충남', '전북', '전남',
+  '경북', '경남', '제주', '제주도', '전국', '한국',
+];
+
+/** 지역어를 비교용으로 정리 — 공백·가운데점 제거 */
+function normalizeAreaText(value) {
+  return String(value == null ? '' : value)
+    .replace(/\s+/g, '')
+    .replace(/[·,]/g, '')
+    .trim();
+}
+
+/**
+ * 사진·영상에서 읽은 지역어 → 주소 대조에 쓸 **핵심 지역어**.
+ *   · `영등포로36길` → `영등포`   (도로명 + 번길)
+ *   · `영등포로`     → `영등포`   · `강남대로` → `강남`
+ *   · `성수동`       → `성수동`   · `성수동2가` → `성수동`
+ *   · `서울 영등포구 영등포로36길` → `영등포`
+ *   · `강남역`       → `강남`
+ *   · `제주 연동`    → `연동`
+ * @param {string} area
+ * @returns {string} 핵심 지역어 (없으면 '')
+ */
+export function coreAreaOf(area) {
+  const text = String(area == null ? '' : area).replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const tokens = text.split(' ').filter(Boolean);
+
+  // 1) 행정동·구·군 — 가장 정확한 단서입니다. ('영등포동4가' → '영등포동', '영등포구' → '영등포구')
+  for (const token of tokens) {
+    const m = /^([가-힣]{1,6}(?:동|읍|면|구|군))\d*(?:가)?$/.exec(token);
+    if (!m) continue;
+    if (AREA_SUFFIX_BLOCK.indexOf(token) >= 0 || AREA_SUFFIX_BLOCK.indexOf(m[1]) >= 0) continue;
+    if (m[1].length < 2) continue;
+    return m[1];
+  }
+
+  // 2) 도로명 — '영등포로36길' · '선유로17길' · '테헤란로' · '강남대로'
+  for (const token of tokens) {
+    const m = /^([가-힣]{2,6}?)(?:대로|로|길)(?:\d+(?:번)?(?:길|로))?$/.exec(token);
+    if (!m || m[1].length < 2) continue;
+    return m[1];
+  }
+
+  // 3) 역명 — '강남역' → '강남'
+  for (const token of tokens) {
+    const m = /^([가-힣]{2,6})역$/.exec(token);
+    if (!m || m[1].length < 2) continue;
+    return m[1];
+  }
+
+  // 4) 그 밖(해외 지명 등)은 첫 낱말 — 거르지 않는 판단에 씁니다.
+  return tokens[0] || '';
+}
+
+/**
+ * 지역어 → 주소 대조에 쓸 낱말 목록 (핵심 지역어 → 원문 순서, 2글자 이상만)
+ * @param {string} area
+ * @returns {string[]}
+ */
+export function areaKeywordsOf(area) {
+  const out = [];
+  const push = (value) => {
+    const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+    if (text.length < 2) return;
+    if (out.indexOf(text) < 0) out.push(text);
+  };
+  push(coreAreaOf(area));
+  push(area);
+  return out;
+}
+
+/**
+ * 후보가 이 지역 안에 있는가.
+ *   · `true`  — 주소·동네에 지역어가 있음
+ *   · `false` — 다른 지역 (경주·평택처럼 전혀 다른 곳)
+ *   · `null`  — 판단하지 않음 (지역어가 넓은 시·도이거나, 후보에 주소가 없을 때)
+ * @param {object} candidate
+ * @param {string} area 사진·영상에서 읽은 지역어
+ * @returns {boolean|null}
+ */
+export function candidateInArea(candidate, area) {
+  const keywords = areaKeywordsOf(area);
+  const core = keywords[0] || '';
+  if (!core) return null;
+  // '서울'처럼 넓은 단서로는 거르지 않습니다 — 다른 시·도 매장을 일부러 찾는 경우가 있습니다.
+  if (BROAD_AREA_WORDS.indexOf(normalizeAreaText(core)) >= 0) return null;
+  const hay = normalizeAreaText(
+    [candidate && candidate.area, candidate && candidate.address, candidate && candidate.roadAddress]
+      .filter(Boolean)
+      .join(' ')
+  );
+  if (!hay) return null; // 주소를 못 받았으면(해외·좌표만) 판단하지 않습니다
+  for (const keyword of keywords) {
+    const needle = normalizeAreaText(keyword);
+    if (needle.length >= 2 && hay.indexOf(needle) >= 0) return true;
+  }
+  return false;
+}
+
+/**
+ * 후보 목록을 지역 기준으로 나눕니다. (v2.26)
+ * @param {Array<object>} candidates
+ * @param {string} area
+ * @returns {{inArea:Array<object>, unknown:Array<object>, outArea:Array<object>}}
+ */
+export function splitCandidatesByArea(candidates, area) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const inArea = [];
+  const unknown = [];
+  const outArea = [];
+  list.forEach((candidate) => {
+    const verdict = candidateInArea(candidate, area);
+    if (verdict === true) inArea.push(candidate);
+    else if (verdict === false) outArea.push(candidate);
+    else unknown.push(candidate);
+  });
+  return { inArea, unknown, outArea };
+}
+
+/** Gemini 가 찾은 가게로 지도에 **다시** 물어볼 검색어 — 지역+상호 → 핵심지역+상호 → 상호 → 나머지 가게 순서 */
+export function geminiQueryList(analysis, limit = 4) {
   if (!analysis || !analysis.storeName) return [];
   const out = [];
   const push = (value) => {
@@ -704,7 +844,14 @@ export function geminiQueryList(analysis, limit = 3) {
     if (text && out.indexOf(text) < 0) out.push(text);
   };
   const area = String(analysis.area || '').trim();
+  // v2.26 — `영등포로36길` 같은 도로명은 지도 키워드 검색에서 0건이 되기 쉽습니다.
+  //          핵심 구·동(`영등포`)으로 한 번 더 물어 같은 동네 가게를 잡습니다.
+  //          (`제주 연동`처럼 이미 동 단위가 들어 있으면 굳이 다시 붙이지 않습니다)
+  const core = coreAreaOf(area);
   push([area, analysis.storeName].filter(Boolean).join(' '));
+  if (core && core !== area && area.split(' ').indexOf(core) < 0) {
+    push([core, analysis.storeName].filter(Boolean).join(' '));
+  }
   push(analysis.storeName);
   for (const place of analysis.places || []) {
     push([area || (place && place.area) || '', place && place.name].filter(Boolean).join(' '));
@@ -786,6 +933,208 @@ export function imageDataUrlOf(base64, mimeType = 'image/jpeg') {
   const data = String(base64 == null ? '' : base64).replace(/\s+/g, '');
   if (!data) return '';
   return 'data:' + (mimeType || 'image/jpeg') + ';base64,' + data;
+}
+
+// ─────────────────────────────────────────────────────────────
+// v2.26 · 사진 속 위치(EXIF GPS) · 이미 허용된 브라우저 위치
+// ─────────────────────────────────────────────────────────────
+//  사진으로 찾을 때 "같은 동네/인근 가게"가 1순위로 올라오게 하려고 위치 단서를 **보조로만** 씁니다.
+//   · 사진을 찍은 그 자리(EXIF GPS)가 가장 정확합니다 — 화면 캡처·편집본에는 없습니다.
+//   · 브라우저 위치는 **이미 허용된 경우에만** 읽습니다. (권한 팝업을 새로 띄우지 않음)
+//   · 위치는 검색 순위에만 쓰고 화면에 좌표를 보여 주지 않습니다.
+
+/** ArrayBuffer/Uint8Array/Buffer → Uint8Array (아니면 null) */
+function toUint8Array(input) {
+  try {
+    if (!input) return null;
+    if (typeof Uint8Array !== 'undefined' && input instanceof Uint8Array) return input;
+    if (typeof ArrayBuffer !== 'undefined' && input instanceof ArrayBuffer) return new Uint8Array(input);
+    if (input && input.buffer && typeof input.byteLength === 'number') {
+      return new Uint8Array(input.buffer, input.byteOffset || 0, input.byteLength);
+    }
+  } catch (e) {
+    /* 아래 null */
+  }
+  return null;
+}
+
+/** EXIF 태그 값의 바이트 크기 (타입별) */
+const EXIF_TYPE_SIZES = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+
+/** EXIF IFD 항목 → 값 위치 */
+function exifEntryValue(dv, tiffStart, entryOffset, littleEndian) {
+  const type = dv.getUint16(entryOffset + 2, littleEndian);
+  const count = dv.getUint32(entryOffset + 4, littleEndian);
+  const size = (EXIF_TYPE_SIZES[type] || 1) * count;
+  const offset =
+    size <= 4 ? entryOffset + 8 : tiffStart + dv.getUint32(entryOffset + 8, littleEndian);
+  if (offset < 0 || offset + Math.max(0, size) > dv.byteLength) return null;
+  return { type, count, size, offset };
+}
+
+/** RATIONAL 1개 → 숫자 */
+function exifRational(dv, offset, littleEndian) {
+  const num = dv.getUint32(offset, littleEndian);
+  const den = dv.getUint32(offset + 4, littleEndian);
+  if (!den) return 0;
+  return num / den;
+}
+
+/** GPS 도·분·초(RATIONAL 3개) → 도(십진수) */
+function exifDms(dv, value, littleEndian) {
+  if (!value || value.type !== 5 || value.count < 3) return null;
+  const d = exifRational(dv, value.offset, littleEndian);
+  const m = exifRational(dv, value.offset + 8, littleEndian);
+  const s = exifRational(dv, value.offset + 16, littleEndian);
+  if (![d, m, s].every(Number.isFinite)) return null;
+  return d + m / 60 + s / 3600;
+}
+
+/** ASCII 값 → 문자열 */
+function exifAscii(dv, value) {
+  if (!value || value.type !== 2 || !value.count) return '';
+  let text = '';
+  for (let i = 0; i < value.count; i += 1) {
+    const code = dv.getUint8(value.offset + i);
+    if (!code) break;
+    text += String.fromCharCode(code);
+  }
+  return text.trim();
+}
+
+/** TIFF 헤더부터 읽어 GPS IFD 의 위경도를 뽑습니다. */
+function parseExifGpsFromTiff(dv, tiffStart) {
+  try {
+    if (tiffStart < 0 || tiffStart + 8 > dv.byteLength) return null;
+    const order = dv.getUint16(tiffStart, false);
+    const littleEndian = order === 0x4949 ? true : order === 0x4d4d ? false : null;
+    if (littleEndian === null) return null;
+    if (dv.getUint16(tiffStart + 2, littleEndian) !== 42) return null;
+
+    const ifd0 = tiffStart + dv.getUint32(tiffStart + 4, littleEndian);
+    if (ifd0 + 2 > dv.byteLength) return null;
+    const ifd0Count = dv.getUint16(ifd0, littleEndian);
+    let gpsIfd = 0;
+    for (let i = 0; i < ifd0Count; i += 1) {
+      const entry = ifd0 + 2 + i * 12;
+      if (entry + 12 > dv.byteLength) break;
+      if (dv.getUint16(entry, littleEndian) === 0x8825) {
+        gpsIfd = tiffStart + dv.getUint32(entry + 8, littleEndian);
+        break;
+      }
+    }
+    if (!gpsIfd || gpsIfd + 2 > dv.byteLength) return null;
+
+    const gpsCount = dv.getUint16(gpsIfd, littleEndian);
+    let lat = null;
+    let lng = null;
+    let latRef = '';
+    let lngRef = '';
+    for (let i = 0; i < gpsCount; i += 1) {
+      const entry = gpsIfd + 2 + i * 12;
+      if (entry + 12 > dv.byteLength) break;
+      const tag = dv.getUint16(entry, littleEndian);
+      const value = exifEntryValue(dv, tiffStart, entry, littleEndian);
+      if (!value) continue;
+      if (tag === 1) latRef = exifAscii(dv, value);
+      else if (tag === 2) lat = exifDms(dv, value, littleEndian);
+      else if (tag === 3) lngRef = exifAscii(dv, value);
+      else if (tag === 4) lng = exifDms(dv, value, littleEndian);
+    }
+    if (lat === null || lng === null) return null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (/^S$/i.test(latRef)) lat = -lat;
+    if (/^W$/i.test(lngRef)) lng = -lng;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+    if (lat === 0 && lng === 0) return null;
+    return { lat, lng };
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * JPEG 사진의 EXIF GPS → `{ lat, lng }` (없으면 null — 예외 없이 조용히)
+ *   · 휴대폰 카메라로 찍은 사진은 대개 GPS 가 들어 있어 "찍은 그 자리"를 알 수 있습니다.
+ *   · 화면 캡처·SNS 저장본·편집본은 대개 없습니다.
+ * @param {ArrayBuffer|Uint8Array} input
+ * @returns {{lat:number, lng:number}|null}
+ */
+export function readExifGps(input) {
+  const bytes = toUint8Array(input);
+  if (!bytes || bytes.byteLength < 24) return null;
+  let dv = null;
+  try {
+    dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  } catch (e) {
+    return null;
+  }
+  try {
+    if (bytes[0] !== 0xff || bytes[1] !== 0xd8) return null; // JPEG SOI 아님
+    let offset = 2;
+    while (offset + 4 <= dv.byteLength) {
+      if (bytes[offset] !== 0xff) {
+        offset += 1;
+        continue;
+      }
+      const marker = bytes[offset + 1];
+      // 길이 없는 마커
+      if (marker === 0xff) {
+        offset += 1;
+        continue;
+      }
+      if (marker === 0xd8 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+        offset += 2;
+        continue;
+      }
+      if (marker === 0xda || marker === 0xd9) break; // 여기서부터 이미지 데이터
+      const size = (bytes[offset + 2] << 8) | bytes[offset + 3];
+      if (size < 2) break;
+      const start = offset + 4;
+      const end = offset + 2 + size;
+      if (end > dv.byteLength) break;
+      // APP1 + 'Exif\0\0'
+      if (
+        marker === 0xe1 &&
+        bytes[start] === 0x45 &&
+        bytes[start + 1] === 0x78 &&
+        bytes[start + 2] === 0x69 &&
+        bytes[start + 3] === 0x66
+      ) {
+        const gps = parseExifGpsFromTiff(dv, start + 6);
+        if (gps) return gps;
+      }
+      offset = end;
+    }
+  } catch (e) {
+    return null;
+  }
+  return null;
+}
+
+/** 위치 권한을 새로 묻지 않고, **이미 허용된** 브라우저 위치만 조용히 읽습니다. */
+export async function softCurrentPosition(options = {}) {
+  try {
+    if (typeof navigator === 'undefined' || !navigator || !navigator.geolocation) return null;
+    const permission = await geolocationPermissionState();
+    // 'granted' = 이미 허용 · 'denied' = 절대 시도 안 함 · 그 밖은 이 사이트에서 허용한 적이 있을 때만
+    if (!shouldAutoLocate({ permission, grantedFlag: readLocationGrantedFlag() })) return null;
+    const limitMs = Math.max(500, Number(options.timeoutMs) || 3000);
+    const position = await Promise.race([
+      requestCurrentPosition({
+        enableHighAccuracy: false,
+        timeout: limitMs,
+        maximumAge: 10 * 60 * 1000,
+      }).catch(() => null),
+      new Promise((resolve) => setTimeout(() => resolve(null), limitMs + 200)),
+    ]);
+    if (!position || !Number.isFinite(Number(position.lat)) || !Number.isFinite(Number(position.lng))) {
+      return null;
+    }
+    return { lat: Number(position.lat), lng: Number(position.lng), source: 'browser' };
+  } catch (e) {
+    return null;
+  }
 }
 
 /** base64 문자열의 원본 바이트 수(대략) */
@@ -948,6 +1297,19 @@ export function pickImageFile(options = {}) {
   });
 }
 
+/** File/Blob 원본에서 EXIF GPS 만 읽습니다. (없거나 실패하면 null — 사진 처리는 그대로) */
+async function readImageGps(file) {
+  try {
+    if (!file || typeof file.arrayBuffer !== 'function') return null;
+    // EXIF(APP1)는 파일 맨 앞에 있습니다 — 큰 사진은 앞 2MB 만 읽습니다.
+    const slice = typeof file.slice === 'function' ? file.slice(0, 2 * 1024 * 1024) : file;
+    const buffer = await slice.arrayBuffer();
+    return readExifGps(buffer);
+  } catch (e) {
+    return null;
+  }
+}
+
 /** 업로드 사진을 분석 가능한 `{ base64, mimeType, dataUrl }` 로 준비합니다. */
 async function prepareImageInput(input, options = {}) {
   const tooLarge = {
@@ -989,14 +1351,16 @@ async function prepareImageInput(input, options = {}) {
   if (isBlobLike(input)) {
     // 아주 큰 원본은 canvas 가 실패했을 때를 대비해 미리 걸러 둡니다(30MB 넘는 사진).
     if (Number(input.size) > 30 * 1024 * 1024) return tooLarge;
+    // v2.26 — canvas 축소본에는 EXIF 가 사라집니다 → **원본**에서 촬영 위치(GPS)를 먼저 읽어 둡니다.
+    const gps = await readImageGps(input);
     const resized = await resizeImageForUpload(input, {
       maxEdge: options.maxEdge,
       quality: options.quality,
     });
-    if (resized.ok) return resized;
+    if (resized.ok) return { ...resized, gps };
     const dataUrl = await readFileAsDataUrl(input);
     const parsed = parseImageDataUri(dataUrl);
-    if (parsed) return wrap(parsed.base64, parsed.mimeType || input.type || 'image/jpeg');
+    if (parsed) return wrap(parsed.base64, parsed.mimeType || input.type || 'image/jpeg', { gps });
     return {
       ok: false,
       reason: resized.reason || 'decode-failed',
@@ -1142,6 +1506,11 @@ export function imagePlaceItems(analysis, max = 6) {
     };
     // 사진 속 이름이 '성수동 어니언' 처럼 동네를 이미 품고 있으면 두 번 붙이지 않습니다.
     if (area && name.indexOf(area) < 0) push(area + ' ' + name);
+    // v2.26 — 도로명(`영등포로36길`)은 키워드 검색에서 0건이 되기 쉬워 핵심 구·동으로 한 번 더
+    const core = coreAreaOf(area);
+    if (core && core !== area && area.split(' ').indexOf(core) < 0 && name.indexOf(core) < 0) {
+      push(core + ' ' + name);
+    }
     push(name);
     if (!queries.length) return;
     items.push({
@@ -1173,6 +1542,12 @@ export async function extractFromImage(input, options = {}) {
   const prepared = await prepareImageInput(input, options);
   if (!prepared.ok) return { ok: false, reason: prepared.reason, message: prepared.message };
   const thumbnail = prepared.dataUrl;
+  // v2.26 — "같은 동네/인근 가게"를 1순위로 올리기 위한 **위치 단서**.
+  //   · 사진을 찍은 자리(EXIF GPS)가 가장 정확 → 없으면 이미 허용된 브라우저 위치(권한 팝업 없이).
+  //   · 위치를 못 얻어도 아래 흐름은 그대로 동작합니다(단지 동네 우선순위가 빠질 뿐).
+  const locationPromise = prepared.gps
+    ? Promise.resolve({ lat: prepared.gps.lat, lng: prepared.gps.lng, source: 'exif' })
+    : softCurrentPosition({ timeoutMs: options.locationTimeoutMs });
   const stage = (n) => {
     if (typeof options.onStage === 'function') {
       try {
@@ -1199,6 +1574,8 @@ export async function extractFromImage(input, options = {}) {
   }
   const analysis = analyzed.analysis;
   stage(2); // '지도 좌표 매칭'
+  const near = await locationPromise.catch(() => null);
+  const area = String(analysis.area || '').trim();
 
   const baseInfo = {
     ok: true,
@@ -1212,9 +1589,11 @@ export async function extractFromImage(input, options = {}) {
     sourceThumbnail: thumbnail,
     titleStatus: 'photo',
     titleNotice: '',
-    suggestedQuery: geminiQueryList(analysis, 3)[0] || analysis.storeName,
+    suggestedQuery: geminiQueryList(analysis, 4)[0] || analysis.storeName,
     aiNote: imageNoteOf(analysis),
     aiAnalysis: analysis,
+    // v2.26 — 위치 단서 출처(디버깅·검증용) · 좌표 자체는 화면에 보이지 않습니다.
+    locationSource: near && near.source ? near.source : '',
     // v2.20 — 사진에서 읽은 추천 메뉴·주차·아기/웨이팅 → 한줄 메모 초안 (없으면 빈 문자열)
     memoDraft: mergeMemoDrafts(
       memoDraftOfParts(analysis.memo || {}),
@@ -1225,7 +1604,7 @@ export async function extractFromImage(input, options = {}) {
   // ── 목록형 캡처(가게 2곳 이상) → 각 가게를 따로 지도 조회 ──
   const placeItems = imagePlaceItems(analysis);
   if (placeItems.length >= 2) {
-    const multi = await searchMultiPlaces(placeItems, { limit: 3, providers: options.providers });
+    const multi = await searchMultiPlaces(placeItems, { limit: 3, providers: options.providers, near });
     if (multi.candidates.length) {
       const candidates = multi.candidates.map((c) => {
         const place = analysis.places[(Number(c.multiIndex) || 1) - 1] || null;
@@ -1255,22 +1634,32 @@ export async function extractFromImage(input, options = {}) {
     }
   }
 
-  // ── 한 곳(또는 목록을 못 찾음) → 지역+상호 → 상호 순서로 조회 ──
-  const queryList = geminiQueryList(analysis, 3);
+  // ── 한 곳(또는 목록을 못 찾음) → 지역+상호 → 핵심지역+상호 → 상호 순서로 조회 ──
+  //   v2.26 — 사진에서 읽은 지역(`영등포로36길`)과 **주소가 맞지 않는 타지역 결과는 빼고** 찾습니다.
+  const queryList = geminiQueryList(analysis, 4);
   let chain = { candidates: [], providersTried: [], providersUsed: [], failures: [], reason: 'empty-query' };
   const attempts = [];
   let usedQuery = '';
   let naverBackfill = { queries: [], matched: 0 };
+  let areaFilter = null;
   for (const q of queryList) {
-    const res = await searchPlaceProviders({ query: q, limit: 3, providers: options.providers });
+    const res = await searchPlaceProviders({
+      query: q,
+      limit: 3,
+      providers: options.providers,
+      area,
+      near,
+    });
     attempts.push({
       query: q,
       resultCount: (res.candidates || []).length,
       providersUsed: res.providersUsed || [],
       failures: res.failures || [],
       naverBackfill: res.naverBackfill && res.naverBackfill.matched ? res.naverBackfill : undefined,
+      areaDropped: res.areaFilter ? res.areaFilter.droppedCount : 0,
       reason: res.reason,
     });
+    if (res.areaFilter && res.areaFilter.droppedCount > 0) areaFilter = res.areaFilter;
     if (res.naverBackfill && res.naverBackfill.matched) {
       naverBackfill = {
         queries: naverBackfill.queries.concat(res.naverBackfill.queries),
@@ -1290,12 +1679,48 @@ export async function extractFromImage(input, options = {}) {
     }
   }
 
+  // ── 지역 안에서 못 찾았고, 위치를 알 때 — 상호만으로 **가까운 순** 한 번 더 (v2.26) ──
+  //   전국 결과를 띄우는 대신, 사진을 찍은 자리 근처(5km)에서 같은 이름을 다시 찾습니다.
+  let nearbyFallback = false;
+  if (!chain.candidates.length && near && analysis.storeName) {
+    const nearby = await searchPlaceProviders({
+      query: analysis.storeName,
+      limit: 5,
+      max: 5,
+      providers: options.providers,
+      near,
+      distanceFirst: true,
+    });
+    const close = (nearby.candidates || []).filter(
+      (c) => Number.isFinite(Number(c.distanceM)) && Number(c.distanceM) <= NEARBY_FALLBACK_RADIUS_M
+    );
+    if (close.length) {
+      nearbyFallback = true;
+      usedQuery = analysis.storeName;
+      chain = {
+        candidates: close,
+        providersTried: Array.from(new Set([...(chain.providersTried || []), ...(nearby.providersTried || [])])),
+        providersUsed: Array.from(new Set([...(chain.providersUsed || []), ...(nearby.providersUsed || [])])),
+        failures: [...(chain.failures || []), ...(nearby.failures || [])],
+        reason: nearby.reason,
+      };
+    }
+  }
+
+  // 화면 한 줄 근거 — 지역으로 걸러낸 게 있으면 그 사실을 밝힙니다(엉뚱한 가게가 왜 안 보이는지).
+  const areaNote = areaFilter && areaFilter.droppedCount
+    ? ' · 주소가 ‘' + (areaFilter.coreArea || areaFilter.area) + '’와 다른 ' + areaFilter.droppedCount + '곳은 뺐어요'
+    : '';
+  const nearNote = nearbyFallback ? ' · 찍은 자리 가까운 순서로 찾았어요' : '';
+
   const base = {
     ...baseInfo,
     query: usedQuery || queryList[0] || analysis.storeName,
     queryList,
     attempts,
     naverBackfill,
+    areaFilter,
+    aiNote: baseInfo.aiNote + areaNote + nearNote,
   };
   const menuTags = menuTagsOfGemini(analysis);
 
@@ -2558,6 +2983,9 @@ export async function searchMultiPlaces(items, options = {}) {
           query: q,
           limit,
           providers: options.providers,
+          // v2.26 — 목록 줄의 동네가 있으면 그 동네와 주소가 맞는 결과만 (타지역 동명이인 방지)
+          area: item.area || undefined,
+          near: options.near,
           // 여러 가게를 동시에 찾을 때는 후보마다 1회까지만 보강합니다(요청 폭주 방지).
           backfill: 1,
         });
@@ -2984,6 +3412,11 @@ export const MAX_DIRECT_CANDIDATES = 15;
 export const KAKAO_SIZE_MAX = 15;
 /** 네이버 지역검색 display 상한 (HUB·legacy 두 규격 모두 5) */
 export const NAVER_DISPLAY_MAX = 5;
+/**
+ * v2.26 — 사진으로 찾기: 사진에서 읽은 상호로 **가까운 순** 재조회할 때 볼 반경(m).
+ *   · 지역 안에서 못 찾았을 때만 쓰고, 이 밖의 결과는 "전국 결과"로 보지 않고 버립니다.
+ */
+export const NEARBY_FALLBACK_RADIUS_M = 5000;
 
 function stripTags(s) {
   return String(s || '')
@@ -3313,6 +3746,9 @@ function mapKakaoDocuments(documents) {
   const docs = Array.isArray(documents) ? documents : [];
   return docs.map((d, i) => {
     const address = d.road_address_name || d.address_name || '';
+    // sort=distance 응답에만 거리(m)가 string 으로 옵니다. (accuracy 응답은 distance: "")
+    const rawDistance = String(d.distance == null ? '' : d.distance).trim();
+    const meters = rawDistance ? Number(rawDistance) : NaN;
     return {
       id: 'kakao-' + (d.id || i),
       name: d.place_name || '',
@@ -3323,6 +3759,8 @@ function mapKakaoDocuments(documents) {
       address,
       lat: Number(d.y),
       lng: Number(d.x),
+      // v2.26 — sort=distance 응답에는 카카오가 잰 거리(m)가 string 으로 들어 있습니다.
+      ...(Number.isFinite(meters) && meters >= 0 ? { distanceM: meters } : {}),
       phone: d.phone || '',
       placeUrl: toOpenableUrl(d.place_url),
       placeUrlLabel: placeUrlLabelOf(d.place_url),
@@ -3330,6 +3768,20 @@ function mapKakaoDocuments(documents) {
       manual: false,
     };
   });
+}
+
+/**
+ * `near`(사진을 찍은 자리) → 카카오 키워드 검색의 `x`(경도)·`y`(위도)·`radius` 인자.
+ *   · 좌표가 없거나 이상하면 null — 그러면 기존과 똑같이 `sort=accuracy` 로 부릅니다.
+ */
+function kakaoLocationParams(near) {
+  if (!near || typeof near !== 'object') return null;
+  const lat = Number(near.lat);
+  const lng = Number(near.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat === 0 && lng === 0) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { x: lng, y: lat, radius: NEARBY_FALLBACK_RADIUS_M };
 }
 
 /** 네이버 items[] → 앱 후보 (직접 호출·프록시 공통) */
@@ -3377,13 +3829,17 @@ export const kakaoLocalAdapter = {
    * 응답 documents[] = { place_name, category_name, category_group_code, phone,
    *                       address_name, road_address_name, x(경도), y(위도), place_url }
    * → 도로명주소·위경도·카테고리·카카오맵 Place URL을 그대로 후보로 옮깁니다.
+   *
+   * v2.26 — `near`(사진을 찍은 자리)가 있으면 `x`·`y`·`radius`·`sort=distance` 를 보내
+   *          같은 동네·인근 가게가 먼저 오게 합니다. (카카오 키워드 검색의 공식 인자)
    */
-  async search({ query, limit = 3 }) {
+  async search({ query, limit = 3, near } = {}) {
     const key = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY;
     if (!query) return [];
+    const hint = kakaoLocationParams(near);
     // 카카오 로컬(dapi.kakao.com)도 브라우저 CORS 를 열지 않습니다 → 웹은 프록시가 답합니다.
     if (isWebPlatform()) {
-      const proxied = await this.searchViaProxy({ query, limit });
+      const proxied = await this.searchViaProxy({ query, limit, near });
       if (proxied) return proxied; // [] (결과 없음) 과 null(실패) 을 구분합니다
       if (!key) return [];
     }
@@ -3394,7 +3850,9 @@ export const kakaoLocalAdapter = {
       encodeURIComponent(query) +
       '&size=' +
       clamp(Number(limit) || 3, 1, KAKAO_SIZE_MAX) +
-      '&sort=accuracy';
+      '&sort=' +
+      (hint ? 'distance' : 'accuracy') +
+      (hint ? '&x=' + hint.x + '&y=' + hint.y + '&radius=' + hint.radius : '');
     const res = await fetch(url, {
       method: 'GET',
       headers: { Authorization: 'KakaoAK ' + key },
@@ -3407,9 +3865,14 @@ export const kakaoLocalAdapter = {
    * 웹 전용: `/api/kakao-local?query=..&size=..` → 카카오 응답을 앱 후보로 옮깁니다.
    * @returns {Promise<Array<object>|null>} 실패는 null, 성공(결과 0개 포함)은 배열
    */
-  async searchViaProxy({ query, limit = 3 }) {
+  async searchViaProxy({ query, limit = 3, near } = {}) {
+    const hint = kakaoLocationParams(near);
     const json = await fetchProxyJson(
-      proxyPathOf('kakao', { query, size: clamp(Number(limit) || 3, 1, KAKAO_SIZE_MAX) })
+      proxyPathOf('kakao', {
+        query,
+        size: clamp(Number(limit) || 3, 1, KAKAO_SIZE_MAX),
+        ...(hint ? { x: hint.x, y: hint.y, radius: hint.radius, sort: 'distance' } : {}),
+      })
     );
     if (!json) return null;
     return mapKakaoDocuments(json.documents);
@@ -3618,11 +4081,13 @@ function nameMatchBonus(itemName, query) {
  * @param {Array<{provider:string, items:Array<object>}>} groups
  * @param {string} query
  * @param {number} [max] 합친 뒤 남길 최대 개수 (기본 MAX_MAP_RESULTS · 직접 검색은 15)
+ * @param {{lat:number,lng:number}|null} [near] 위치 단서 — 가까운 후보를 앞으로 (v2.26)
  */
-function mergeProviderResults(groups, query, max = MAX_MAP_RESULTS) {
+function mergeProviderResults(groups, query, max = MAX_MAP_RESULTS, near = null) {
   const latin = !/[가-힣]/.test(String(query || ''));
   const weights = latin ? PROVIDER_WEIGHT_LATIN : PROVIDER_WEIGHT_KO;
   const merged = [];
+  const origin = normalizeNear(near);
 
   for (const group of groups) {
     (group.items || []).forEach((item, index) => {
@@ -3638,6 +4103,7 @@ function mergeProviderResults(groups, query, max = MAX_MAP_RESULTS) {
         }
         if (!dup.phone && item.phone) dup.phone = item.phone;
         if (!dup.area && item.area) dup.area = item.area;
+        if (dup.distanceM == null && item.distanceM != null) dup.distanceM = item.distanceM;
         return;
       }
       const confidence = clamp(
@@ -3645,13 +4111,42 @@ function mergeProviderResults(groups, query, max = MAX_MAP_RESULTS) {
         0.3,
         0.99
       );
-      merged.push({ ...item, providers: [group.provider], confidence });
+      const entry = { ...item, providers: [group.provider], confidence };
+      // v2.26 — 위치를 알면 가까운 곳에 살짝 가중치를 줘 같은 동네가 먼저 오게 합니다.
+      //          (멀다고 빼지는 않습니다 — 지역 판단은 candidateInArea 가 따로 합니다)
+      if (origin && entry.distanceM == null) {
+        const meters = distanceMeters(origin, entry);
+        entry.distanceM = Number.isFinite(meters) ? Math.round(meters) : undefined;
+      }
+      entry.confidence = clamp(entry.confidence + proximityBonus(entry.distanceM), 0.3, 0.99);
+      merged.push(entry);
     });
   }
 
   merged.sort((a, b) => b.confidence - a.confidence);
   const cap = Math.max(1, Number(max) || MAX_MAP_RESULTS);
   return merged.slice(0, cap);
+}
+
+/** `near` 를 쓸 수 있는 좌표인지 확인 (없으면 null — 0,0 을 좌표로 오인하지 않게) */
+function normalizeNear(near) {
+  if (!near || typeof near !== 'object') return null;
+  const lat = Number(near.lat);
+  const lng = Number(near.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (lat === 0 && lng === 0) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+/** 거리(m) → 신뢰도 보정값 — 1km 이내 +0.06 · 3km +0.04 · 20km +0.02 · 그 밖 −0.04 */
+function proximityBonus(distanceM) {
+  const d = Number(distanceM);
+  if (!Number.isFinite(d)) return 0;
+  if (d <= 1000) return 0.06;
+  if (d <= 3000) return 0.04;
+  if (d <= 20000) return 0.02;
+  return -0.04;
 }
 
 /**
@@ -3661,12 +4156,17 @@ function mergeProviderResults(groups, query, max = MAX_MAP_RESULTS) {
  *   보강 조회합니다(v2.12). 이름+좌표 200m/주소가 모두 맞을 때만 `naver` 로 합칩니다.
  * - 키가 하나도 없으면 아무 요청도 보내지 않고 빈 결과를 돌려줍니다(→ 오프라인 추출기 폴백).
  *
- * @param {{query:string, limit?:number, providers?:string[], backfill?:number}} options
+ * @param {{query:string, limit?:number, providers?:string[], backfill?:number, max?:number,
+ *          area?:string, near?:{lat:number,lng:number}, distanceFirst?:boolean}} options
  *        `backfill` 은 v2.12 네이버 보강 조회 허용 건수(기본 4, 0이면 끔).
+ *        `area` 는 v2.26 지역 검증 — 사진·영상에서 읽은 지역어(예: `영등포로36길`).
+ *        `near` 는 위치 단서(사진을 찍은 자리) — 순위 가중치로만 쓰고, `distanceFirst` 면
+ *        카카오에 `sort=distance` 를 요청해 가까운 순으로 받아 옵니다.
  * @returns {Promise<{candidates:Array<object>, providersTried:string[], providersUsed:string[],
- *                    failures:Array<{provider:string,error:string}>, naverBackfill?:object, reason?:string}>}
+ *                    failures:Array<{provider:string,error:string}>, naverBackfill?:object,
+ *                    areaFilter?:object, reason?:string}>}
  */
-export async function searchPlaceProviders({ query, limit = 3, providers, backfill, max } = {}) {
+export async function searchPlaceProviders({ query, limit = 3, providers, backfill, max, area, near, distanceFirst } = {}) {
   const q = String(query || '').trim();
   const empty = { candidates: [], providersTried: [], providersUsed: [], failures: [] };
   if (!q) return { ...empty, reason: 'empty-query' };
@@ -3676,10 +4176,12 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
   );
   if (!active.length) return { ...empty, reason: 'no-key' };
 
+  // 카카오만 `sort=distance`(x·y)를 이해합니다 — 가까운 순으로 받아 오고 싶을 때만 넘깁니다.
+  const sortNear = distanceFirst ? normalizeNear(near) : null;
   const results = await Promise.all(
     active.map(async (p) => {
       try {
-        const items = await p.search({ query: q, limit });
+        const items = await p.search({ query: q, limit, near: sortNear });
         return { provider: p.id, ok: true, items: Array.isArray(items) ? items : [] };
       } catch (e) {
         return { provider: p.id, ok: false, items: [], error: String((e && e.message) || e) };
@@ -3688,7 +4190,31 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
   );
 
   const groups = results.filter((r) => r.items.length).map((r) => ({ provider: r.provider, items: r.items }));
-  const candidates = mergeProviderResults(groups, q, max);
+  let candidates = mergeProviderResults(groups, q, max, near);
+
+  // ── v2.26 · 지역 검증 — 사진에서 읽은 지역과 **주소가 전혀 다른 타지역 결과는 빼고** 찾습니다 ──
+  //   `영등포로36길 한우국밥` → 네이버가 경주·평택·고양의 다른 `한우국밥` 을 돌려주는 경우,
+  //   그 결과가 1위로 올라와 엉뚱한 가게가 저장됐습니다.
+  let areaFilter;
+  if (String(area || '').trim()) {
+    const split = splitCandidatesByArea(candidates, area);
+    areaFilter = {
+      area: String(area).trim(),
+      coreArea: coreAreaOf(area),
+      kept: split.inArea.length,
+      droppedCount: split.outArea.length,
+      dropped: split.outArea.slice(0, 5).map((c) => ({ name: c.name, address: c.address || '' })),
+    };
+    if (split.inArea.length) {
+      // 지역 안에서 확인된 후보 우선 · 주소를 판단할 수 없는 후보(해외 등)는 그 뒤
+      candidates = split.inArea.concat(split.unknown);
+    } else if (split.unknown.length) {
+      candidates = split.unknown;
+    } else {
+      // 지역 안에 아무것도 없고 전부 타지역 → 동명이인일 수 있으니 **비워서** 다음 검색어로 넘깁니다.
+      candidates = [];
+    }
+  }
 
   // ── v2.12 · 카카오만 찾았는데 네이버가 비었을 때 — 주소 기반 네이버 안전 교차 보강 ──
   //   `동대문 영화장` → 카카오 1곳 · 네이버 `items: []` 인 경우, `휘경로 영화장`·`동대문구 영화장`
@@ -3724,6 +4250,7 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
     providersUsed: usedProviders,
     failures: results.filter((r) => !r.ok).map((r) => ({ provider: r.provider, error: r.error })),
     naverBackfill: backfillResult,
+    areaFilter,
     reason: candidates.length ? undefined : 'no-result',
   };
 }

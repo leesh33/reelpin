@@ -21,7 +21,12 @@ import resolveUrlHandler, {
   normalizeTarget,
   parseNaverPlaceHtml as apiParseNaverPlaceHtml,
 } from '../api/resolve-url.js';
-import geminiHandler, { coerceAnalysis as geminiCoerceAnalysis, coerceMemo as geminiCoerceMemo } from '../api/gemini.js';
+import geminiHandler, {
+  coerceAnalysis as geminiCoerceAnalysis,
+  coerceMemo as geminiCoerceMemo,
+  buildImageRequestBody as geminiBuildImageRequestBody,
+  IMAGE_SYSTEM_INSTRUCTION as GEMINI_IMAGE_INSTRUCTION,
+} from '../api/gemini.js';
 // v2.20 — 🕒 매장 영업시간 (네이버 플레이스 · 카카오맵 패널)
 import naverPlaceHandler, { parseNaverPlacePage } from '../api/naver-place.js';
 import kakaoPlaceHandler, { parseKakaoPlacePanel } from '../api/kakao-place.js';
@@ -235,6 +240,33 @@ handler = () => errRes(401);
 r = await call(kakaoHandler, { query: '성수' });
 check('kakao: 업스트림 401 → 502', r.status === 502 && r.body.error === 'kakao-failed' && r.body.status === 401, JSON.stringify(r.body));
 check('kakao(실패): 키·본문 노출 없음', !leaksSecret(r.raw), r.raw);
+
+// v2.26 — 사진으로 찾기: 사진을 찍은 자리 기준 `sort=distance` 전달 (카카오 공식 인자)
+calls = [];
+handler = () => jsonRes({ documents: [] });
+r = await call(kakaoHandler, {
+  query: '한우국밥',
+  size: '5',
+  x: '126.90405189254321',
+  y: '37.519926177339606',
+  radius: '5000',
+  sort: 'distance',
+});
+check('v2.26 kakao: sort=distance · x · y · radius 전달',
+  r.status === 200 &&
+    calls[0].url.indexOf('&sort=distance') > 0 &&
+    calls[0].url.indexOf('&x=126.90405189254321') > 0 &&
+    calls[0].url.indexOf('&y=37.519926177339606') > 0 &&
+    calls[0].url.indexOf('&radius=5000') > 0,
+  String(calls[0] && calls[0].url));
+calls = [];
+r = await call(kakaoHandler, { query: '한우국밥', sort: 'distance' });
+check('v2.26 kakao: 좌표가 없으면 sort=accuracy 로 되돌림',
+  r.status === 200 && calls[0].url.indexOf('&sort=accuracy') > 0 && calls[0].url.indexOf('&x=') < 0,
+  String(calls[0] && calls[0].url));
+calls = [];
+r = await call(kakaoHandler, { query: '한우국밥', x: '999', y: '37.5', sort: 'distance' });
+check('v2.26 kakao: 범위 밖 좌표는 무시', r.status === 200 && calls[0].url.indexOf('&sort=accuracy') > 0, String(calls[0] && calls[0].url));
 
 // ── 5. 네이버: HUB 규격 ─────────────────────────────────────
 delete process.env.NAVER_HUB_CLIENT_ID;
@@ -1024,6 +1056,37 @@ check('gemini: memo 없으면 빈 문자열(지어내지 않음)', JSON.stringif
 const coerced = geminiCoerceAnalysis({ storeName: '칸다소바', memo: { recommendedMenu: '마제소바' }, places: [] });
 check('gemini: coerceAnalysis 가 memo 를 남김', coerced.memo && coerced.memo.recommendedMenu === '마제소바', JSON.stringify(coerced.memo));
 check('gemini: 빈 결과에도 memo 기본값', JSON.stringify(geminiCoerceAnalysis(null).memo) === '{"recommendedMenu":"","parking":"","kidsOrWaitingTip":""}');
+
+// v2.26 — 간판의 숫자·기간을 떼지 말고 통째로 읽게 ("3일 한우국밥" → "한우국밥" 오독 방지)
+check(
+  'v2.26 gemini 사진 지시문: 숫자·기간이 붙은 상호는 통째로',
+  GEMINI_IMAGE_INSTRUCTION.indexOf('숫자·기간이 앞이나 뒤에 붙은 상호') > 0 &&
+    GEMINI_IMAGE_INSTRUCTION.indexOf('"3일 한우국밥"') > 0 &&
+    GEMINI_IMAGE_INSTRUCTION.indexOf('24시 국밥') > 0,
+  GEMINI_IMAGE_INSTRUCTION.slice(0, 120)
+);
+check(
+  'v2.26 gemini 사진 지시문: 흐릿·가장자리 숫자도 읽기 · 스크린샷 속 사진 우선',
+  GEMINI_IMAGE_INSTRUCTION.indexOf('간판 왼쪽·가장자리에 작게 붙은 숫자') > 0 &&
+    GEMINI_IMAGE_INSTRUCTION.indexOf('화면 캡처(스크린샷) 안에 매장 사진') > 0,
+  'edge/screenshot'
+);
+check(
+  'v2.26 gemini 사진 지시문: 도로명까지 area 에',
+  GEMINI_IMAGE_INSTRUCTION.indexOf('영등포로36길') > 0,
+  'road-name'
+);
+const imageBody = geminiBuildImageRequestBody({
+  mimeType: 'image/jpeg',
+  data: 'A'.repeat(200),
+  hint: '',
+  thinking: 'off',
+});
+check(
+  'v2.26 gemini 사진 요청: 사용자 프롬프트에도 숫자 규칙',
+  String(imageBody.contents[0].parts[1].text).indexOf('간판의 숫자·기간') > 0,
+  String(imageBody.contents[0].parts[1].text).slice(0, 120)
+);
 
 if (fails) {
   console.log('\nAPI_TEST_FAILED (' + fails + ')');

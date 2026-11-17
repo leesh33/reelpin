@@ -75,6 +75,13 @@ import {
   candidateMatchesQuery,
   isMenuWord,
   ownerCommentOf,
+  // v2.26 — 지역어 검증(도로명 → 핵심 동·구) · 사진 위치(EXIF/브라우저)
+  coreAreaOf,
+  areaKeywordsOf,
+  candidateInArea,
+  splitCandidatesByArea,
+  geminiQueryList,
+  readExifGps,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -2621,6 +2628,310 @@ check(
   'v2.22 수량·시간 단위 확장',
   ['24시', '3대', '2인', '1인분', '3명', '2시간', '2호점'].every((t) => isQuantityOrPriceToken(t) === true),
   '수량 판정'
+);
+
+// ═════════════════════════════════════════════════════════════
+// v2.26 — 📸 사진으로 찾기: 지역어 검증 · 간판 숫자 보존 · 사진 위치(EXIF/브라우저)
+//   상훈 님 제보(2026-11-17): 영등포 `3일 한우국밥` 간판 사진을 올렸는데
+//     AI 가 `"한우국밥" + 영등포로36길` 로 읽고 → `영등포로36길 한우국밥` 검색이 0건이 되자
+//     전국 결과(경주 고유한우국밥 · 평택 장수본가해장국 · 일산 참숯한우천국)가 1~3위로 떴습니다.
+// ═════════════════════════════════════════════════════════════
+
+// ── 1) 지역어 → 핵심 구·동 ──
+check(
+  'v2.26 지역어: 도로명·번길에서 핵심 동네',
+  coreAreaOf('영등포로36길') === '영등포' &&
+    coreAreaOf('영등포로') === '영등포' &&
+    coreAreaOf('선유로17길') === '선유' &&
+    coreAreaOf('강남대로') === '강남' &&
+    coreAreaOf('테헤란로') === '테헤란',
+  ['영등포로36길', '영등포로', '선유로17길', '강남대로', '테헤란로']
+    .map((a) => a + '→' + coreAreaOf(a))
+    .join(' / ')
+);
+check(
+  'v2.26 지역어: 동·구·역은 그대로',
+  coreAreaOf('성수동') === '성수동' &&
+    coreAreaOf('성수동2가') === '성수동' &&
+    coreAreaOf('강남역') === '강남' &&
+    coreAreaOf('제주 연동') === '연동' &&
+    coreAreaOf('서울 영등포구 영등포로36길') === '영등포구',
+  ['성수동', '성수동2가', '강남역', '제주 연동', '서울 영등포구 영등포로36길']
+    .map((a) => a + '→' + coreAreaOf(a))
+    .join(' / ')
+);
+check('v2.26 지역어: 빈 값은 빈 문자열', coreAreaOf('') === '' && coreAreaOf(null) === '', String(coreAreaOf(null)));
+
+// ── 2) 후보가 그 지역 안인가 ──
+const YEONGDEUNGPO_OK = { name: '3일한우국밥', area: '영등포동', address: '서울 영등포구 영등포로 204', lat: 37.519926, lng: 126.904051 };
+const GYEONGJU_WRONG = { name: '고유한우국밥', area: '황남동', address: '경상북도 경주시 포석로 1058-13 1층', lat: 35.834, lng: 129.21 };
+const PYEONGTAEK_WRONG = { name: '장수본가해장국 평택고덕점', area: '고덕동', address: '경기도 평택시 함박산8길 29', lat: 37.05, lng: 127.05 };
+check(
+  'v2.26 지역 검증: 영등포 후보는 통과',
+  candidateInArea(YEONGDEUNGPO_OK, '영등포로36길') === true,
+  String(candidateInArea(YEONGDEUNGPO_OK, '영등포로36길'))
+);
+check(
+  'v2.26 지역 검증: 경주·평택 후보는 탈락',
+  candidateInArea(GYEONGJU_WRONG, '영등포로36길') === false &&
+    candidateInArea(PYEONGTAEK_WRONG, '영등포로36길') === false,
+  [GYEONGJU_WRONG, PYEONGTAEK_WRONG].map((c) => candidateInArea(c, '영등포로36길')).join(' / ')
+);
+check(
+  'v2.26 지역 검증: 주소 없으면 판단 보류(null)',
+  candidateInArea({ name: 'Fusaki Beach', address: '' }, '성수동') === null &&
+    candidateInArea({ name: 'x', address: '' }, '') === null,
+  String(candidateInArea({ name: 'x', address: '' }, '성수동'))
+);
+check(
+  'v2.26 지역 검증: 시·도 단서로는 거르지 않음',
+  candidateInArea({ address: '부산 해운대구 우동 1' }, '서울') === null,
+  String(candidateInArea({ address: '부산 해운대구 우동 1' }, '서울'))
+);
+const split = splitCandidatesByArea([YEONGDEUNGPO_OK, GYEONGJU_WRONG, { name: 'x', address: '' }], '영등포로36길');
+check(
+  'v2.26 지역 분리: 안 1 · 밖 1 · 모름 1',
+  split.inArea.length === 1 && split.outArea.length === 1 && split.unknown.length === 1,
+  JSON.stringify({ in: split.inArea.length, out: split.outArea.length, unknown: split.unknown.length })
+);
+
+// ── 3) 검색어 목록: 도로명 → 핵심 동네 → 상호 ──
+const photoQueries = geminiQueryList({ storeName: '한우국밥', area: '영등포로36길' }, 4);
+check(
+  'v2.26 검색어: 도로명 다음에 `영등포 한우국밥` 재검색',
+  JSON.stringify(photoQueries) === JSON.stringify(['영등포로36길 한우국밥', '영등포 한우국밥', '한우국밥']),
+  JSON.stringify(photoQueries)
+);
+const dongQueries = geminiQueryList({ storeName: '엄마손횟집', area: '제주 연동' }, 4);
+check(
+  'v2.26 검색어: 이미 동 단위면 중복 재검색 없음',
+  JSON.stringify(dongQueries) === JSON.stringify(['제주 연동 엄마손횟집', '엄마손횟집']),
+  JSON.stringify(dongQueries)
+);
+
+// ── 4) 실사례 재현: `영등포로36길 한우국밥` → 전국 결과를 걸러 `3일한우국밥` ──
+const HANWOO_KAKAO = {
+  id: '9988',
+  place_name: '3일한우국밥',
+  category_name: '음식점 > 한식 > 국밥',
+  category_group_code: 'FD6',
+  phone: '02-2633-0000',
+  address_name: '서울 영등포구 영등포동4가 68-5',
+  road_address_name: '서울 영등포구 영등포로 204',
+  x: '126.90405189254321',
+  y: '37.519926177339606',
+  place_url: 'http://place.map.kakao.com/9988',
+};
+const NAVER_WRONG_ITEMS = [
+  { title: '고유<b>한우국밥</b>', link: '', category: '한식>국밥', address: '경상북도 경주시 황남동 306-1 1층', roadAddress: '경상북도 경주시 포석로 1058-13 1층', mapx: '1292110000', mapy: '358340000' },
+  { title: '장수본가해장국 평택고덕점', link: '', category: '한식>해장국', address: '경기도 평택시 고덕동 2647-1', roadAddress: '경기도 평택시 함박산8길 29', mapx: '1270500000', mapy: '370500000' },
+  { title: '참숯<b>한우</b>천국 일산애니골 직영점', link: '', category: '한식>소고기구이', address: '경기도 고양시 일산동구 풍동 1154', roadAddress: '경기도 고양시 일산동구 풍산로 14', mapx: '1267700000', mapy: '376600000' },
+];
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('/api/gemini')) {
+    return jsonRes({ storeName: '한우국밥', area: '영등포로36길', menu: '한우국밥', category: '맛집', places: [] });
+  }
+  const q = decodeURIComponent((u.split('query=')[1] || '').split('&')[0]);
+  if (q === '영등포로36길 한우국밥') {
+    // 카카오는 0건, 네이버는 전국 결과 — 실제 2026-11-17 재현
+    return u.includes('/api/kakao-local') ? jsonRes({ documents: [] }) : jsonRes({ items: NAVER_WRONG_ITEMS });
+  }
+  if (q === '영등포 한우국밥') {
+    return u.includes('/api/kakao-local')
+      ? jsonRes({ documents: [HANWOO_KAKAO] })
+      : jsonRes({ items: [{ ...NAVER_WRONG_ITEMS[0], title: '<b>3일한우국밥</b>', address: '서울특별시 영등포구 영등포동4가 68-5', roadAddress: '서울특별시 영등포구 영등포로 204', mapx: '1269040518', mapy: '375199261' }] });
+  }
+  return u.includes('/api/kakao-local') ? jsonRes({ documents: [] }) : jsonRes({ items: [] });
+};
+const photoHanwoo = await extractFromImage({ base64: 'A'.repeat(400), mimeType: 'image/jpeg' });
+check(
+  'v2.26 사진: 영등포로36길 한우국밥 → `3일한우국밥` 을 1위로',
+  photoHanwoo.ok === true && (photoHanwoo.candidates[0] || {}).name === '3일한우국밥',
+  JSON.stringify((photoHanwoo.candidates || []).map((c) => c.name)) + ' / ' + photoHanwoo.query
+);
+check(
+  'v2.26 사진: 경주·평택·일산 결과는 후보에 없음',
+  !(photoHanwoo.candidates || []).some((c) => /고유한우국밥|장수본가|참숯/.test(c.name)),
+  JSON.stringify((photoHanwoo.candidates || []).map((c) => c.name))
+);
+check(
+  'v2.26 사진: 첫 시도(`영등포로36길 한우국밥`)에서 잘못된 결과를 버리고 재검색',
+  (photoHanwoo.attempts[0] || {}).areaDropped === 3 && photoHanwoo.query === '영등포 한우국밥',
+  JSON.stringify(photoHanwoo.attempts && photoHanwoo.attempts.map((a) => ({ q: a.query, n: a.resultCount, d: a.areaDropped })))
+);
+check(
+  'v2.26 사진: 화면 근거에 지역으로 걸러낸 사실을 밝힘',
+  String(photoHanwoo.aiNote).indexOf('영등포') >= 0 && String(photoHanwoo.aiNote).indexOf('3곳은 뺐어요') >= 0,
+  photoHanwoo.aiNote
+);
+check(
+  'v2.26 사진: 주소가 맞으니 확인(verified)',
+  photoHanwoo.matchStatus === 'verified' && photoHanwoo.lowConfidence === false,
+  String(photoHanwoo.matchStatus) + ' / ' + photoHanwoo.aiNote
+);
+
+// ── 5) 지역 안에 아무것도 없으면 전국 결과 대신 '사진에서 읽은 상호' ──
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('/api/gemini')) {
+    return jsonRes({ storeName: '한우국밥', area: '영등포로36길', menu: '', category: '맛집', places: [] });
+  }
+  return u.includes('/api/kakao-local') ? jsonRes({ documents: [] }) : jsonRes({ items: NAVER_WRONG_ITEMS });
+};
+const photoOnlyWrong = await extractFromImage({ base64: 'A'.repeat(400), mimeType: 'image/jpeg' });
+check(
+  'v2.26 사진: 지역 밖 결과뿐이면 좌표 없는 사진 상호로 남김',
+  photoOnlyWrong.ok === true &&
+    photoOnlyWrong.candidates.length === 1 &&
+    photoOnlyWrong.candidates[0].name === '한우국밥' &&
+    photoOnlyWrong.candidates[0].manual === true,
+  JSON.stringify((photoOnlyWrong.candidates || []).map((c) => c.name))
+);
+check(
+  'v2.26 사진: 그래도 경주·평택·일산 가게는 뜨지 않음',
+  !(photoOnlyWrong.candidates || []).some((c) => /고유한우국밥|장수본가|참숯/.test(c.name)),
+  JSON.stringify((photoOnlyWrong.candidates || []).map((c) => c.name))
+);
+
+// ── 6) 사진 위치(EXIF GPS)로 가까운 순서 만들기 ──
+const NEAR_ULSAN = { ...HANWOO_KAKAO, id: 'u1', place_name: '한우국밥', address_name: '울산 남구 달동 1322-12', road_address_name: '울산 남구 돋질로 241', x: '129.33166458462864', y: '35.543375612867194' };
+const NEAR_SEOUL = { ...HANWOO_KAKAO, id: 's1', place_name: '한우국밥', address_name: '서울 영등포구 영등포동4가 68-5', road_address_name: '서울 영등포구 영등포로 204' };
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) return jsonRes({ documents: [NEAR_ULSAN, NEAR_SEOUL] });
+  return jsonRes({ items: [] });
+};
+const nearRanked = await searchPlaceProviders({
+  query: '한우국밥',
+  near: { lat: 37.5201, lng: 126.9038 },
+});
+check(
+  'v2.26 위치: 가까운 영등포 가게가 1위',
+  (nearRanked.candidates[0] || {}).address === '서울 영등포구 영등포로 204',
+  JSON.stringify((nearRanked.candidates || []).map((c) => [c.name, c.address, c.distanceM]))
+);
+check(
+  'v2.26 위치: 후보마다 거리(m)를 남김',
+  Number.isFinite((nearRanked.candidates[0] || {}).distanceM) && nearRanked.candidates[0].distanceM < 500,
+  String((nearRanked.candidates[0] || {}).distanceM)
+);
+
+// 좌표 없이 부르면 예전과 똑같이(거리 정보 없음)
+calls = [];
+const noNear = await searchPlaceProviders({ query: '한우국밥' });
+check(
+  'v2.26 위치: 좌표가 없으면 거리 계산 안 함',
+  (noNear.candidates || []).every((c) => c.distanceM === undefined),
+  JSON.stringify((noNear.candidates || []).map((c) => c.distanceM))
+);
+
+// distanceFirst → 카카오에 x·y·radius·sort=distance 를 넘김
+calls = [];
+await searchPlaceProviders({
+  query: '한우국밥',
+  near: { lat: 37.5201, lng: 126.9038 },
+  distanceFirst: true,
+  providers: ['kakao'],
+});
+const kakaoUrl = String((calls[0] || {}).url || '');
+check(
+  'v2.26 위치: 가까운 순 조회는 카카오 sort=distance + x·y·radius',
+  kakaoUrl.indexOf('sort=distance') > 0 && kakaoUrl.indexOf('x=126.9038') > 0 && kakaoUrl.indexOf('y=37.5201') > 0 && kakaoUrl.indexOf('radius=5000') > 0,
+  kakaoUrl
+);
+check(
+  'v2.26 위치: 평소 조회는 가까운 순 플래그 없이(기본 정확도순)',
+  (await (async () => {
+    calls = [];
+    await searchPlaceProviders({ query: '한우국밥', near: { lat: 37.5201, lng: 126.9038 }, providers: ['kakao'] });
+    return String((calls[0] || {}).url || '');
+  })()).indexOf('sort=distance') < 0,
+  'no-distance-sort'
+);
+
+// ── 7) EXIF GPS 읽기 (휴대폰으로 찍은 사진) ──
+function buildExifJpeg({ lat, lng }) {
+  const bytes = [];
+  const push16 = (v) => bytes.push(v & 0xff, (v >> 8) & 0xff);
+  const push32 = (v) => bytes.push(v & 0xff, (v >> 8) & 0xff, (v >> 16) & 0xff, (v >> 24) & 0xff);
+  // TIFF 헤더 (little endian)
+  bytes.push(0x49, 0x49);
+  push16(42);
+  push32(8); // IFD0 offset
+  // IFD0: 1개 항목 — GPS IFD 포인터(0x8825)
+  push16(1);
+  push16(0x8825);
+  push16(4); // LONG
+  push32(1);
+  push32(26); // GPS IFD offset (8 + 2 + 12 + 4)
+  push32(0);
+  // GPS IFD: 4개 항목 + next offset
+  push16(4);
+  push16(1); // GPSLatitudeRef
+  push16(2); // ASCII
+  push32(2);
+  bytes.push(lat >= 0 ? 0x4e : 0x53, 0x00, 0x00, 0x00); // 'N'/'S' + padding
+  push16(2); // GPSLatitude
+  push16(5); // RATIONAL
+  push32(3);
+  push32(80); // 값 위치
+  push16(3); // GPSLongitudeRef
+  push16(2);
+  push32(2);
+  bytes.push(lng >= 0 ? 0x45 : 0x57, 0x00, 0x00, 0x00); // 'E'/'W'
+  push16(4); // GPSLongitude
+  push16(5);
+  push32(3);
+  push32(104);
+  push32(0); // next IFD
+  const dms = (value) => {
+    const abs = Math.abs(value);
+    const d = Math.floor(abs);
+    const mFloat = (abs - d) * 60;
+    const m = Math.floor(mFloat);
+    const s = Math.round((mFloat - m) * 60 * 10000) / 10000;
+    return [d, m, s];
+  };
+  for (const value of [lat, lng]) {
+    for (const part of dms(value)) {
+      push32(Math.round(part * 10000));
+      push32(10000);
+    }
+  }
+  const tiff = Uint8Array.from(bytes);
+  const app1Length = 2 + 6 + tiff.length;
+  const jpeg = [0xff, 0xd8, 0xff, 0xe1, (app1Length >> 8) & 0xff, app1Length & 0xff];
+  'Exif'.split('').forEach((ch) => jpeg.push(ch.charCodeAt(0)));
+  jpeg.push(0x00, 0x00);
+  tiff.forEach((b) => jpeg.push(b));
+  jpeg.push(0xff, 0xd9);
+  return Uint8Array.from(jpeg);
+}
+const exifBytes = buildExifJpeg({ lat: 37.519926, lng: 126.904051 });
+const exif = readExifGps(exifBytes);
+check(
+  'v2.26 EXIF: 사진을 찍은 좌표를 읽음',
+  exif && Math.abs(exif.lat - 37.519926) < 0.001 && Math.abs(exif.lng - 126.904051) < 0.001,
+  JSON.stringify(exif)
+);
+check(
+  'v2.26 EXIF: GPS 없는 사진(스크린샷)은 null',
+  readExifGps(Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])) === null &&
+    readExifGps('not-bytes') === null &&
+    readExifGps(null) === null,
+  'screenshot'
+);
+check(
+  'v2.26 EXIF: 남위·서경 부호',
+  (() => {
+    const south = readExifGps(buildExifJpeg({ lat: -33.8688, lng: -70.6693 }));
+    return south && south.lat < 0 && south.lng < 0;
+  })(),
+  'S/W'
 );
 
 // ── 원복 ─────────────────────────────────────────────────────
