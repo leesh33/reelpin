@@ -64,7 +64,7 @@ export default function AlertInbox({
       footer={
         <>
           <Text style={styles.footNote}>
-            배너를 위로 스와이프해 닫아도 여기서는 언제든 다시 볼 수 있어요.
+            반경 500m 알림은 잠깐 떴다 사라져도 여기서는 언제든 다시 볼 수 있어요.
           </Text>
           {feed.items.length > 0 && onGoMap ? (
             <Pressable

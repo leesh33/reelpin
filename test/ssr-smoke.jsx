@@ -1323,7 +1323,7 @@ const v215Checks = [
   ['알림 모음: 위치를 모르면 [내 위치 켜기]', inboxNoLocationHtml.indexOf('내위치켜기') > 0 && inboxNoLocationHtml.indexOf('알림모음') > 0],
   ['알림 모음: 저장한 곳이 없으면 안내', inboxEmptyHtml.indexOf('아직 저장한 장소가 없어요') > 0],
   ['알림 모음: 닫힌 상태에서는 아무 것도 안 그림', renderToString(<AlertInbox visible={false} pins={ALERT_PINS} myCoords={ALERT_ORIGIN} onClose={noop} />) === ''],
-  ['알림 모음: 닫힌 배너도 여기서 다시 (안내 문구)', stripSpaces(inboxOpenHtml).indexOf('배너를위로스와이프해닫아도여기서는언제든다시볼수있어요') > 0],
+  ['알림 모음: 잠깐 떴다 사라진 알림도 여기서 다시 (안내 문구 · v2.28.0 배너 없음)', stripSpaces(inboxOpenHtml).indexOf('반경500m알림은잠깐떴다사라져도여기서는언제든다시볼수있어요') > 0],
   ['알림 모음: [지도에서 보기]', inboxOpenHtml.indexOf('지도에서 보기') > 0],
 ];
 
