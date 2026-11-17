@@ -64,12 +64,22 @@ import {
 import { clearShareFromLocation, readShareFromLocation, buildShareUrl, canNativeShare, nativeShare, shareMessage } from './src/utils/shareMap';
 import {
   createCollection,
+  addPinsToCollection,
   normalizeCollections,
   pruneCollections,
   removeCollection,
   toggleCollectionPin,
   updateCollection,
 } from './src/utils/collections';
+// v2.31 — 🗂️ 컬렉션 기획전 · 공유 링크 (`?col=<shareId>`)
+import CollectionPreviewSheet from './src/components/CollectionPreviewSheet';
+import { fetchPublicBanners, fetchPublicCurated, fetchSharedCollection, sharedAsCurated } from './src/services/curation';
+import {
+  clearCollectionShareFromLocation,
+  importSummary,
+  planCuratedImport,
+  readCollectionShareFromLocation,
+} from './src/utils/curation';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
 import {
   OAUTH_PENDING_MESSAGE,
@@ -111,6 +121,10 @@ export default function App() {
   const collectionsRef = useRef([]);
   // v2.0 — `?share=…` 링크로 들어온 '공유받은 맛집 지도' (아직 내 지도에 넣기 전 미리보기)
   const [sharedPins, setSharedPins] = useState([]);
+  // v2.31 — 운영자 배너·기획전, 그리고 `?col=` 로 들어온 '공유받은 컬렉션' 미리보기
+  const [banners, setBanners] = useState([]);
+  const [curated, setCurated] = useState([]);
+  const [sharedCollection, setSharedCollection] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
   // v2.20.2 — 핀 상세 시트가 열린 동안 토스트는 시트 헤더(분류 색) **아래**에 뜨도록 화면 높이로 계산합니다.
@@ -252,6 +266,47 @@ export default function App() {
     if (!ready) return;
     const shared = readShareFromLocation();
     if (shared && shared.pins.length) setSharedPins(shared.pins);
+  }, [ready]);
+
+  /** v2.31 — 운영자 배너·기획전 불러오기 (설정 전·오프라인이면 조용히 빈 목록) */
+  const loadCuration = useCallback(async () => {
+    const [bannerResult, curatedResult] = await Promise.all([fetchPublicBanners(), fetchPublicCurated()]);
+    if (bannerResult.ok) setBanners(bannerResult.items);
+    if (curatedResult.ok) setCurated(curatedResult.items);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return undefined;
+    loadCuration();
+    return undefined;
+  }, [ready, loadCuration]);
+
+  // 컬렉션 탭에 들어올 때마다 새로고침 — 운영자가 방금 올린 배너가 바로 보이게.
+  useEffect(() => {
+    if (!ready || tab !== 'collections') return undefined;
+    loadCuration();
+    return undefined;
+  }, [ready, tab, loadCuration]);
+
+  // v2.31 — 주소창에 `?col=<shareId>` 가 있으면 공유받은 컬렉션 미리보기를 띄웁니다.
+  useEffect(() => {
+    if (!ready) return undefined;
+    const shareId = readCollectionShareFromLocation();
+    if (!shareId) return undefined;
+    let alive = true;
+    (async () => {
+      const res = await fetchSharedCollection(shareId);
+      if (!alive) return;
+      if (res.ok) {
+        setSharedCollection(res.item);
+      } else {
+        showToast(res.message || '공유된 컬렉션을 열지 못했어요');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
   useEffect(
@@ -751,6 +806,73 @@ export default function App() {
     clearShareFromLocation();
   }, []);
 
+  /**
+   * v2.31 — 기획전·공유받은 컬렉션의 장소를 내 지도에 **한 번에** 담습니다.
+   *   · 이미 저장한 곳(이름 + 200m / 같은 placeId·매장 URL)은 새 핀을 만들지 않습니다.
+   *   · 담은 핀은 같은 이름의 컬렉션으로도 묶어 둡니다(없으면 새로 만듭니다).
+   */
+  const importCollectionPlaces = useCallback(
+    (item) => {
+      if (!item) return { ok: false, message: '담을 컬렉션을 찾지 못했어요' };
+      const plan = planCuratedImport(item, pinsRef.current || pins);
+      if (!plan.places.length || !plan.pinIds.length) {
+        return { ok: false, message: '담을 장소가 없어요' };
+      }
+      if (plan.fresh.length) {
+        const next = plan.fresh.concat(pinsRef.current || []);
+        pinsRef.current = next;
+        setPins(next);
+        pushPinsToCloud(plan.fresh);
+      }
+
+      // 같은 이름의 컬렉션이 있으면 거기에 더하고, 없으면 새로 만듭니다.
+      const targetName = String(plan.collection.name || '').trim().toLowerCase();
+      const current = collectionsRef.current || [];
+      const existing = current.find((c) => String((c && c.name) || '').trim().toLowerCase() === targetName);
+      let nextCollections = current;
+      if (existing) {
+        nextCollections = addPinsToCollection(current, existing.id, plan.pinIds).collections;
+      } else {
+        const created = createCollection(current, plan.collection);
+        if (created.ok) nextCollections = created.collections;
+      }
+      collectionsRef.current = nextCollections;
+      setCollections(nextCollections);
+
+      return {
+        ok: true,
+        added: plan.added,
+        existing: plan.existing,
+        pinIds: plan.pinIds,
+        collectionName: plan.collection.name,
+        message: importSummary(plan),
+      };
+    },
+    [pins, pushPinsToCloud]
+  );
+
+  /** 공유받은 컬렉션 `?col=` — [내 지도에 담기] */
+  const handleImportSharedCollection = useCallback(
+    (item) => {
+      const result = importCollectionPlaces(item);
+      if (!result.ok) {
+        showToast(result.message || '담지 못했어요');
+        return result;
+      }
+      setSharedCollection(null);
+      clearCollectionShareFromLocation();
+      if (result.added) setTab('map');
+      showToast(result.message, result.added ? 'pro' : 'dark');
+      return result;
+    },
+    [importCollectionPlaces, showToast]
+  );
+
+  const dismissSharedCollection = useCallback(() => {
+    setSharedCollection(null);
+    clearCollectionShareFromLocation();
+  }, []);
+
   const handleDeletePin = useCallback(
     (pinId) => {
       setPins((prev) => prev.filter((p) => p.id !== pinId));
@@ -1076,13 +1198,13 @@ export default function App() {
         tab,
         pinDetail: Boolean(selectedPinId),
         listSheet: mapListSheet,
-        collection: collectionSheet,
+        collection: collectionSheet || Boolean(sharedCollection),
         search: searchOpen,
         alerts: alertOpen,
         menu: menuOpen,
         feedback: feedbackOpen,
       }),
-    [tab, selectedPinId, mapListSheet, collectionSheet, searchOpen, alertOpen, menuOpen, feedbackOpen]
+    [tab, selectedPinId, mapListSheet, collectionSheet, sharedCollection, searchOpen, alertOpen, menuOpen, feedbackOpen]
   );
 
   // v2.21 🛡️ `/admin` — 앱 화면 대신 어드민 화면을 그립니다. (권한은 /api/admin 이 최종 확인)
@@ -1162,6 +1284,9 @@ export default function App() {
             <CollectionsScreen
               pins={pins}
               collections={collections}
+              banners={banners}
+              curated={curated}
+              onImportCurated={importCollectionPlaces}
               header={headerProps}
               onCreateCollection={handleCreateCollection}
               onUpdateCollection={handleUpdateCollection}
@@ -1255,6 +1380,15 @@ export default function App() {
           }}
           onToast={showToast}
           onShareMap={shareMyMapFromMenu}
+        />
+        {/* v2.31 — 🗂️ 공유 링크(?col=)로 받은 컬렉션 미리보기 · [내 지도에 담기] */}
+        <CollectionPreviewSheet
+          visible={!!sharedCollection}
+          item={sharedCollection ? sharedAsCurated(sharedCollection) : null}
+          onClose={dismissSharedCollection}
+          onImport={handleImportSharedCollection}
+          extraSub="공유받은 컬렉션"
+          testID="shared-collection-preview"
         />
         {/* v2.23 — 💬 제안 · 버그 제보 (내 정보 시트 위 레이어 · zIndex 48 < 토스트 50) */}
         <FeedbackBoardModal

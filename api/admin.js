@@ -8,12 +8,18 @@
  *   GET  /api/admin?view=members&q=<이메일|이름>       … 회원 목록
  *   GET  /api/admin?view=pins&q=<검색>&category=<분류>  … 장소(핀) 목록
  *   GET  /api/admin?view=feedback&kind=<idea|bug>&status=<open|applied|fixed>  … 💬 제보 목록 (v2.23)
+ *   GET  /api/admin?view=banners                     … 📌 배너 목록(꺼 둔 것 포함) (v2.31)
+ *   GET  /api/admin?view=curated                     … 🗂️ 기획전 목록(꺼 둔 것 포함) (v2.31)
  *   POST /api/admin  { action:'set-plan',    userId, plan:'free'|'pro' }
  *   POST /api/admin  { action:'delete-user', userId }
  *   POST /api/admin  { action:'update-pin',  userId, pinId, name, category }
  *   POST /api/admin  { action:'delete-pin',  userId, pinId }
  *   POST /api/admin  { action:'update-feedback-status', id, status:'open'|'applied'|'fixed' }  … v2.23
  *   POST /api/admin  { action:'delete-feedback', id }                                          … v2.23
+ *   POST /api/admin  { action:'save-banner', id?, title, subtitle, badge, linkUrl, active, sortOrder }   … v2.31
+ *   POST /api/admin  { action:'delete-banner', id }                                                      … v2.31
+ *   POST /api/admin  { action:'save-curated', id?, title, description, sponsor, badge, emoji, color, places, active, sortOrder }  … v2.31
+ *   POST /api/admin  { action:'delete-curated', id }                                                      … v2.31
  *
  * 보안 (이 파일이 지키는 선)
  *   1. 모든 요청은 **서버에서** Supabase `/auth/v1/user` 로 토큰을 검증합니다.
@@ -120,6 +126,19 @@ async function handleGet(req, res, ctx) {
     return sendJson(res, 200, { ok: true, data: result.data, kind, status });
   }
 
+  // v2.31 — 📌 기획전·배너 탭: 배너·기획전 목록 (꺼 둔 것 포함)
+  if (view === 'banners') {
+    const result = await adminDb.banners(ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: Array.isArray(result.data) ? result.data : [] });
+  }
+
+  if (view === 'curated') {
+    const result = await adminDb.curated(ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: Array.isArray(result.data) ? result.data : [] });
+  }
+
   return sendJson(res, 400, { ok: false, error: 'unknown-view', message: '알 수 없는 요청이에요.' });
 }
 
@@ -186,6 +205,74 @@ async function handlePost(req, res, ctx) {
     const id = clean(body.id, 64);
     if (!id) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '지울 제보를 확인해 주세요.' });
     const result = await adminDb.deleteFeedback(id, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data });
+  }
+
+  // v2.31 — 📌 배너 저장 (새 배너 / 수정 / 켜고 끄기)
+  if (action === 'save-banner') {
+    const id = clean(body.id, 64);
+    const title = clean(body.title, 40);
+    const subtitle = clean(body.subtitle, 80);
+    const badge = clean(body.badge, 10) || '기획전';
+    const linkUrl = clean(body.linkUrl, 300);
+    const sortOrder = Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : 0;
+    const active = body.active !== false;
+    if (!title) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '배너 제목을 적어 주세요.' });
+    if (linkUrl && !/^https?:\/\//i.test(linkUrl)) {
+      return sendJson(res, 400, { ok: false, error: 'bad-request', message: '링크는 http:// 또는 https:// 로 시작해야 해요.' });
+    }
+    const result = await adminDb.saveBanner({ id, title, subtitle, badge, linkUrl, active, sortOrder }, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data });
+  }
+
+  // v2.31 — 📌 배너 삭제
+  if (action === 'delete-banner') {
+    const id = clean(body.id, 64);
+    if (!id) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '지울 배너를 확인해 주세요.' });
+    const result = await adminDb.deleteBanner(id, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data });
+  }
+
+  // v2.31 — 🗂️ 기획전 저장 (장소 목록 · 켜고 끄기)
+  if (action === 'save-curated') {
+    const id = clean(body.id, 64);
+    const title = clean(body.title, 40);
+    const description = clean(body.description, 100);
+    const sponsor = clean(body.sponsor, 20);
+    const badge = clean(body.badge, 10) || '기획전';
+    const emoji = clean(body.emoji, 8) || '📂';
+    const color = /^#[0-9a-fA-F]{6}$/.test(clean(body.color, 7)) ? clean(body.color, 7) : '#0D9488';
+    const sortOrder = Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : 0;
+    const active = body.active !== false;
+    const places = (Array.isArray(body.places) ? body.places : [])
+      .slice(0, 50)
+      .map((p) => ({
+        name: clean(p && p.name, 80),
+        category: clean(p && p.category, 20),
+        area: clean(p && p.area, 40),
+        address: clean(p && p.address, 160),
+        lat: p && p.lat !== null && p.lat !== undefined && p.lat !== '' && Number.isFinite(Number(p.lat)) ? Number(p.lat) : null,
+        lng: p && p.lng !== null && p.lng !== undefined && p.lng !== '' && Number.isFinite(Number(p.lng)) ? Number(p.lng) : null,
+      }))
+      .filter((p) => Boolean(p.name));
+    if (!title) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '기획전 제목을 적어 주세요.' });
+    if (!places.length) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '기획전에 담을 장소를 하나 이상 골라 주세요.' });
+    const result = await adminDb.saveCurated(
+      { id, title, description, sponsor, badge, emoji, color, places, active, sortOrder },
+      ctx.db
+    );
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data });
+  }
+
+  // v2.31 — 🗂️ 기획전 삭제
+  if (action === 'delete-curated') {
+    const id = clean(body.id, 64);
+    if (!id) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '지울 기획전을 확인해 주세요.' });
+    const result = await adminDb.deleteCurated(id, ctx.db);
     if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
     return sendJson(res, 200, { ok: true, data: result.data });
   }

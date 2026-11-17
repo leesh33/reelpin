@@ -15,10 +15,23 @@
  * 데이터는 App 이 들고 있고(기기에 저장), 이 화면은 보여 주고 요청만 합니다.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';
+// v2.31 — 기획전·공유 컬렉션 미리보기(다른 레이어 팝업과 같은 LayerSheet 틀)
+import CollectionPreviewSheet from '../components/CollectionPreviewSheet';
+import { shareCollectionSnapshot } from '../services/curation';
+import { importSummary } from '../utils/curation';
 import {
   COLLECTION_COLORS,
   COLLECTION_EMOJIS,
@@ -86,6 +99,10 @@ function StylePicker({ emoji, color, onChangeEmoji, onChangeColor }) {
 export default function CollectionsScreen({
   pins = [],
   collections = [],
+  // v2.31 — 운영자가 올린 배너·기획전 (App 이 불러 옵니다 · 없으면 조용히 숨김)
+  banners = [],
+  curated = [],
+  onImportCurated,
   header,
   onCreateCollection,
   onUpdateCollection,
@@ -119,6 +136,11 @@ export default function CollectionsScreen({
   const [editError, setEditError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sharing, setSharing] = useState(false);
+  // v2.31 — 기획전 미리보기 + 담는 중
+  const [curatedPreview, setCuratedPreview] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const { width: windowWidth } = useWindowDimensions();
+  const bannerWidth = Math.max(220, (Number(windowWidth) || 390) - 40);
 
   /** v2.28.0 — 새 컬렉션 시트가 화면 아래를 덮는 동안 하단 탭바는 숨깁니다. */
   useEffect(() => {
@@ -213,7 +235,11 @@ export default function CollectionsScreen({
     setDetailId(null);
   }, [detail, onDeleteCollection, onToast]);
 
-  /** 컬렉션 공유 — `📂 이름 · N곳` + 장소 목록 + (그 핀들만 담은) 지도 링크 */
+  /**
+   * 컬렉션 공유 — v2.31 부터는 **서버에 스냅샷을 저장한 링크**(`?col=<shareId>`)를 건넵니다.
+   *   · 받는 사람은 링크만 열면 미리보기를 보고 [내 지도에 한 번에 담기] 를 누를 수 있습니다.
+   *   · 서버 저장이 안 될 때(설정 전·오프라인)는 예전의 `?share=` 압축 링크로 조용히 대신합니다.
+   */
   const shareCollection = useCallback(
     async (collection) => {
       if (!collection || sharing) return;
@@ -223,22 +249,35 @@ export default function CollectionsScreen({
         return;
       }
       setSharing(true);
-      const url = buildShareUrl(items);
-      const text = collectionShareText(collection, pins);
       try {
+        const saved = await shareCollectionSnapshot(collection, items);
+        const url = saved.ok ? saved.url : buildShareUrl(items);
+        const text = collectionShareText(collection, pins) + '\n' + url;
         if (canNativeShare()) {
           const res = await nativeShare(url, {
             title: collection.emoji + ' ' + collection.name,
             text,
           });
           if (res.shared) {
-            if (onToast) onToast('공유 시트를 열었어요 · ' + collection.name);
+            if (onToast) {
+              onToast(
+                saved.ok
+                  ? '공유 링크를 보냈어요 · ' + collection.name
+                  : '공유 시트를 열었어요 · ' + collection.name
+              );
+            }
             return;
           }
           if (res.cancelled) return;
         }
-        await Clipboard.setStringAsync(text + '\n' + url);
-        if (onToast) onToast('컬렉션 ' + items.length + '곳을 복사했어요 · 붙여넣기 하세요');
+        await Clipboard.setStringAsync(text);
+        if (onToast) {
+          onToast(
+            saved.ok
+              ? '공유 링크를 복사했어요 · 붙여넣어 보내세요'
+              : '컬렉션 ' + items.length + '곳을 복사했어요 · 붙여넣기 하세요'
+          );
+        }
       } catch (e) {
         if (onToast) onToast('공유하지 못했어요. 다시 시도해 주세요');
       } finally {
@@ -246,6 +285,47 @@ export default function CollectionsScreen({
       }
     },
     [onToast, pins, sharing]
+  );
+
+  /** 배너의 링크 열기 — http(s) 주소만 엽니다 */
+  const openBannerLink = useCallback((url) => {
+    const target = String(url || '').trim();
+    if (!/^https?:\/\//i.test(target)) return;
+    try {
+      if (typeof Linking !== 'undefined' && Linking && typeof Linking.openURL === 'function') {
+        Linking.openURL(target);
+        return;
+      }
+    } catch (e) {
+      /* 아래 폴백 */
+    }
+    try {
+      if (typeof window !== 'undefined' && window && typeof window.open === 'function') {
+        window.open(target, '_blank', 'noopener');
+      }
+    } catch (e) {
+      if (onToast) onToast('링크를 열지 못했어요');
+    }
+  }, [onToast]);
+
+  /** 기획전 [담기] — 미리보기 시트 안에서도, 카드에서도 같은 길로 갑니다. */
+  const importCurated = useCallback(
+    async (item) => {
+      if (!item || typeof onImportCurated !== 'function' || importing) return;
+      setImporting(true);
+      try {
+        const result = await onImportCurated(item);
+        if (result && result.ok) {
+          setCuratedPreview(null);
+          if (onToast) onToast(importSummary(result));
+        } else if (result && result.message) {
+          if (onToast) onToast(result.message);
+        }
+      } finally {
+        setImporting(false);
+      }
+    },
+    [importing, onImportCurated, onToast]
   );
 
   const showOnMap = useCallback(
@@ -271,6 +351,119 @@ export default function CollectionsScreen({
           showsVerticalScrollIndicator={false}
           testID="collections-list"
         >
+          {/* ── v2.31 📌 운영자·스폰서 배너 (켜 둔 배너가 없으면 아예 그리지 않음) ── */}
+          {banners.length ? (
+            <View style={styles.bannerSection} testID="collections-banners">
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                snapToInterval={bannerWidth + 10}
+                decelerationRate="fast"
+                contentContainerStyle={styles.bannerRow}
+              >
+                {banners.map((banner) => {
+                  const hasLink = /^https?:\/\//i.test(String(banner.linkUrl || ''));
+                  return (
+                    <Pressable
+                      key={banner.id}
+                      style={[styles.bannerCard, { width: bannerWidth }]}
+                      onPress={() => hasLink && openBannerLink(banner.linkUrl)}
+                      accessibilityRole={hasLink ? 'link' : 'image'}
+                      accessibilityLabel={banner.badge + ' · ' + banner.title}
+                      testID={'collections-banner-' + banner.id}
+                    >
+                      <View style={styles.bannerTop}>
+                        <View style={styles.bannerBadge}>
+                          <Text style={styles.bannerBadgeText}>{banner.badge || '기획전'}</Text>
+                        </View>
+                        {hasLink ? (
+                          <View style={styles.bannerLinkHint}>
+                            <Text style={styles.bannerLinkText}>열기</Text>
+                            <Ionicons name="open-outline" size={11} color={colors.charcoalSub} />
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={styles.bannerTitle} numberOfLines={1}>
+                        {banner.title}
+                      </Text>
+                      {!!banner.subtitle && (
+                        <Text style={styles.bannerSub} numberOfLines={1}>
+                          {banner.subtitle}
+                        </Text>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : null}
+
+          {/* ── v2.31 🗂️ 운영자 추천 · 기획전 — 누르면 장소 미리보기 + 한 번에 담기 ── */}
+          {curated.length ? (
+            <View testID="collections-curated">
+              <View style={styles.sectionRow}>
+                <Text style={styles.sectionTitle}>운영자 추천 · 기획전</Text>
+                <Text style={styles.sectionCount}>{curated.length}개</Text>
+              </View>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.curatedRow}
+              >
+                {curated.map((item) => (
+                  <View key={item.id} style={styles.curatedCard} testID={'curated-card-' + item.id}>
+                    <Pressable
+                      style={styles.curatedMain}
+                      onPress={() => setCuratedPreview(item)}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.title + ' 장소 보기'}
+                      testID={'curated-open-' + item.id}
+                    >
+                      <View style={styles.curatedTop}>
+                        <View style={[styles.curatedEmoji, { backgroundColor: item.color + '1F' }]}>
+                          <Text style={styles.curatedEmojiText}>{item.emoji}</Text>
+                        </View>
+                        <View style={styles.curatedBadges}>
+                          <View style={styles.curatedBadge}>
+                            <Text style={styles.curatedBadgeText}>{item.badge || '기획전'}</Text>
+                          </View>
+                          {!!item.sponsor && (
+                            <Text style={styles.curatedSponsor} numberOfLines={1}>
+                              {item.sponsor}
+                            </Text>
+                          )}
+                        </View>
+                      </View>
+                      <Text style={styles.curatedTitle} numberOfLines={1}>
+                        {item.title}
+                      </Text>
+                      <Text style={styles.curatedDesc} numberOfLines={2}>
+                        {item.description || '장소 ' + item.places.length + '곳을 모았어요'}
+                      </Text>
+                      <View style={styles.curatedFoot}>
+                        <Text style={styles.curatedCount}>{item.places.length}곳</Text>
+                        <Text style={styles.curatedNames} numberOfLines={1}>
+                          {item.places.slice(0, 2).map((p) => p.name).join(' · ') || '장소 없음'}
+                        </Text>
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      style={styles.curatedAddBtn}
+                      onPress={() => importCurated(item)}
+                      disabled={importing || !item.places.length}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.title + ' 내 지도에 담기'}
+                      testID={'curated-import-' + item.id}
+                    >
+                      <Ionicons name="add" size={13} color={colors.white} />
+                      <Text style={styles.curatedAddText}>담기</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          ) : null}
+
           <View style={styles.headRow}>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.title}>내 컬렉션</Text>
@@ -707,6 +900,17 @@ export default function CollectionsScreen({
           </View>
         </View>
       ) : null}
+
+      {/* ── v2.31 🗂️ 기획전 미리보기 — 장소 목록 + [내 지도에 한 번에 담기] ── */}
+      <CollectionPreviewSheet
+        visible={!!curatedPreview}
+        item={curatedPreview}
+        onClose={() => setCuratedPreview(null)}
+        onImport={importCurated}
+        busy={importing}
+        extraSub="운영자 추천"
+        testID="curated-preview"
+      />
     </View>
   );
 }
@@ -750,6 +954,83 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  // ── v2.31 📌 배너 · 🗂️ 기획전
+  bannerSection: { marginBottom: 2 },
+  bannerRow: { gap: 10, paddingRight: 4 },
+  bannerCard: {
+    paddingHorizontal: 16,
+    paddingTop: 13,
+    paddingBottom: 14,
+    borderRadius: radius.xl,
+    backgroundColor: colors.charcoal,
+    gap: 5,
+    ...cardShadow,
+  },
+  bannerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  bannerBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: colors.brand,
+  },
+  bannerBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', letterSpacing: -0.1 },
+  bannerLinkHint: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  bannerLinkText: { color: colors.charcoalSub, fontSize: 10, fontWeight: '700' },
+  bannerTitle: { color: colors.white, fontSize: 16, fontWeight: '800', letterSpacing: -0.4, marginTop: 2 },
+  bannerSub: { color: colors.charcoalSub, fontSize: 11.5, fontWeight: '600' },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  sectionTitle: { ...typography.body, fontSize: 13.5, fontWeight: '800' },
+  sectionCount: { ...typography.tiny, fontSize: 11 },
+  curatedRow: { gap: 10, paddingRight: 4, paddingBottom: 2 },
+  curatedCard: {
+    width: 236,
+    borderRadius: radius.xl,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    overflow: 'hidden',
+    ...cardShadow,
+  },
+  curatedMain: { paddingHorizontal: 13, paddingTop: 12, paddingBottom: 8, gap: 4 },
+  curatedTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  curatedEmoji: {
+    width: 32,
+    height: 32,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  curatedEmojiText: { fontSize: 16 },
+  curatedBadges: { flex: 1, minWidth: 0, gap: 2 },
+  curatedBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: colors.brandSoft,
+  },
+  curatedBadgeText: { fontSize: 9.5, fontWeight: '800', color: colors.brandDark },
+  curatedSponsor: { fontSize: 9.5, fontWeight: '700', color: colors.textMuted },
+  curatedTitle: { ...typography.body, fontSize: 13.5, fontWeight: '800', marginTop: 4 },
+  curatedDesc: { ...typography.tiny, fontSize: 11, lineHeight: 16, minHeight: 32 },
+  curatedFoot: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
+  curatedCount: { fontSize: 10.5, fontWeight: '800', color: colors.brandDark },
+  curatedNames: { flex: 1, minWidth: 0, fontSize: 10.5, fontWeight: '600', color: colors.textMuted },
+  curatedAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+    paddingVertical: 8,
+    backgroundColor: colors.charcoal,
+  },
+  curatedAddText: { color: colors.white, fontSize: 11.5, fontWeight: '800' },
   emptyCard: {
     alignItems: 'center',
     paddingHorizontal: 20,

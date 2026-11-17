@@ -7,6 +7,7 @@
  * 화면 구성
  *   · 로그인 전 … 관리자 계정으로 로그인 안내 (구글 로그인)
  *   · 로그인 후 … ① 📊 대시보드 ② 👥 회원 관리 ③ 📍 장소(핀) 관리 ④ 💬 제보 (v2.23)
+ *                ⑤ 📌 기획전·배너 (v2.31 — 컬렉션 탭의 배너·운영자 추천 기획전)
  *     - 데스크톱: 왼쪽 내비 + 넓은 표 / 모바일(390px): 상단 탭 + 카드형 목록
  *   · 권한은 **서버(`/api/admin`)와 DB 함수**가 최종 판단합니다.
  *     이 화면은 안내만 하고, 401·403 이 오면 그대로 잠금 화면으로 돌아갑니다.
@@ -40,7 +41,14 @@ const TABS = [
   { id: 'pins', label: '장소 관리', icon: 'location' },
   // v2.23 — 💬 제안 · 버그 제보
   { id: 'feedback', label: '제보', icon: 'chatbubble-ellipses' },
+  // v2.31 — 📌 컬렉션 탭의 배너 · 운영자 추천 기획전
+  { id: 'curation', label: '기획전·배너', icon: 'megaphone' },
 ];
+
+/** v2.31 — 배지·이모지·색 선택지 (화면에서만 쓰는 기본값) */
+const CURATION_BADGE_OPTIONS = ['기획전', '스폰서', '추천'];
+const CURATED_EMOJI_OPTIONS = ['📂', '🍜', '☕', '🍰', '🍱', '🏞️', '🛍️', '🎬', '🚗', '🧸'];
+const CURATED_COLOR_OPTIONS = ['#0D9488', '#F2A03D', '#0FA968', '#3B82F6', '#8B5CF6', '#EC4899'];
 
 /** v2.23 — 제보 상태·유형 라벨 (DB check 제약과 같은 값) */
 const FEEDBACK_STATUS_OPTIONS = [
@@ -104,6 +112,30 @@ const PREVIEW_DATA = {
     { id: 'f-2', kind: 'idea', title: '컬렉션을 친구에게 같이 보여 주기', content: '만든 컬렉션을 링크로 보낼 때 제목과 설명이 같이 보이면 좋겠어요. 지금은 핀만 보입니다.', author: '맛집탐험가', userEmail: 'tester01@gmail.com', appVersion: '2.23.0', likes: 5, status: 'applied', createdAt: '2026-11-16T22:40:00+09:00' },
     { id: 'f-3', kind: 'bug', title: '알림이 두 번 와요', content: '500m 안에 들어갔을 때 같은 가게 알림이 두 번 뜬 적이 있어요.', author: '익명', userEmail: '', appVersion: '2.22.0', likes: 2, status: 'fixed', createdAt: '2026-11-16T18:05:00+09:00' },
     { id: 'f-4', kind: 'idea', title: '영업시간 지금 열었는지 핀에 바로 표시', content: '목록에서도 영업 중인지 한눈에 보이면 좋을 것 같아요.', author: '희연', userEmail: 'hyeyeon.kim@gmail.com', appVersion: '2.23.0', likes: 3, status: 'open', createdAt: '2026-11-16T12:20:00+09:00' },
+  ],
+  // v2.31 — 📌 기획전·배너 탭 미리보기 (실제 데이터가 아닙니다)
+  banners: [
+    { id: 'b-1', title: '이번 주 릴스핀 인기 맛집', subtitle: '릴스에서 본 그 가게, 지금 담아 두세요', badge: '기획전', linkUrl: '', sortOrder: 0, active: true, createdAt: '2026-11-18T07:00:00+09:00' },
+    { id: 'b-2', title: '연말 모임 장소, 미리 잡아 두세요', subtitle: '스폰서 · ○○예약', badge: '스폰서', linkUrl: 'https://example.com', sortOrder: 1, active: false, createdAt: '2026-11-17T18:00:00+09:00' },
+  ],
+  curated: [
+    {
+      id: 'c-1',
+      title: '영등포 직장인 점심 코스',
+      description: '회사 근처에서 12시에 바로 갈 수 있는 곳',
+      sponsor: '운영자 추천',
+      badge: '기획전',
+      emoji: '🍜',
+      color: '#0D9488',
+      places: [
+        { name: '베통 성수', category: '베이커리', area: '성수동', address: '서울 성동구 연무장길 18', lat: 37.5445, lng: 127.0557 },
+        { name: '디오디아', category: '카페', area: '연남동', address: '서울 마포구 동교로 00', lat: 37.5628, lng: 126.9252 },
+      ],
+      placeCount: 2,
+      sortOrder: 0,
+      active: true,
+      createdAt: '2026-11-18T07:00:00+09:00',
+    },
   ],
 };
 
@@ -354,6 +386,502 @@ function PinEditModal({ target, onCancel, onSave, busy, categories }) {
   );
 }
 
+// ── v2.31 📌 배너 · 🗂️ 기획전 편집 모달 ────────────────────
+function ToggleChip({ on, label, onPress }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.toggleChip, on && styles.toggleChipOn]}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: on }}
+      accessibilityLabel={label}
+    >
+      <View style={[styles.toggleDot, on && styles.toggleDotOn]} />
+      <Text style={[styles.toggleText, on && styles.toggleTextOn]}>{on ? '켜짐' : '꺼짐'}</Text>
+    </Pressable>
+  );
+}
+
+function BannerEditModal({ target, onCancel, onSave, busy }) {
+  const [title, setTitle] = useState('');
+  const [subtitle, setSubtitle] = useState('');
+  const [badge, setBadge] = useState('기획전');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [sortOrder, setSortOrder] = useState('0');
+  const [active, setActive] = useState(true);
+
+  useEffect(() => {
+    if (!target) return;
+    setTitle(target.title || '');
+    setSubtitle(target.subtitle || '');
+    setBadge(target.badge || '기획전');
+    setLinkUrl(target.linkUrl || '');
+    setSortOrder(String(target.sortOrder != null ? target.sortOrder : 0));
+    setActive(target.active !== false);
+  }, [target]);
+
+  if (!target) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalDim}>
+        <ScrollView style={styles.modalCardTall} contentContainerStyle={styles.modalCardTallInner}>
+          <Text style={styles.modalTitle}>{target.id ? '배너 수정' : '새 배너'}</Text>
+          <Text style={styles.modalMessage}>컬렉션 탭 맨 위에 보이는 카드입니다 · 390px 화면 기준 한 줄에 하나</Text>
+
+          <Text style={styles.fieldLabel}>제목</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            style={styles.fieldInput}
+            placeholder="예: 이번 주 릴스핀 인기 맛집"
+            placeholderTextColor={colors.textMuted}
+            maxLength={40}
+            accessibilityLabel="배너 제목"
+            testID="banner-title-input"
+          />
+
+          <Text style={styles.fieldLabel}>부제 (한 줄)</Text>
+          <TextInput
+            value={subtitle}
+            onChangeText={setSubtitle}
+            style={styles.fieldInput}
+            placeholder="예: 릴스에서 본 그 가게, 지금 담아 두세요"
+            placeholderTextColor={colors.textMuted}
+            maxLength={80}
+            accessibilityLabel="배너 부제"
+          />
+
+          <Text style={styles.fieldLabel}>배지</Text>
+          <View style={styles.chipWrap}>
+            {CURATION_BADGE_OPTIONS.map((b) => (
+              <Pressable key={b} onPress={() => setBadge(b)} style={[styles.chip, badge === b && styles.chipOn]}>
+                <Text style={[styles.chipText, badge === b && styles.chipTextOn]}>{b}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            value={badge}
+            onChangeText={setBadge}
+            style={styles.fieldInput}
+            placeholder="배지 직접 입력 (10자)"
+            placeholderTextColor={colors.textMuted}
+            maxLength={10}
+            accessibilityLabel="배너 배지"
+          />
+
+          <Text style={styles.fieldLabel}>링크 (선택 · http/https)</Text>
+          <TextInput
+            value={linkUrl}
+            onChangeText={setLinkUrl}
+            style={styles.fieldInput}
+            placeholder="https://..."
+            placeholderTextColor={colors.textMuted}
+            maxLength={300}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel="배너 링크"
+          />
+
+          <View style={styles.modalSplitRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>순서 (작을수록 앞)</Text>
+              <TextInput
+                value={sortOrder}
+                onChangeText={setSortOrder}
+                style={styles.fieldInput}
+                keyboardType="number-pad"
+                maxLength={4}
+                accessibilityLabel="배너 순서"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>노출</Text>
+              <ToggleChip on={active} label="배너 노출" onPress={() => setActive((v) => !v)} />
+            </View>
+          </View>
+
+          <View style={styles.modalRow}>
+            <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={onCancel} disabled={busy}>
+              <Text style={styles.modalCancelText}>취소</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalBtn, styles.modalConfirm]}
+              onPress={() =>
+                onSave({
+                  id: target.id || undefined,
+                  title: title.trim(),
+                  subtitle: subtitle.trim(),
+                  badge: badge.trim() || '기획전',
+                  linkUrl: linkUrl.trim(),
+                  sortOrder: Number(sortOrder) || 0,
+                  active,
+                })
+              }
+              disabled={busy || !title.trim()}
+              testID="banner-save"
+            >
+              {busy ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.modalConfirmText}>저장</Text>
+              )}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
+/** 핀 하나를 기획전 장소 모양으로 (좌표·이름·분류·동네·주소만) */
+function placeFromPin(pin) {
+  const coord = (value, kind) => {
+    if (value === null || value === undefined || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    if (kind === 'lat' && (n < -90 || n > 90)) return null;
+    if (kind === 'lng' && (n < -180 || n > 180)) return null;
+    return n;
+  };
+  return {
+    name: String((pin && pin.name) || '').trim(),
+    category: String((pin && pin.category) || ''),
+    area: String((pin && pin.area) || ''),
+    address: String((pin && pin.address) || ''),
+    lat: coord(pin && pin.lat, 'lat'),
+    lng: coord(pin && pin.lng, 'lng'),
+  };
+}
+
+function CuratedEditModal({ target, onCancel, onSave, busy, pins, onLoadPins }) {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [sponsor, setSponsor] = useState('');
+  const [badge, setBadge] = useState('기획전');
+  const [emoji, setEmoji] = useState('📂');
+  const [color, setColor] = useState('#0D9488');
+  const [sortOrder, setSortOrder] = useState('0');
+  const [active, setActive] = useState(true);
+  const [places, setPlaces] = useState([]);
+  const [query, setQuery] = useState('');
+  const [manualName, setManualName] = useState('');
+  const [manualArea, setManualArea] = useState('');
+  const [manualAddress, setManualAddress] = useState('');
+  const [manualLat, setManualLat] = useState('');
+  const [manualLng, setManualLng] = useState('');
+
+  useEffect(() => {
+    if (!target) return;
+    setTitle(target.title || '');
+    setDescription(target.description || '');
+    setSponsor(target.sponsor || '');
+    setBadge(target.badge || '기획전');
+    setEmoji(target.emoji || '📂');
+    setColor(target.color || '#0D9488');
+    setSortOrder(String(target.sortOrder != null ? target.sortOrder : 0));
+    setActive(target.active !== false);
+    setPlaces(Array.isArray(target.places) ? target.places.slice() : []);
+    setQuery('');
+    setManualName('');
+    setManualArea('');
+    setManualAddress('');
+    setManualLat('');
+    setManualLng('');
+  }, [target]);
+
+  useEffect(() => {
+    if (target && typeof onLoadPins === 'function') onLoadPins();
+  }, [target, onLoadPins]);
+
+  if (!target) return null;
+
+  const chosen = new Set(places.map((p) => String(p.name || '').trim().toLowerCase()));
+  const keyword = query.trim().toLowerCase();
+  const pinRows = (Array.isArray(pins) ? pins : [])
+    .filter((p) => {
+      if (!p || !p.name) return false;
+      if (!keyword) return true;
+      return [p.name, p.area, p.address, p.category].filter(Boolean).join(' ').toLowerCase().indexOf(keyword) >= 0;
+    })
+    .slice(0, 40);
+
+  const addPlace = (place) => {
+    if (!place || !place.name) return;
+    setPlaces((list) => {
+      const key = String(place.name).trim().toLowerCase();
+      if (list.some((p) => String(p.name || '').trim().toLowerCase() === key)) return list;
+      return list.concat([place]).slice(0, 50);
+    });
+  };
+
+  const removePlace = (name) => {
+    setPlaces((list) => list.filter((p) => String(p.name || '').trim() !== String(name || '').trim()));
+  };
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalDim}>
+        <ScrollView style={styles.modalCardTall} contentContainerStyle={styles.modalCardTallInner}>
+          <Text style={styles.modalTitle}>{target.id ? '기획전 수정' : '새 기획전'}</Text>
+          <Text style={styles.modalMessage}>
+            컬렉션 탭 `운영자 추천 · 기획전` 에 보입니다 · 사용자는 [담기] 로 내 지도에 한 번에 담습니다
+          </Text>
+
+          <Text style={styles.fieldLabel}>제목</Text>
+          <TextInput
+            value={title}
+            onChangeText={setTitle}
+            style={styles.fieldInput}
+            placeholder="예: 영등포 직장인 점심 코스"
+            placeholderTextColor={colors.textMuted}
+            maxLength={40}
+            accessibilityLabel="기획전 제목"
+            testID="curated-title-input"
+          />
+
+          <Text style={styles.fieldLabel}>한 줄 설명</Text>
+          <TextInput
+            value={description}
+            onChangeText={setDescription}
+            style={styles.fieldInput}
+            placeholder="예: 회사 근처에서 12시에 바로 갈 수 있는 곳"
+            placeholderTextColor={colors.textMuted}
+            maxLength={100}
+            accessibilityLabel="기획전 설명"
+          />
+
+          <View style={styles.modalSplitRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>스폰서 표기 (선택)</Text>
+              <TextInput
+                value={sponsor}
+                onChangeText={setSponsor}
+                style={styles.fieldInput}
+                placeholder="예: 운영자 추천 · ○○"
+                placeholderTextColor={colors.textMuted}
+                maxLength={20}
+                accessibilityLabel="기획전 스폰서"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.fieldLabel}>순서</Text>
+              <TextInput
+                value={sortOrder}
+                onChangeText={setSortOrder}
+                style={styles.fieldInput}
+                keyboardType="number-pad"
+                maxLength={4}
+                accessibilityLabel="기획전 순서"
+              />
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>배지</Text>
+          <View style={styles.chipWrap}>
+            {CURATION_BADGE_OPTIONS.map((b) => (
+              <Pressable key={b} onPress={() => setBadge(b)} style={[styles.chip, badge === b && styles.chipOn]}>
+                <Text style={[styles.chipText, badge === b && styles.chipTextOn]}>{b}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.fieldLabel}>테마</Text>
+          <View style={styles.chipWrap}>
+            {CURATED_EMOJI_OPTIONS.map((e) => (
+              <Pressable key={e} onPress={() => setEmoji(e)} style={[styles.chip, emoji === e && styles.chipOn]}>
+                <Text style={[styles.chipText, emoji === e && styles.chipTextOn]}>{e}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <View style={styles.chipWrap}>
+            {CURATED_COLOR_OPTIONS.map((c) => (
+              <Pressable
+                key={c}
+                onPress={() => setColor(c)}
+                style={[styles.colorDot, { backgroundColor: c }, color === c && styles.colorDotOn]}
+                accessibilityLabel={'색 ' + c}
+              />
+            ))}
+            <ToggleChip on={active} label="기획전 노출" onPress={() => setActive((v) => !v)} />
+          </View>
+
+          <Text style={styles.fieldLabel}>담긴 장소 {places.length}곳 (최대 50)</Text>
+          {places.length ? (
+            <View style={styles.pickedList}>
+              {places.map((place, index) => (
+                <View key={(place.name || '') + index} style={styles.pickedRow}>
+                  <Text style={styles.pickedRank}>{index + 1}</Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.pickedName} numberOfLines={1}>
+                      {place.name}
+                    </Text>
+                    <Text style={styles.pickedMeta} numberOfLines={1}>
+                      {[place.category, place.area].filter(Boolean).join(' · ') || '분류 없음'}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => removePlace(place.name)}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel={place.name + ' 빼기'}
+                  >
+                    <Ionicons name="close-circle" size={17} color={colors.textMuted} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.emptyText}>아직 담은 장소가 없어요 · 아래에서 고르거나 직접 추가하세요.</Text>
+          )}
+
+          <Text style={styles.fieldLabel}>저장된 장소에서 고르기</Text>
+          <SearchBox value={query} onChange={setQuery} onSubmit={() => {}} placeholder="장소명·동네·주소 검색" />
+          <View style={styles.pinPickList}>
+            {!pinRows.length ? (
+              <Text style={styles.emptyText}>조건에 맞는 장소가 없어요.</Text>
+            ) : (
+              pinRows.map((pin, i) => {
+                const key = String(pin.name || '').trim().toLowerCase();
+                const on = chosen.has(key);
+                return (
+                  <Pressable
+                    key={(pin.pinId || '') + i}
+                    style={[styles.pinPickRow, on && styles.pinPickRowOn]}
+                    onPress={() => (on ? removePlace(pin.name) : addPlace(placeFromPin(pin)))}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    aria-checked={on}
+                    accessibilityLabel={(pin.name || '') + (on ? ' 빼기' : ' 담기')}
+                    testID={'curated-pick-' + (pin.pinId || i)}
+                  >
+                    <View style={[styles.pickBox, on && styles.pickBoxOn]}>
+                      {on ? <Ionicons name="checkmark" size={12} color={colors.white} /> : null}
+                    </View>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.pickedName} numberOfLines={1}>
+                        {pin.name}
+                      </Text>
+                      <Text style={styles.pickedMeta} numberOfLines={1}>
+                        {[pin.category, pin.area, pin.address].filter(Boolean).join(' · ') || '주소 미확인'}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+
+          <Text style={styles.fieldLabel}>직접 추가 (저장된 곳에 없는 장소)</Text>
+          <TextInput
+            value={manualName}
+            onChangeText={setManualName}
+            style={styles.fieldInput}
+            placeholder="장소 이름"
+            placeholderTextColor={colors.textMuted}
+            maxLength={80}
+            accessibilityLabel="직접 추가 장소 이름"
+          />
+          <View style={styles.modalSplitRow}>
+            <TextInput
+              value={manualArea}
+              onChangeText={setManualArea}
+              style={[styles.fieldInput, { flex: 1 }]}
+              placeholder="동네"
+              placeholderTextColor={colors.textMuted}
+              maxLength={40}
+              accessibilityLabel="직접 추가 동네"
+            />
+            <TextInput
+              value={manualAddress}
+              onChangeText={setManualAddress}
+              style={[styles.fieldInput, { flex: 1.6 }]}
+              placeholder="주소"
+              placeholderTextColor={colors.textMuted}
+              maxLength={160}
+              accessibilityLabel="직접 추가 주소"
+            />
+          </View>
+          <View style={styles.modalSplitRow}>
+            <TextInput
+              value={manualLat}
+              onChangeText={setManualLat}
+              style={[styles.fieldInput, { flex: 1 }]}
+              placeholder="위도 (선택)"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numbers-and-punctuation"
+              accessibilityLabel="직접 추가 위도"
+            />
+            <TextInput
+              value={manualLng}
+              onChangeText={setManualLng}
+              style={[styles.fieldInput, { flex: 1 }]}
+              placeholder="경도 (선택)"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numbers-and-punctuation"
+              accessibilityLabel="직접 추가 경도"
+            />
+            <Pressable
+              style={styles.manualAddBtn}
+              onPress={() => {
+                addPlace({
+                  name: manualName.trim(),
+                  area: manualArea.trim(),
+                  address: manualAddress.trim(),
+                  category: '',
+                  lat: Number.isFinite(Number(manualLat)) && manualLat !== '' ? Number(manualLat) : null,
+                  lng: Number.isFinite(Number(manualLng)) && manualLng !== '' ? Number(manualLng) : null,
+                });
+                setManualName('');
+                setManualArea('');
+                setManualAddress('');
+                setManualLat('');
+                setManualLng('');
+              }}
+              disabled={!manualName.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="장소 직접 추가"
+            >
+              <Text style={styles.manualAddText}>추가</Text>
+            </Pressable>
+          </View>
+          <Text style={styles.coordHint}>좌표를 비우면 지도에는 찍히지 않아요(목록에는 남습니다).</Text>
+
+          <View style={styles.modalRow}>
+            <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={onCancel} disabled={busy}>
+              <Text style={styles.modalCancelText}>취소</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.modalBtn, styles.modalConfirm]}
+              onPress={() =>
+                onSave({
+                  id: target.id || undefined,
+                  title: title.trim(),
+                  description: description.trim(),
+                  sponsor: sponsor.trim(),
+                  badge: badge.trim() || '기획전',
+                  emoji,
+                  color,
+                  sortOrder: Number(sortOrder) || 0,
+                  active,
+                  places,
+                })
+              }
+              disabled={busy || !title.trim() || !places.length}
+              testID="curated-save"
+            >
+              {busy ? (
+                <ActivityIndicator color={colors.white} size="small" />
+              ) : (
+                <Text style={styles.modalConfirmText}>저장</Text>
+              )}
+            </Pressable>
+          </View>
+        </ScrollView>
+      </View>
+    </Modal>
+  );
+}
+
 // ── 화면 ───────────────────────────────────────────────────
 export default function AdminScreen({ preview = false }) {
   const { width } = useWindowDimensions();
@@ -379,6 +907,12 @@ export default function AdminScreen({ preview = false }) {
   const [feedback, setFeedback] = useState(preview ? PREVIEW_DATA.feedback : []);
   const [feedbackKind, setFeedbackKind] = useState('');
   const [feedbackStatus, setFeedbackStatus] = useState('');
+  // v2.31 — 📌 배너 · 🗂️ 기획전 (컬렉션 탭에 보이는 것들)
+  const [banners, setBanners] = useState(preview ? PREVIEW_DATA.banners : []);
+  const [curated, setCurated] = useState(preview ? PREVIEW_DATA.curated : []);
+  const [bannerEditing, setBannerEditing] = useState(null);
+  const [curatedEditing, setCuratedEditing] = useState(null);
+  const [curationPins, setCurationPins] = useState(preview ? PREVIEW_DATA.pins : []);
 
   const [schemaMissing, setSchemaMissing] = useState('');
   const [confirm, setConfirm] = useState(null); // { kind, target }
@@ -453,6 +987,10 @@ export default function AdminScreen({ preview = false }) {
       if (preview) {
         // 미리보기 — 모의 제보도 필터가 실제로 걸리는 것처럼 보이도록 화면에서 직접 거릅니다.
         if (which === 'feedback') setFeedback(filterPreviewFeedback(PREVIEW_DATA.feedback, fbKind, fbStatus));
+        if (which === 'curation') {
+          setBanners(PREVIEW_DATA.banners);
+          setCurated(PREVIEW_DATA.curated);
+        }
         return;
       }
       const token = await currentToken();
@@ -486,6 +1024,22 @@ export default function AdminScreen({ preview = false }) {
           if (!res.ok) throw res;
           setSchemaMissing('');
           setFeedback(Array.isArray(res.data) ? res.data : []);
+        } else if (which === 'curation') {
+          // v2.31 — 배너·기획전을 한 번에 (둘 다 없으면 첫 배너를 바로 만들 수 있게 빈 목록)
+          const [bannerRes, curatedRes] = await Promise.all([
+            callAdmin({ view: 'banners', token }),
+            callAdmin({ view: 'curated', token }),
+          ]);
+          if (!bannerRes.ok) throw bannerRes;
+          if (!curatedRes.ok) throw curatedRes;
+          setSchemaMissing('');
+          setBanners(Array.isArray(bannerRes.data) ? bannerRes.data : []);
+          setCurated(Array.isArray(curatedRes.data) ? curatedRes.data : []);
+        } else if (which === 'curation-pins') {
+          // 기획전 편집 모달 — 저장된 장소에서 고를 수 있게 전체 핀을 읽습니다.
+          const res = await callAdmin({ view: 'pins', query: { q: '', category: '' }, token });
+          if (!res.ok) throw res;
+          setCurationPins(Array.isArray(res.data) ? res.data : []);
         }
       } catch (e) {
         if (e && e.error === 'admin-schema-missing') {
@@ -696,6 +1250,175 @@ export default function AdminScreen({ preview = false }) {
     },
     [preview, currentToken, showToast, loadTab]
   );
+
+  // ── v2.31 📌 배너 · 🗂️ 기획전 ────────────────────────
+  const saveBannerItem = useCallback(
+    async (values) => {
+      if (preview) {
+        setBannerEditing(null);
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      setBusy(true);
+      const token = await currentToken();
+      const res = await callAdmin({ method: 'POST', token, body: { action: 'save-banner', ...values } });
+      setBusy(false);
+      if (!res.ok) {
+        showToast(res.message || '배너를 저장하지 못했어요');
+        return;
+      }
+      setBannerEditing(null);
+      showToast(values.id ? '배너를 고쳤어요' : '배너를 올렸어요 · 컬렉션 탭 맨 위에 보입니다');
+      loadTab('curation');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const toggleBannerItem = useCallback(
+    async (item) => {
+      if (!item) return;
+      if (preview) {
+        setBanners((list) => list.map((row) => (row.id === item.id ? { ...row, active: !row.active } : row)));
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      setBusy(true);
+      const token = await currentToken();
+      const res = await callAdmin({
+        method: 'POST',
+        token,
+        body: {
+          action: 'save-banner',
+          id: item.id,
+          title: item.title,
+          subtitle: item.subtitle,
+          badge: item.badge,
+          linkUrl: item.linkUrl,
+          sortOrder: item.sortOrder,
+          active: !item.active,
+        },
+      });
+      setBusy(false);
+      if (!res.ok) {
+        showToast(res.message || '배너를 바꾸지 못했어요');
+        return;
+      }
+      showToast('“' + item.title + '” 배너를 ' + (item.active ? '껐어요' : '켰어요'));
+      loadTab('curation');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const removeBannerItem = useCallback(
+    async (item) => {
+      setBusy(true);
+      if (preview) {
+        setBusy(false);
+        setConfirm(null);
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      const token = await currentToken();
+      const res = await callAdmin({ method: 'POST', token, body: { action: 'delete-banner', id: item.id } });
+      setBusy(false);
+      setConfirm(null);
+      if (!res.ok) {
+        showToast(res.message || '배너를 지우지 못했어요');
+        return;
+      }
+      showToast('“' + item.title + '” 배너를 지웠어요');
+      loadTab('curation');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const saveCuratedItem = useCallback(
+    async (values) => {
+      if (preview) {
+        setCuratedEditing(null);
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      setBusy(true);
+      const token = await currentToken();
+      const res = await callAdmin({ method: 'POST', token, body: { action: 'save-curated', ...values } });
+      setBusy(false);
+      if (!res.ok) {
+        showToast(res.message || '기획전을 저장하지 못했어요');
+        return;
+      }
+      setCuratedEditing(null);
+      showToast(values.id ? '기획전을 고쳤어요' : '기획전을 올렸어요 · 컬렉션 탭에 보입니다');
+      loadTab('curation');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const toggleCuratedItem = useCallback(
+    async (item) => {
+      if (!item) return;
+      if (preview) {
+        setCurated((list) => list.map((row) => (row.id === item.id ? { ...row, active: !row.active } : row)));
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      setBusy(true);
+      const token = await currentToken();
+      const res = await callAdmin({
+        method: 'POST',
+        token,
+        body: {
+          action: 'save-curated',
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          sponsor: item.sponsor,
+          badge: item.badge,
+          emoji: item.emoji,
+          color: item.color,
+          places: item.places,
+          sortOrder: item.sortOrder,
+          active: !item.active,
+        },
+      });
+      setBusy(false);
+      if (!res.ok) {
+        showToast(res.message || '기획전을 바꾸지 못했어요');
+        return;
+      }
+      showToast('“' + item.title + '” 기획전을 ' + (item.active ? '껐어요' : '켰어요'));
+      loadTab('curation');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const removeCuratedItem = useCallback(
+    async (item) => {
+      setBusy(true);
+      if (preview) {
+        setBusy(false);
+        setConfirm(null);
+        showToast('미리보기에서는 저장되지 않아요');
+        return;
+      }
+      const token = await currentToken();
+      const res = await callAdmin({ method: 'POST', token, body: { action: 'delete-curated', id: item.id } });
+      setBusy(false);
+      setConfirm(null);
+      if (!res.ok) {
+        showToast(res.message || '기획전을 지우지 못했어요');
+        return;
+      }
+      showToast('“' + item.title + '” 기획전을 지웠어요');
+      loadTab('curation');
+    },
+    [preview, currentToken, showToast, loadTab]
+  );
+
+  const loadCurationPins = useCallback(() => {
+    if (preview) return;
+    loadTab('curation-pins');
+  }, [preview, loadTab]);
 
   // ── 잠금 화면들 ──────────────────────────────────
   const renderGate = () => {
@@ -1099,6 +1822,192 @@ export default function AdminScreen({ preview = false }) {
     );
   };
 
+  /** v2.31 — 📌 배너 · 🗂️ 기획전 관리 (컬렉션 탭에 바로 보입) */
+  const renderCuration = () => (
+    <>
+      <View style={styles.sectionHead}>
+        <View>
+          <Text style={styles.sectionTitle}>📌 배너 {banners.length}개</Text>
+          <Text style={styles.sectionHint}>컬렉션 탭 맨 위 · 켜 둔 것만 보입</Text>
+        </View>
+        <Pressable
+          style={styles.newCurationBtn}
+          onPress={() => setBannerEditing({})}
+          accessibilityRole="button"
+          accessibilityLabel="새 배너"
+          testID="admin-banner-new"
+        >
+          <Ionicons name="add" size={14} color={colors.white} />
+          <Text style={styles.newCurationText}>새 배너</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card} testID="admin-banners">
+        {!banners.length ? (
+          <Text style={styles.emptyText}>{loading ? '불러오는 중…' : '아직 배너가 없어요 · [새 배너] 로 하나 올려 보세요.'}</Text>
+        ) : (
+          banners.map((item, i) => (
+            <View
+              key={item.id || i}
+              style={[styles.curationRow, i === banners.length - 1 && styles.rowLast]}
+              testID={'admin-banner-' + item.id}
+            >
+              <View style={styles.curationBody}>
+                <View style={styles.pinTitleRow}>
+                  <Pill text={item.badge || '기획전'} tone="brand" />
+                  <Pill text={item.active ? '켜짐' : '꺼짐'} tone={item.active ? 'visit' : 'muted'} />
+                  <Text style={styles.curationOrder}>순서 {item.sortOrder != null ? item.sortOrder : 0}</Text>
+                </View>
+                <Text style={styles.curationTitle} numberOfLines={1}>
+                  {item.title}
+                </Text>
+                {!!item.subtitle && (
+                  <Text style={styles.curationSub} numberOfLines={1}>
+                    {item.subtitle}
+                  </Text>
+                )}
+                {!!item.linkUrl && (
+                  <Text style={styles.curationLink} numberOfLines={1}>
+                    🔗 {item.linkUrl}
+                  </Text>
+                )}
+              </View>
+              <View style={styles.curationActions}>
+                <Pressable
+                  style={[styles.tinyBtn, item.active && styles.tinyBtnOn]}
+                  onPress={() => toggleBannerItem(item)}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.active ? '배너 끄기' : '배너 켜기'}
+                  testID={'admin-banner-toggle-' + item.id}
+                >
+                  <Text style={[styles.tinyBtnText, item.active && styles.tinyBtnTextOn]}>
+                    {item.active ? '끄기' : '켜기'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.editBtn}
+                  onPress={() => setBannerEditing(item)}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel="배너 수정"
+                  testID={'admin-banner-edit-' + item.id}
+                >
+                  <Ionicons name="create-outline" size={15} color={colors.textSub} />
+                </Pressable>
+                <Pressable
+                  style={styles.deleteBtn}
+                  onPress={() => setConfirm({ kind: 'banner', target: item })}
+                  disabled={busy}
+                  accessibilityRole="button"
+                  accessibilityLabel="배너 삭제"
+                  testID={'admin-banner-delete-' + item.id}
+                >
+                  <Ionicons name="trash-outline" size={15} color="#B42318" />
+                </Pressable>
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={styles.sectionHead}>
+        <View>
+          <Text style={styles.sectionTitle}>🗂️ 기획전 {curated.length}개</Text>
+          <Text style={styles.sectionHint}>운영자 추천 · 스폰서 묶음 · [담기] 로 내 지도에 들어감</Text>
+        </View>
+        <Pressable
+          style={styles.newCurationBtn}
+          onPress={() => setCuratedEditing({})}
+          accessibilityRole="button"
+          accessibilityLabel="새 기획전"
+          testID="admin-curated-new"
+        >
+          <Ionicons name="add" size={14} color={colors.white} />
+          <Text style={styles.newCurationText}>새 기획전</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card} testID="admin-curated">
+        {!curated.length ? (
+          <Text style={styles.emptyText}>{loading ? '불러오는 중…' : '아직 기획전이 없어요 · [새 기획전] 으로 장소를 묶어 보세요.'}</Text>
+        ) : (
+          curated.map((item, i) => {
+            const places = Array.isArray(item.places) ? item.places : [];
+            return (
+              <View
+                key={item.id || i}
+                style={[styles.curationRow, i === curated.length - 1 && styles.rowLast]}
+                testID={'admin-curated-' + item.id}
+              >
+                <View style={[styles.curationEmoji, { backgroundColor: (item.color || '#0D9488') + '1F' }]}>
+                  <Text style={{ fontSize: 17 }}>{item.emoji || '📂'}</Text>
+                </View>
+                <View style={styles.curationBody}>
+                  <View style={styles.pinTitleRow}>
+                    <Pill text={item.badge || '기획전'} tone="brand" />
+                    <Pill text={item.active ? '켜짐' : '꺼짐'} tone={item.active ? 'visit' : 'muted'} />
+                    <Text style={styles.curationOrder}>
+                      {places.length}곳 · 순서 {item.sortOrder != null ? item.sortOrder : 0}
+                    </Text>
+                  </View>
+                  <Text style={styles.curationTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.curationSub} numberOfLines={2}>
+                    {[item.sponsor, item.description].filter(Boolean).join(' · ') || '설명 없음'}
+                  </Text>
+                  <Text style={styles.curationLink} numberOfLines={1}>
+                    {places.map((p) => p.name).join(' · ') || '장소 없음'}
+                  </Text>
+                </View>
+                <View style={styles.curationActions}>
+                  <Pressable
+                    style={[styles.tinyBtn, item.active && styles.tinyBtnOn]}
+                    onPress={() => toggleCuratedItem(item)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.active ? '기획전 끄기' : '기획전 켜기'}
+                    testID={'admin-curated-toggle-' + item.id}
+                  >
+                    <Text style={[styles.tinyBtnText, item.active && styles.tinyBtnTextOn]}>
+                      {item.active ? '끄기' : '켜기'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.editBtn}
+                    onPress={() => setCuratedEditing(item)}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel="기획전 수정"
+                    testID={'admin-curated-edit-' + item.id}
+                  >
+                    <Ionicons name="create-outline" size={15} color={colors.textSub} />
+                  </Pressable>
+                  <Pressable
+                    style={styles.deleteBtn}
+                    onPress={() => setConfirm({ kind: 'curated', target: item })}
+                    disabled={busy}
+                    accessibilityRole="button"
+                    accessibilityLabel="기획전 삭제"
+                    testID={'admin-curated-delete-' + item.id}
+                  >
+                    <Ionicons name="trash-outline" size={15} color="#B42318" />
+                  </Pressable>
+                </View>
+              </View>
+            );
+          })
+        )}
+      </View>
+
+      <Text style={styles.curationFootnote}>
+        켜 둔 배너·기획전만 앱 컬렉션 탭에 보입니다 · 사용자가 [담기] 를 누르면 중복 없이 내 지도에 들어가고,
+        같은 이름의 컬렉션으로 묶입니다.
+      </Text>
+    </>
+  );
+
   /** DB 함수가 아직 없을 때 — SQL 한 번만 실행하면 된다는 안내 */
   const renderSchemaSetup = () => (
     <View style={styles.setupCard}>
@@ -1125,6 +2034,8 @@ export default function AdminScreen({ preview = false }) {
         renderMembers()
       ) : tab === 'pins' ? (
         renderPins()
+      ) : tab === 'curation' ? (
+        renderCuration()
       ) : (
         renderFeedback()
       )
@@ -1197,7 +2108,7 @@ export default function AdminScreen({ preview = false }) {
         <ScrollView style={styles.content} contentContainerStyle={[styles.contentInner, wide && styles.contentInnerWide]}>
           {!wide && gate === 'ready' ? <View style={styles.tabsRow}>{navItems}</View> : null}
           {body}
-          <Text style={styles.footNote}>릴스핀 v2.23 · 관리자 화면은 서버에서 권한을 다시 확인합니다</Text>
+          <Text style={styles.footNote}>릴스핀 v2.31 · 관리자 화면은 서버에서 권한을 다시 확인합니다</Text>
         </ScrollView>
       </View>
 
@@ -1216,6 +2127,10 @@ export default function AdminScreen({ preview = false }) {
             ? '회원을 삭제할까요?'
             : confirm && confirm.kind === 'feedback'
             ? '제보를 삭제할까요?'
+            : confirm && confirm.kind === 'banner'
+            ? '배너를 삭제할까요?'
+            : confirm && confirm.kind === 'curated'
+            ? '기획전을 삭제할까요?'
             : '핀을 삭제할까요?'
         }
         message={
@@ -1223,6 +2138,10 @@ export default function AdminScreen({ preview = false }) {
             ? (confirm.target.nickname || '') + ' (' + (confirm.target.email || '') + ') 님과 저장한 핀 ' + (confirm.target.pinCount || 0) + '개가 함께 지워집니다. 되돌릴 수 없어요.'
             : confirm && confirm.kind === 'feedback'
             ? '“' + (confirm.target.title || '') + '” 제보가 게시판에서 지워집니다. 되돌릴 수 없어요.'
+            : confirm && confirm.kind === 'banner'
+            ? '“' + (confirm.target.title || '') + '” 배너가 앱 컬렉션 탭에서 사라집니다. 되돌릴 수 없어요.'
+            : confirm && confirm.kind === 'curated'
+            ? '“' + (confirm.target.title || '') + '” 기획전이 사라집니다. 이미 담아 간 사용자의 지도는 그대로 남아요.'
             : confirm
             ? '“' + (confirm.target.name || '') + '” 핀이 ' + (confirm.target.nickname || confirm.target.email || '') + ' 님의 지도에서 지워집니다. 되돌릴 수 없어요.'
             : ''
@@ -1232,6 +2151,8 @@ export default function AdminScreen({ preview = false }) {
           if (!confirm) return;
           if (confirm.kind === 'member') return removeMember(confirm.target);
           if (confirm.kind === 'feedback') return removeFeedback(confirm.target);
+          if (confirm.kind === 'banner') return removeBannerItem(confirm.target);
+          if (confirm.kind === 'curated') return removeCuratedItem(confirm.target);
           return removePin(confirm.target);
         }}
         onCancel={() => setConfirm(null)}
@@ -1243,6 +2164,22 @@ export default function AdminScreen({ preview = false }) {
         busy={busy}
         onCancel={() => setEditing(null)}
         onSave={savePin}
+      />
+
+      {/* v2.31 — 📌 배너 · 🗂️ 기획전 편집 */}
+      <BannerEditModal
+        target={bannerEditing}
+        busy={busy}
+        onCancel={() => setBannerEditing(null)}
+        onSave={saveBannerItem}
+      />
+      <CuratedEditModal
+        target={curatedEditing}
+        busy={busy}
+        pins={curationPins}
+        onLoadPins={loadCurationPins}
+        onCancel={() => setCuratedEditing(null)}
+        onSave={saveCuratedItem}
       />
     </View>
   );
@@ -1566,6 +2503,137 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
     outlineStyle: 'none',
   },
+
+  // ── v2.31 📌 배너 · 🗂️ 기획전 ──────────────────────────
+  newCurationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.charcoal,
+  },
+  newCurationText: { color: colors.white, fontSize: 11.5, fontWeight: '800' },
+  curationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lineSoft,
+  },
+  curationEmoji: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  curationBody: { flex: 1, minWidth: 0, gap: 2 },
+  curationOrder: { fontSize: 10.5, fontWeight: '700', color: colors.textMuted },
+  curationTitle: { fontSize: 13.5, fontWeight: '800', color: colors.text, marginTop: 2 },
+  curationSub: { fontSize: 11.5, color: colors.textSub, lineHeight: 16 },
+  curationLink: { fontSize: 10.5, color: colors.textMuted },
+  curationActions: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tinyBtn: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.lineSoft,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  tinyBtnOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandSoft2 },
+  tinyBtnText: { fontSize: 10.5, fontWeight: '800', color: colors.textSub },
+  tinyBtnTextOn: { color: colors.brandDark },
+  curationFootnote: { fontSize: 10.5, color: colors.textMuted, lineHeight: 16, marginTop: 14, marginBottom: 8 },
+  modalCardTall: {
+    width: '100%',
+    maxWidth: 460,
+    maxHeight: '90%',
+    backgroundColor: colors.white,
+    borderRadius: 18,
+  },
+  modalCardTallInner: { padding: 18 },
+  modalSplitRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  toggleChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: colors.lineSoft,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignSelf: 'flex-start',
+  },
+  toggleChipOn: { backgroundColor: colors.brandSoft, borderColor: colors.brandSoft2 },
+  toggleDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.textMuted },
+  toggleDotOn: { backgroundColor: colors.brand },
+  toggleText: { fontSize: 11.5, fontWeight: '800', color: colors.textSub },
+  toggleTextOn: { color: colors.brandDark },
+  colorDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  colorDotOn: { borderColor: colors.charcoal },
+  pickedList: { gap: 6 },
+  pickedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  pickedRank: { fontSize: 11, fontWeight: '800', color: colors.brandDark, width: 16 },
+  pickedName: { fontSize: 12.5, fontWeight: '800', color: colors.text },
+  pickedMeta: { fontSize: 10.5, color: colors.textMuted },
+  pinPickList: {
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 10,
+    padding: 6,
+    gap: 4,
+    marginTop: 8,
+  },
+  pinPickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  pinPickRowOn: { backgroundColor: colors.brandSoft },
+  pickBox: {
+    width: 18,
+    height: 18,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.white,
+  },
+  pickBoxOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  manualAddBtn: {
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: colors.charcoal,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualAddText: { color: colors.white, fontSize: 12, fontWeight: '800' },
+  coordHint: { fontSize: 10.5, color: colors.textMuted, marginTop: 6 },
 
   toast: {
     position: 'absolute',

@@ -25,7 +25,8 @@ function errorInfo(status, body) {
     return {
       status: 503,
       error: 'admin-schema-missing',
-      message: '어드민 DB 함수가 아직 없어요. Supabase SQL Editor 에서 supabase/admin.sql (제보 탭은 supabase/feedback.sql)을 실행해 주세요.',
+      message:
+        '어드민 DB 함수가 아직 없어요. Supabase SQL Editor 에서 supabase/admin.sql (제보 탭은 supabase/feedback.sql, 기획전·배너 탭은 supabase/curation.sql)을 실행해 주세요.',
     };
   }
   if (code === '42501' || /forbidden|권한/i.test(message)) {
@@ -166,6 +167,66 @@ function deleteFeedback(id, options) {
   return rpcCall('reelpin_admin_delete_feedback', { p_id: id }, options);
 }
 
+// ── v2.31 🗂️ 기획전 · 📌 배너 ────────────────────────────────
+/** 📌 배너 목록 (꺼 둔 것 포함) */
+function banners(options) {
+  return rpcCall('reelpin_admin_banners', {}, options);
+}
+
+/** 📌 배너 저장 (id 없으면 새로) */
+function saveBanner(target, options) {
+  const t = target || {};
+  return rpcCall(
+    'reelpin_admin_save_banner',
+    {
+      p_id: t.id || null,
+      p_title: String(t.title || ''),
+      p_subtitle: String(t.subtitle || ''),
+      p_badge: String(t.badge || '기획전'),
+      p_link_url: String(t.linkUrl || ''),
+      p_active: t.active !== false,
+      p_sort_order: Number.isFinite(Number(t.sortOrder)) ? Number(t.sortOrder) : 0,
+    },
+    options
+  );
+}
+
+/** 📌 배너 삭제 */
+function deleteBanner(id, options) {
+  return rpcCall('reelpin_admin_delete_banner', { p_id: id }, options);
+}
+
+/** 🗂️ 기획전 목록 (꺼 둔 것 포함) */
+function curated(options) {
+  return rpcCall('reelpin_admin_curated', {}, options);
+}
+
+/** 🗂️ 기획전 저장 (id 없으면 새로) */
+function saveCurated(target, options) {
+  const t = target || {};
+  return rpcCall(
+    'reelpin_admin_save_curated',
+    {
+      p_id: t.id || null,
+      p_title: String(t.title || ''),
+      p_description: String(t.description || ''),
+      p_sponsor: String(t.sponsor || ''),
+      p_badge: String(t.badge || '기획전'),
+      p_emoji: String(t.emoji || '📂'),
+      p_color: String(t.color || '#0D9488'),
+      p_places: Array.isArray(t.places) ? t.places : [],
+      p_active: t.active !== false,
+      p_sort_order: Number.isFinite(Number(t.sortOrder)) ? Number(t.sortOrder) : 0,
+    },
+    options
+  );
+}
+
+/** 🗂️ 기획전 삭제 */
+function deleteCurated(id, options) {
+  return rpcCall('reelpin_admin_delete_curated', { p_id: id }, options);
+}
+
 module.exports = {
   RPC_TIMEOUT_MS,
   rpcCall,
@@ -179,4 +240,10 @@ module.exports = {
   feedback,
   updateFeedbackStatus,
   deleteFeedback,
+  banners,
+  saveBanner,
+  deleteBanner,
+  curated,
+  saveCurated,
+  deleteCurated,
 };

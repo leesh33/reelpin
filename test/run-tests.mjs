@@ -15,6 +15,7 @@
  *   npm run test:collections … 📂 컬렉션 만들기·담기·공유·정리 테스트만 (v2.19)
  *   npm run test:hours     … 🕒 영업 상태 배지 · 📝 한줄 메모 초안 테스트만 (v2.20)
  *   npm run test:admin     … 🛡️ 어드민 인증(401·403)·화이트리스트·RPC 접근 테스트만 (v2.21)
+ *   npm run test:curation  … 🗂️ 기획전·공유 링크·📌 배너 테스트만 (v2.31)
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -190,6 +191,17 @@ if (!only || only === 'feedback') {
     name: '제안·버그 제보 게시판 테스트',
     entry: 'feedback-test.mjs',
     out: 'feedback-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+  });
+}
+
+if (!only || only === 'curation') {
+  // v2.31 — 🗂️ 기획전·공유 링크 · 📌 배너: 장소/배너 다듬기 · 중복 없는 담기 · 공개 RPC · 어드민 라우트
+  failed += await runSuite({
+    name: '기획전·공유 링크·배너 테스트',
+    entry: 'curation-test.mjs',
+    out: 'curation-test.bundle.mjs',
     format: 'esm',
     alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
   });
