@@ -980,6 +980,19 @@ export default function App() {
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
+  /**
+   * v2.25.0 — 장소 상세 시트의 [🗺️ 지도에서 보기]:
+   *   상세 시트를 열기 전에 떠 있던 레이어(🔍 검색 · 🔔 알림 · ☰ 메뉴 · 💬 제보)를 모두 닫고 지도 탭으로 돌려보냅니다.
+   *   (지도 이동·시트 닫기는 MapScreen 이 이어서 처리)
+   */
+  const dismissOverlaysForMap = useCallback(() => {
+    setSearchOpen(false);
+    setAlertOpen(false);
+    setMenuOpen(false);
+    setFeedbackOpen(false);
+    setTab('map');
+  }, []);
+
   /** 🔍 팝업에서 핀을 고르면 팝업을 닫고 지도 탭에서 그 핀 상세를 엽니다(🔔 와 같은 규칙) */
   const openPinFromSearch = useCallback(
     (pin) => {
@@ -1101,6 +1114,7 @@ export default function App() {
               onClearCollectionFilter={clearCollectionFilter}
               alertsEnabled={alertsEnabled}
               onToggleAlerts={handleToggleAlerts}
+              onDismissOverlays={dismissOverlaysForMap}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>

@@ -181,11 +181,11 @@ check('지도: 컬렉션 필터(collectionFilter) + 해제 칩', mapSource.index
 
 const menuSource = fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8');
 check('☰: 내 정보 머지(ProfileScreen panel) + 서브 4종(알림 설정 포함)', menuSource.indexOf('panel') > 0 && ['categories', 'radius', 'alerts', 'about'].every((k) => menuSource.indexOf("'" + k + "'") >= 0));
-check('☰: 버전 v2.24.0', menuSource.indexOf('릴스핀 v2.24.0') > 0);
+check('☰: 버전 v2.25.0', menuSource.indexOf('릴스핀 v2.25.0') > 0);
 
 const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf8'));
 const expoConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'app.json'), 'utf8')).expo;
-check('버전: 2.24.0 (package.json · app.json)', pkg.version === '2.24.0' && expoConfig.version === '2.24.0', pkg.version + '/' + expoConfig.version);
+check('버전: 2.25.0 (package.json · app.json)', pkg.version === '2.25.0' && expoConfig.version === '2.25.0', pkg.version + '/' + expoConfig.version);
 
 if (failed) {
   console.log('\nCOLLECTIONS_FAILED=' + failed);

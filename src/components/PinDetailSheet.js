@@ -36,6 +36,8 @@ export default function PinDetailSheet({
   onAddCategory,
   onToggleVisited,
   onChangeMemo,
+  // v2.25.0 — 🗺️ 지도에서 보기: 시트를 닫고 지도 탭에서 이 핀 위치로 이동(실제 이동은 지도 화면이 함)
+  onShowOnMap,
 }) {
   // v1.7 — [매장 정보 보기] 는 브라우저 밖으로 나가지 않고 앱 안 모달을 엽니다.
   const [placeModalOpen, setPlaceModalOpen] = useState(false);
@@ -117,6 +119,17 @@ export default function PinDetailSheet({
 
   const handlePlace = () => {
     setPlaceModalOpen(true);
+  };
+
+  /**
+   * v2.25.0 — 🗺️ 지도에서 보기 (인앱 이동).
+   *   · 입력 중이던 한줄 메모는 시트가 닫히기 전에 조용히 저장합니다(쓴 글이 사라지지 않게).
+   *   · 열려 있던 레이어를 닫고 지도를 이 핀으로 옮기는 일은 지도 화면(MapScreen)이 맡습니다.
+   */
+  const handleShowOnMap = () => {
+    if (memoDirty && typeof onChangeMemo === 'function') onChangeMemo(pin.id, memoDraft);
+    setPlaceModalOpen(false);
+    if (typeof onShowOnMap === 'function') onShowOnMap(pin);
   };
 
   /** v2.10 — ✅ 탭 한 번으로 가봤어요 체크/해제 */
@@ -413,6 +426,25 @@ export default function PinDetailSheet({
           <Text style={styles.placeBtnText}>매장 정보 보기</Text>
           <Text style={styles.placeBtnMeta}>{pin.naverPlaceId ? '네이버 플레이스 상세' : '네이버 플레이스'}</Text>
           <Ionicons name="expand-outline" size={14} color={colors.coralDark} />
+        </Pressable>
+
+        {/* v2.25.0 — 🗺️ 지도에서 보기: 앱 안에서 이 장소로 지도를 옮깁니다.
+            (아래 네이버·카카오 버튼은 지도 **앱**을 밖에서 여는 것이라 역할이 다릅니다) */}
+        <Pressable
+          style={styles.showOnMapBtn}
+          onPress={handleShowOnMap}
+          accessibilityRole="button"
+          accessibilityLabel="지도에서 보기"
+          testID="pin-show-on-map"
+        >
+          <Text style={styles.showOnMapEmoji}>🗺️</Text>
+          <View style={styles.showOnMapTextWrap}>
+            <Text style={styles.showOnMapText}>지도에서 보기</Text>
+            <Text style={styles.showOnMapSub} numberOfLines={1}>
+              상세를 닫고 이 위치로 지도를 옮겨요
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.65)" />
         </Pressable>
 
         <View style={styles.btnRow}>
@@ -923,6 +955,35 @@ const styles = StyleSheet.create({
     color: colors.coralDark,
     opacity: 0.7,
     textAlign: 'right',
+  },
+  // v2.25.0 — 🗺️ 지도에서 보기 (다크 차콜 · 인앱 이동) — 위의 분류 색 헤더와 이어지는 결
+  showOnMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    height: 46,
+    borderRadius: radius.md,
+    backgroundColor: colors.charcoal,
+    paddingHorizontal: 12,
+  },
+  showOnMapEmoji: {
+    fontSize: 15,
+  },
+  showOnMapTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  showOnMapText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.white,
+  },
+  showOnMapSub: {
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: colors.charcoalSub,
+    marginTop: 1,
   },
   btnRow: {
     flexDirection: 'row',

@@ -94,6 +94,8 @@ export default function MapScreen({
   // v2.19.1 — 🔔 반경 내 알림 (내 정보 › 알림 설정 과 같은 상태) — App 이 갖고 있습니다
   alertsEnabled = false,
   onToggleAlerts,
+  // v2.25.0 — 상세 시트의 [🗺️ 지도에서 보기]: 검색·알림·메뉴 같은 앞선 레이어를 닫고 지도 탭으로
+  onDismissOverlays,
 }) {
   /**
    * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
@@ -234,10 +236,20 @@ export default function MapScreen({
   const filtered = useMemo(() => filterByVisit(baseFiltered, visitFilter), [baseFiltered, visitFilter]);
   // v2.0 — 공유받은 지도는 '미리보기'로 지도에 함께 띄우고, 상세 시트는 읽기 전용으로 엽니다.
   const previewPins = useMemo(() => (Array.isArray(sharedPins) ? sharedPins.filter(Boolean) : []), [sharedPins]);
-  const mapPins = useMemo(
-    () => (previewPins.length ? previewPins.concat(filtered) : filtered),
-    [previewPins, filtered]
-  );
+  // v2.25.0 — 상세 시트의 [🗺️ 지도에서 보기]로 연 핀이 분류·검색·방문·컬렉션 필터에 가려져 있으면
+  //   필터를 풀지 않고 **이 핀만** 지도에 함께 꿴습니다. (아래 mapPins)
+  const [revealPinId, setRevealPinId] = useState(null);
+  const revealPin = useMemo(() => {
+    if (!revealPinId) return null;
+    const all = previewPins.concat(Array.isArray(pins) ? pins : []);
+    return all.find((p) => p && String(p.id) === String(revealPinId)) || null;
+  }, [revealPinId, pins, previewPins]);
+  const mapPins = useMemo(() => {
+    const base = previewPins.length ? previewPins.concat(filtered) : filtered;
+    if (!revealPin) return base;
+    if (base.some((p) => p && String(p.id) === String(revealPin.id))) return base;
+    return base.concat(revealPin);
+  }, [previewPins, filtered, revealPin]);
 
   const counts = useMemo(() => countByCategory(pins, categories), [pins, categories]);
 
@@ -447,6 +459,37 @@ export default function MapScreen({
       setNearbyOpen(false);
     },
     [onSelectPin]
+  );
+
+  /**
+   * v2.25.0 — 장소 상세 시트의 [🗺️ 지도에서 보기]:
+   *   · 먼저 열려 있던 레이어(🔍 검색 · 🔔 알림 · ☰ 메뉴 · 💬 제보)를 닫고 지도 탭으로 돌아갑니다.
+   *   · 목록 보기 레이어·주변 500m 패널·지도 도구 메뉴도 함께 닫습니다.
+   *   · 분류·검색·방문·컬렉션 필터에 가려져 있던 핀이면 필터는 건드리지 않고
+   *     그 핀만 지도에 함께 보여 줍니다(revealPinId).
+   *   · 마지막으로 상세 시트를 닫고 그 핀 좌표로 지도 중심·줌을 맞춥니다(setFocus → 줌 16 이상).
+   */
+  const showPinOnMap = useCallback(
+    (pin) => {
+      const target = pin || selectedPin;
+      if (typeof onDismissOverlays === 'function') onDismissOverlays();
+      setView('map');
+      setNearbyOpen(false);
+      setToolsOpen(false);
+      const coords = pinMapCoords(target);
+      if (coords && target) {
+        setRevealPinId(target.id);
+        setFocus({ lat: coords.lat, lng: coords.lng });
+        setFocusKey((k) => k + 1);
+      }
+      if (typeof onSelectPin === 'function') onSelectPin(null);
+      showToast(
+        coords && target
+          ? String(target.name || '이 장소') + ' 위치로 지도를 옮겼어요'
+          : '이 핀은 좌표가 없어 지도에 표시할 수 없어요'
+      );
+    },
+    [onDismissOverlays, onSelectPin, selectedPin, showToast]
   );
 
   /**
@@ -1114,6 +1157,7 @@ export default function MapScreen({
             onDelete={onDeletePin}
             onToggleVisited={onTogglePinVisited}
             onChangeMemo={onChangePinMemo}
+            onShowOnMap={showPinOnMap}
             onToast={onToast}
             readOnly={selectedIsShared}
           />
