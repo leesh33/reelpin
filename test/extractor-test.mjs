@@ -2549,6 +2549,67 @@ check(
   JSON.stringify(classifyQuery('미니님 질문'))
 );
 
+// ── 9-B) 인스타 릴스(영상 AI 불가) — 메뉴만 있는 캡션은 '확인 필요'로만 ──
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({
+      documents: q.indexOf('닭볶음탕') >= 0
+        ? [{ ...EYR_RIGHT, id: 'ins1', place_name: '가평 솥뚜껑닭볶음탕', address_name: '경기 가평군 설악면 1', road_address_name: '경기 가평군 설악면 1' }]
+        : [],
+    });
+  }
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '이건', area: '불가' });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const instaWeak = await extractPlaces('https://www.instagram.com/reel/C8xSg2BpQ1K/', {
+  caption: '가평 닭볶음탕 맛집 다녀왔어요 🐔',
+});
+check(
+  'v2.22 인스타: 상호가 없으면 확인 필요(weak) 로 안내',
+  instaWeak.matchStatus === 'weak' && String(instaWeak.aiNote).indexOf('비슷한 곳') > 0,
+  instaWeak.matchStatus + ' / ' + instaWeak.aiNote
+);
+check(
+  'v2.22 인스타: 영상 AI 는 부르지 않음(유튜브 전용)',
+  calls.filter((c) => String(c.url).includes('/api/gemini')).length === 0,
+  String(calls.filter((c) => String(c.url).includes('/api/gemini')).length)
+);
+
+// ── 9-C) 📸 사진: AI 가 읽은 이름과 지도 이름이 다르면 화면에 확인 안내 ──
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '베통', area: '성수동', menu: '소금빵', category: '베이커리', places: [] });
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q.indexOf('베통') >= 0 ? [BETONG_DOC] : [] });
+  }
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const photoSame = await extractFromImage({ base64: 'A'.repeat(400), mimeType: 'image/jpeg' });
+check(
+  'v2.22 사진: AI 가 읽은 이름과 지도가 맞으면 확인(verified)',
+  photoSame.ok === true && photoSame.matchStatus === 'verified' && (photoSame.candidates[0] || {}).name === '베통 성수',
+  String(photoSame.matchStatus) + ' / ' + JSON.stringify((photoSame.candidates || []).map((c) => c.name))
+);
+
+calls = [];
+handler = (url) => {
+  const u = String(url);
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '베통', area: '성수동', menu: '소금빵', category: '베이커리', places: [] });
+  if (u.includes('/api/kakao-local')) return jsonRes({ documents: [{ ...BETONG_DOC, place_name: '성수 소금빵집' }] });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const photoDiff = await extractFromImage({ base64: 'A'.repeat(400), mimeType: 'image/jpeg' });
+check(
+  'v2.22 사진: 이름이 다르면 확인 필요 안내를 덧붙임',
+  photoDiff.matchStatus === 'weak' && photoDiff.lowConfidence === true && String(photoDiff.aiNote).indexOf('사진 속 이름과 지도 이름이 달라요') > 0,
+  String(photoDiff.matchStatus) + ' / ' + photoDiff.aiNote
+);
+
 // ── 10) 메뉴·수량 단어 목록 ──
 check(
   'v2.22 메뉴 단어 판정',

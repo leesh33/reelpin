@@ -1300,6 +1300,11 @@ export async function extractFromImage(input, options = {}) {
   const menuTags = menuTagsOfGemini(analysis);
 
   if (chain.candidates.length) {
+    // v2.22 — 지도 1위 이름이 사진에서 읽은 상호와 **다를 때**는 그렇다고 밝혀 둡니다.
+    //   (사진은 정확한 근거라 검색어·조회는 그대로 두고, 화면에만 '확인 필요' 안내를 붙입니다)
+    const aiName = normalizeName(analysis.storeName);
+    const topName = normalizeName(chain.candidates[0].name);
+    const aiNameOk = !aiName || !topName || topName.indexOf(aiName) >= 0 || aiName.indexOf(topName) >= 0;
     return {
       ...base,
       title: chain.candidates[0].name,
@@ -1309,6 +1314,11 @@ export async function extractFromImage(input, options = {}) {
         menuTags: menuTags.length ? menuTags : c.menuTags || [],
       })),
       usedAdapter: ['gemini-photo'].concat(chain.providersUsed || []).join('+'),
+      matchStatus: aiNameOk ? 'verified' : 'weak',
+      lowConfidence: !aiNameOk,
+      aiNote: aiNameOk
+        ? base.aiNote
+        : base.aiNote + ' · 사진 속 이름과 지도 이름이 달라요. 저장 전에 확인해 주세요',
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
