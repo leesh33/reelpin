@@ -2848,6 +2848,15 @@ const v231Checks = [
       appSource231.indexOf('createCollection(current, plan.collection)') > 0],
   ['v2.31 App: 공유 미리보기가 열리면 하단 탭바를 숨김',
     appSource231.indexOf('collection: collectionSheet || Boolean(sharedCollection)') > 0],
+  // ④-2 하단 탭바가 [내 지도에 한 번에 담기] 버튼을 덮지 않게 — 기획전 미리보기도 같은 규칙
+  ['v2.31 탭바: 기획전 미리보기 시트가 열리면 숨김',
+    tabBarVisibility({ tab: 'collections', curated: true }).visible === false &&
+      tabBarHiddenReason({ tab: 'collections', curated: true }) === '기획전 미리보기'],
+  ['v2.31 App: 기획전 미리보기 상태를 규칙에 넘기고 조건부로 그리지 않음',
+    appSource231.indexOf('curated: curatedPreviewOpen') > 0 &&
+      appSource231.indexOf('onPreviewSheetChange={setCuratedPreviewOpen}') > 0],
+  ['v2.31 컬렉션: 기획전 미리보기 상태를 App 에 알림',
+    /onPreviewSheetChange\(Boolean\(curatedPreview\)\)/.test(collectionsSource231)],
   // ⑤ 미리보기 시트 — 장소 목록 · 좌표 없음 안내 · 담기 버튼
   ['v2.31 미리보기: LayerSheet 틀 + 장소 목록 + [내 지도에 한 번에 담기]',
     previewSheetSource231.indexOf('<LayerSheet') > 0 &&

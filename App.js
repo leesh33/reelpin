@@ -156,6 +156,9 @@ export default function App() {
   //   collectionSheet … 컬렉션 `새 컬렉션` 시트 (CollectionsScreen 이 알려 줌)
   const [mapListSheet, setMapListSheet] = useState(false);
   const [collectionSheet, setCollectionSheet] = useState(false);
+  // v2.31.0 — 컬렉션 탭의 기획전 미리보기 시트가 열렸는지(CollectionsScreen 이 알려 줍니다).
+  //   시트가 열린 동안 하단 탭바가 [내 지도에 한 번에 담기] 버튼을 덮지 않도록 숨깁니다.
+  const [curatedPreviewOpen, setCuratedPreviewOpen] = useState(false);
   // v2.21 — 지금 주소가 /admin 인지 (웹). 네이티브에서는 항상 false.
   const adminRoute = useMemo(() => (Platform.OS === 'web' ? ADMIN_PATH_PATTERN.test(typeof window !== 'undefined' && window.location ? window.location.pathname : '') : false), []);
   const adminPreview = useMemo(() => (adminRoute && Platform.OS === 'web' ? isAdminPreview() : false), [adminRoute]);
@@ -1202,12 +1205,13 @@ export default function App() {
         pinDetail: Boolean(selectedPinId),
         listSheet: mapListSheet,
         collection: collectionSheet || Boolean(sharedCollection),
+        curated: curatedPreviewOpen,
         search: searchOpen,
         alerts: alertOpen,
         menu: menuOpen,
         feedback: feedbackOpen,
       }),
-    [tab, selectedPinId, mapListSheet, collectionSheet, sharedCollection, searchOpen, alertOpen, menuOpen, feedbackOpen]
+    [tab, selectedPinId, mapListSheet, collectionSheet, sharedCollection, curatedPreviewOpen, searchOpen, alertOpen, menuOpen, feedbackOpen]
   );
 
   // v2.21 🛡️ `/admin` — 앱 화면 대신 어드민 화면을 그립니다. (권한은 /api/admin 이 최종 확인)
@@ -1300,6 +1304,7 @@ export default function App() {
               onGoPaste={() => setTab('paste')}
               onToast={showToast}
               onCreateSheetChange={setCollectionSheet}
+              onPreviewSheetChange={setCuratedPreviewOpen}
             />
           </View>
         </View>

@@ -114,6 +114,8 @@ export default function CollectionsScreen({
   onToast,
   // v2.28.0 — 새 컬렉션 시트가 열렸는지 App 에게 알려 줍니다(하단 탭바를 숨기기 위해).
   onCreateSheetChange,
+  // v2.31.0 — 기획전 미리보기 시트도 같은 이유로 위에 알립니다(담기 버튼을 탭바가 덮지 않게).
+  onPreviewSheetChange,
   // 검사·딥링크용 — 열자마자 이 컬렉션의 상세를 보여 줍니다(기본 null)
   initialCollectionId = null,
 }) {
@@ -148,6 +150,13 @@ export default function CollectionsScreen({
     onCreateSheetChange(creating);
     return () => onCreateSheetChange(false);
   }, [creating, onCreateSheetChange]);
+
+  /** v2.31.0 — 기획전·공유 미리보기 시트가 열린 동안에도 하단 탭바를 숨깁니다. */
+  useEffect(() => {
+    if (typeof onPreviewSheetChange !== 'function') return undefined;
+    onPreviewSheetChange(Boolean(curatedPreview));
+    return () => onPreviewSheetChange(false);
+  }, [curatedPreview, onPreviewSheetChange]);
 
   const list = Array.isArray(collections) ? collections : [];
   const detail = useMemo(() => list.find((c) => c.id === detailId) || null, [list, detailId]);

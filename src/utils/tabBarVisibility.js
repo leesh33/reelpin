@@ -15,6 +15,7 @@
  *   pinDetail   … 장소 상세 시트 (PinDetailSheet) — 지도 탭에서 핀을 열었을 때
  *   listSheet   … 지도 목록 보기 레이어 (LayerSheet)
  *   collection  … 컬렉션 새로 만들기 시트 (CollectionsScreen)
+ *   curated     … 기획전·공유받은 컬렉션 미리보기 시트 (CollectionPreviewSheet)
  *   search      … 🔍 검색 레이어 팝업
  *   alerts      … 🔔 알림 모음
  *   menu        … ☰ 메뉴 시트
@@ -29,6 +30,7 @@ export const TAB_BAR_LAYERS = {
   pinDetail: '장소 상세 시트',
   listSheet: '목록 보기',
   collection: '새 컬렉션 시트',
+  curated: '기획전 미리보기',
   search: '검색',
   alerts: '알림 모음',
   menu: '메뉴',
@@ -42,6 +44,7 @@ export const TAB_BAR_LAYERS = {
  * @param {boolean} [state.pinDetail]  장소 상세 시트가 열려 있는가
  * @param {boolean} [state.listSheet]  지도 목록 보기 레이어가 열려 있는가
  * @param {boolean} [state.collection] 새 컬렉션 시트가 열려 있는가
+ * @param {boolean} [state.curated] 기획전·공유받은 컬렉션 미리보기 시트가 열려 있는가
  * @param {boolean} [state.search]  🔍 검색 레이어
  * @param {boolean} [state.alerts]  🔔 알림 모음
  * @param {boolean} [state.menu]    ☰ 메뉴 시트
@@ -55,6 +58,7 @@ export function tabBarVisibility(state = {}) {
     ['pinDetail', onMap && Boolean(state.pinDetail)],
     ['listSheet', onMap && Boolean(state.listSheet)],
     ['collection', Boolean(state.collection)],
+    ['curated', Boolean(state.curated)],
     ['search', Boolean(state.search)],
     ['alerts', Boolean(state.alerts)],
     ['menu', Boolean(state.menu)],
