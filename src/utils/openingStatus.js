@@ -285,12 +285,5 @@ export function evaluateOpening(hours, now) {
   };
 }
 
-/**
- * 반경 500m 배너용 **짧은** 상태 뱃지 — 확인된 경우에만 글자를 돌려줍니다.
- *   '영업 중' · '브레이크타임' · '오늘 휴무' · '영업 종료' · '' (미확인)
- */
-export function bannerOpeningBadge(hours, now) {
-  const status = evaluateOpening(hours, now);
-  if (!status || status.state === 'unknown') return { text: '', tone: 'muted', state: 'unknown' };
-  return { text: status.label, tone: status.tone, state: status.state };
-}
+// v2.28.0 — 반경 500m 알림이 큰 배너(영업 상태 뱃지 포함)에서 3초 한줄 토스트로 바뀌면서
+//   `bannerOpeningBadge` 는 걷어냈습니다. 영업 상태 표기는 장소 상세 시트(pin-opening-badge)가 맡습니다.

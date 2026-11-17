@@ -13,7 +13,6 @@
  */
 import {
   WEEKDAY_CHARS,
-  bannerOpeningBadge,
   evaluateOpening,
   hasConfirmedHours,
   isClosedToday,
@@ -138,7 +137,6 @@ check('미확인: null → 영업시간 미확인', evaluateOpening(null).text =
 check('미확인: hasHours=false', evaluateOpening({ hasHours: false, days: [] }).state === 'unknown');
 check('미확인: 빈 days', evaluateOpening({ days: [], closedDays: [], hasHours: true }).state === 'unknown');
 check('미확인: hasConfirmedHours', hasConfirmedHours(HOURS_EVERYDAY) && !hasConfirmedHours(null) && !hasConfirmedHours({ days: [] }));
-check('미확인: 배너 배지는 글자 없음', bannerOpeningBadge(null).text === '' && bannerOpeningBadge(HOURS_EVERYDAY, at('2026-11-17T06:45:00Z')).text === '브레이크타임');
 
 // 오늘 요약
 const summary = todaySummary(HOURS_EVERYDAY, at('2026-11-17T03:00:00Z'));

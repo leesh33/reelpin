@@ -7,11 +7,14 @@ import ProfileScreen from '../src/screens/ProfileScreen';
 import PinDetailSheet from '../src/components/PinDetailSheet';
 import ProviderBadges from '../src/components/ProviderBadge';
 import ExtractedTitleNote from '../src/components/ExtractedTitleNote';
-import GeofenceBanner, {
-  DISMISS_SWIPE_DISTANCE,
-  shouldShowBanner,
-  swipeDismissDecision,
-} from '../src/components/GeofenceBanner';
+// v2.28.0 — 반경 500m 알림은 큰 배너 대신 **3초 한줄 토스트**로 (GeofenceBanner 는 걷어냈습니다)
+import GeofenceToast, {
+  GEOFENCE_TOAST_MS,
+  nearbyToastMessage,
+  shouldToastNearby,
+} from '../src/components/GeofenceToast';
+// v2.28.0 — 상세 시트가 열린 동안 하단 탭바를 숨기는 규칙
+import { TAB_BAR_LAYERS, tabBarHiddenReason, tabBarVisibility } from '../src/utils/tabBarVisibility';
 import FilterChips from '../src/components/FilterChips';
 // v2.17 — 지도 왼쪽 하단 펌찄 메뉴(가본 곳만 보기 · 지도 공유하기)
 import MapToolsMenu, { TOOLS_ANIM_MS, TOOLS_TOGGLE_SIZE, toolsSummary } from '../src/components/MapToolsMenu';
@@ -172,8 +175,8 @@ const cases = [
   ['MapScreen(커스텀 분류 필터)', <MapScreen pins={SEED_PINS.concat([{ ...SEARCH_PIN, id: 'custom-1', category: '아이랑' }])} categories={['맛집', '카페', '가볼곳', '아이랑']} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onChangePinCategory={noop} onAddCategory={noop} />],
   ['PinDetailSheet(분류 변경)', <PinDetailSheet pin={{ ...SEARCH_PIN, category: '아이랑' }} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} onChangeCategory={noop} onAddCategory={noop} />],
   ['ProfileScreen(분류 관리)', <ProfileScreen name="이상훈" handle="odol" pins={SEED_PINS} categories={['맛집', '카페', '가볼곳', '아이랑']} radiusMeters={300} onChangeRadius={noop} isPro={false} onStartPro={noop} onGoPaste={noop} onToast={noop} onAddCategory={noop} onRenameCategory={noop} onRemoveCategory={noop} />],
-  ['GeofenceBanner', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={1000} onPress={noop} title="반경 1km 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name} badge="지금" />],
-  ['GeofenceBanner(내 위치 전 안내)', <GeofenceBanner needsLocation onPress={noop} onLocate={noop} radiusMeters={500} />],
+  ['GeofenceToast(반경 500m 알림)', <GeofenceToast message="반경 500m 안에 2곳 있어요" onPress={noop} />],
+  ['GeofenceToast(보기 버튼 포함)', <GeofenceToast message={nearbyToastMessage(3)} onPress={noop} />],
   ['FilterChips', <FilterChips value="전체" onChange={noop} counts={{ 전체: 4 }} />],
   ['TabBar', <TabBar active="map" onChange={noop} />],
   ['MapCanvas', <MapCanvas pins={SEED_PINS} selectedId={SEED_PINS[0].id} onSelect={noop} radius={300} />],
@@ -181,8 +184,9 @@ const cases = [
   ['RealMapView.web(SSR 안전)', <RealMapViewWeb pins={SEED_PINS} selectedId={SEED_PINS[0].id} onSelect={noop} myCoords={{ lat: 37.5824, lng: 126.7144 }} radiusMeters={500} />],
   ['RealMapView.web(핀 없음)', <RealMapViewWeb pins={[]} selectedId={null} onSelect={noop} />],
   ['PinDetailSheet(내 위치 거리)', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} distanceMeters={320} onClose={noop} onDelete={noop} onToast={noop} />],
-  ['GeofenceBanner(반경 500m 실시간)', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name + ' · 320m'} badge="지금" />],
-  ['GeofenceBanner(가장 가까운 곳)', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />],
+  ['GeofenceToast(짧은 안내)', <GeofenceToast message={nearbyToastMessage(1)} onPress={noop} />],
+  // v2.28.0 — 반경 밖·위치 없음은 큰 안내 카드 없이 헤더 🔔 뱃지가 맡습니다(토스트 미노출)
+  ['GeofenceToast(문구 없음 → 미노출)', <GeofenceToast message="" onPress={noop} />, true],
   // v1.7 — 인앱 네이버 플레이스 모달이 node 렌더에서 window 를 건드리지 않는지
   ['InAppPlaceModal.web(SSR 안전)', <InAppPlaceModalWeb pin={SEARCH_PIN} onClose={noop} onToast={noop} />],
   // v2.0 — 공유받은 지도 배너 · 상세 시트 전화/주소 · 네이버 플레이스 상세 직행
@@ -226,8 +230,8 @@ const contentCases = [
   // v2.17.1 — `주변 500m` 는 오른쪽 스택에서 왼쪽 하단 도구 메뉴 안으로 들어갔습니다(접힌 상태에는 안 보임).
   ['MapScreen: 목록 보기 · 내 위치 버튼(주변 500m 는 왼쪽 메뉴 안)', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} />, ['목록 보기', '내 위치 찾기', '핀 표시 중']],
   ['PinDetailSheet: 내 위치에서의 실제 거리', <PinDetailSheet pin={SEED_PINS[0]} radiusMeters={300} distanceMeters={321.4} onClose={noop} onDelete={noop} onToast={noop} />, ['내 위치에서 321m']],
-  ['GeofenceBanner: 500m 실시간 배너 문구', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub={SEED_PINS[0].name + ' · 320m'} />, ['반경 500m 앞, 저장한 맛집이 있어요', '320m']],
-  ['GeofenceBanner: 반경 밖 가장 가까운 곳', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} title={'가장 가까운 저장 장소: ' + SEED_PINS[3].name} sub="2.4km · 반경 500m 밖" badge="내 위치" tone="muted" />, ['가장 가까운 저장 장소', '2.4km']],
+  ['GeofenceToast: 한 줄 문구 + 보기 버튼', <GeofenceToast message={nearbyToastMessage(2)} onPress={noop} />, ['반경 500m 안에 2곳 있어요', '보기']],
+  ['GeofenceToast: 지도 버튼 이름(읽어 주는 문구)', <GeofenceToast message={nearbyToastMessage(4)} onPress={noop} />, ['반경 500m 알림 보기', 'geofence-toast']],
   // v1.7 — [매장 정보 보기] 가 앱 안 모달(네이버 플레이스 iframe)을 여는지
   ['PinDetailSheet: 매장 정보 보기 버튼은 앱 안 모달', <PinDetailSheet pin={SEARCH_PIN} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['매장 정보 보기', '네이버 플레이스']],
   ['PinDetailSheet: 저장된 매장 페이지가 없어도 버튼 표시', <PinDetailSheet pin={{ ...SEARCH_PIN, placeUrl: '' }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />, ['매장 정보 보기']],
@@ -310,21 +314,18 @@ for (const [label, ok] of fakeBannerChecks) {
   }
 }
 
-// 컴포넌트도 스스로 가짜 문구를 만들지 않습니다 (title 없이 pin 만 넘기면 아무것도 안 그림)
-for (const [label, element] of [
-  ['GeofenceBanner: title 없으면 가짜 데모 배너 미노출', <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={300} onPress={noop} />],
-  ['GeofenceBanner: 위치 전에는 핀이 있어도 실시간 배너 미노출', <GeofenceBanner pin={SEED_PINS[3]} radiusMeters={500} onPress={noop} needsLocation />],
-]) {
-  const html = renderToString(element);
-  const ok =
-    html.indexOf('반경 300m 앞, 저장한 맛집이 있어요') < 0 &&
-    html.indexOf(SEED_PINS[0].name) < 0 &&
-    html.indexOf(SEED_PINS[3].name) < 0 &&
-    html.indexOf('반경 500m 앞') < 0;
+// v2.28.0 — 토스트도 스스로 문구를 만들지 않습니다 (문구는 지도 화면이 개수로 만듭니다)
+const v228RuleChecks = [
+  ['v2.28 토스트: 반경 안에 0곳이면 안 띄움', shouldToastNearby(0) === false && nearbyToastMessage(0) === ''],
+  ['v2.28 토스트: 반경 안 N곳 → 한 줄 문구', nearbyToastMessage(2) === '반경 500m 안에 2곳 있어요'],
+  ['v2.28 토스트: 3초 뒤 스스로 사라짐(3~3.5초)', GEOFENCE_TOAST_MS >= 3000 && GEOFENCE_TOAST_MS <= 3500, String(GEOFENCE_TOAST_MS)],
+  ['v2.28 토스트: 문구가 비면 아무것도 안 그림', renderToString(<GeofenceToast message="" onPress={noop} />) === ''],
+];
+for (const [label, ok, extra] of v228RuleChecks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
-    console.log('FAIL ' + label);
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
   }
 }
 
@@ -527,8 +528,8 @@ for (const [label, ok, extra] of v211Checks) {
   }
 }
 
-// ── v2.1.2: 지도 우측 하단 컨트롤 일직선 정렬 + 반경 배너 다크 차콜 대비 ──
-const bannerSource = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceBanner.js'), 'utf8');
+// ── v2.1.2: 지도 우측 하단 컨트롤 일직선 정렬 + 알림 토스트 다크 대비 (v2.28.0: 배너 → 한줄 토스트) ──
+const bannerSource = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceToast.js'), 'utf8');
 const bannerCode = bannerSource.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 const v212Checks = [
   ['지도 우측 하단: +/− 박스가 목록 보기·주변 500m·내 위치와 같은 rightInset',
@@ -540,10 +541,10 @@ const v212Checks = [
   ['지도 우측 하단: 내 위치 FAB(아래) 와 +/− 박스(위) 가 겹치지 않음',
     mapControls.zoomBottom >= mapControls.actionBottom + mapControls.fabSize + 4,
     String(mapControls.zoomBottom) + ' vs ' + String(mapControls.actionBottom + mapControls.fabSize)],
-  ['반경 알림 배너: 다크 차콜 카드 + 흰 글씨',
-    bannerCode.indexOf('backgroundColor: colors.charcoal') > 0 && /title: \{[\s\S]{0,160}color: colors\.white/.test(bannerCode), bannerSource.length + ' bytes'],
-  ['반경 알림 배너: 500m 진입(지금) 상태는 딥 틸 강조',
-    bannerCode.indexOf('wrapLive') > 0 && /nowChipLive: \{[\s\S]{0,80}colors\.brand/.test(bannerCode), '딥 틸 테두리 + 딥 틸 배지'],
+  ['반경 알림 토스트: 다크 알약 + 흰 글씨',
+    bannerCode.indexOf("backgroundColor: 'rgba(17,24,39,0.94)'") > 0 && /text: \{[\s\S]{0,160}color: colors\.white/.test(bannerCode), bannerSource.length + ' bytes'],
+  ['반경 알림 토스트: 점(●)은 브랜드 딥 틸',
+    /dot: \{[\s\S]{0,120}colors\.brand/.test(bannerCode), '딥 틸 점'],
   ['지도 우측 하단: 주변 목록 패널이 버튼 스택을 가리지 않음',
     mapControls.panelBottom >= mapControls.actionBottom + mapControls.actionStackHeight && mapSource2.indexOf('bottom: mapControls.panelBottom') > 0,
     String(mapControls.panelBottom) + ' vs ' + String(mapControls.actionBottom + mapControls.actionStackHeight)],
@@ -662,8 +663,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.20.1', pkg.version === '2.27.0', pkg.version],
-  ['버전: app.json 2.20.1', expoConfig.version === '2.27.0', expoConfig.version],
+  ['버전: package.json 2.20.1', pkg.version === '2.28.0', pkg.version],
+  ['버전: app.json 2.20.1', expoConfig.version === '2.28.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -690,10 +691,9 @@ const v213Checks = [
     mapCode.indexOf('silent: true') > 0 && mapCode.indexOf('if (silent) return null') > 0],
   ['자동 위치: denied 면 시도하지 않음',
     locationSource.indexOf("if (permission === 'denied') return false") > 0],
-  ['가짜 배너: GeofenceBanner 가 기본 "반경 … 앞" 문구를 만들지 않음',
-    bannerCode.indexOf('반경 ') < 0 && bannerCode.indexOf('pin.name + ' ) < 0],
-  ['가짜 배너: MapScreen 이 myCoords 없을 때 핀 이름을 배너로 넘기지 않음',
-    /if \(!myCoords\) \{\s*return \{ mode: 'needs-location', pin: null, target: null \};/.test(mapCode)],
+  ['가짜 알림: 토스트가 가게 이름을 지어내지 않음(개수만 — 반경 값은 NEARBY_RADIUS_M)', bannerCode.indexOf('pin.name') < 0 && bannerCode.indexOf('NEARBY_RADIUS_M') > 0],
+  ['가짜 알림: 지도는 위치를 모를 때 반경 알림을 만들지 않음',
+    mapCode.indexOf('const nearKey = useMemo(() => {') > 0 && mapCode.indexOf('if (!nearby.length) return \'\';') > 0],
   ['중복 안내: 칩 아래 locationHint 제거',
     mapSource2.indexOf('locationHint') < 0],
   // v2.1.3 — 계정 · 클라우드 동기화 카드는 '내 정보' 스크롤 맨 아래로
@@ -1023,7 +1023,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.27.0") > 0],
+  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.28.0") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1056,8 +1056,8 @@ const v213SheetChecks = [
   ],
   [
     // v2.19.2 — 본문 끝 여백을 플로팅 하단바 높이만큼 확보 (맨 아래 지도 버튼이 가리지 않게)
-    '핀 시트: 본문 아래 여백은 스크롤 안쪽으로',
-    /body: \{[\s\S]{0,300}?paddingBottom: tabBar\.floatTop \+ 10/.test(pinDetailSource) &&
+    '핀 시트: 본문 아래 여백은 스크롤 안쪽으로 (v2.28.0 — 탭바가 숨으므로 28px)',
+    /body: \{[\s\S]{0,320}?paddingBottom: 28/.test(pinDetailSource) &&
       !/sheet: \{[\s\S]{0,300}?paddingBottom/.test(pinDetailSource),
   ],
   ['핀 시트: ✕ 닫기 버튼은 그대로', pinDetailSource.indexOf('accessibilityLabel="상세 닫기"') > 0],
@@ -1184,86 +1184,20 @@ for (const [label, ok, extra] of v214RenderChecks) {
   }
 }
 
-// ── v2.14.1 위로 스와이프 닫기 배너 + 핀 상세 시트 주황 헤더 ─────────────────
-const bannerSource2141 = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceBanner.js'), 'utf8');
+// ── v2.14.1 핀 상세 시트 분류 색 헤더 ────────────────────────
+// (v2.28.0 — 위로 스와이프하던 큰 알림 배너는 걷어내고 한줄 토스트가 되어, 스와이프 검사는 사라졌습니다)
 const mapSource2141 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
-const bannerSwipeHtml = renderToString(
-  <GeofenceBanner
-    pin={SEED_PINS[0]}
-    radiusMeters={500}
-    onPress={noop}
-    onDismiss={noop}
-    title="반경 500m 앞, 저장한 맛집이 있어요"
-    sub={SEED_PINS[0].name + ' · 320m'}
-    badge="지금"
-  />
+const geofenceToastHtml = renderToString(
+  <GeofenceToast message={nearbyToastMessage(2)} onPress={noop} />
 );
 const v2141Checks = [
-  // ① 판정 규칙 — 위로 32px 이상 또는 빠른 플릭이면 닫힘, 아니면 스냅백
-  ['스와이프: 위로 32px 이면 닫힘', swipeDismissDecision({ dy: -DISMISS_SWIPE_DISTANCE, vy: 0 }) === true],
-  ['스와이프: 위로 31px · 느리면 원위치', swipeDismissDecision({ dy: -31, vy: -0.1 }) === false],
-  ['스와이프: 위로 14px · 0.8px/ms 빠른 플릭이면 닫힘', swipeDismissDecision({ dy: -14, vy: -0.8 }) === true],
-  ['스와이프: 12px 미만 플릭은 원위치', swipeDismissDecision({ dy: -11, vy: -1.4 }) === false],
-  ['스와이프: 아래로 끌면 닫히지 않음', swipeDismissDecision({ dy: 60, vy: 1.2 }) === false],
-  ['스와이프: 움직임 없으면 그대로', swipeDismissDecision({}) === false && swipeDismissDecision() === false],
-  // ② 웹(아이폰 사파리) 터치 + 포인터, 네이티브 PanResponder
-  [
-    '배너: 웹 DOM 터치 3종(onTouchStart/Move/End) 처리',
-    bannerSource2141.indexOf('onTouchStart:') > 0 &&
-      bannerSource2141.indexOf('onTouchMove:') > 0 &&
-      bannerSource2141.indexOf('onTouchEnd:') > 0 &&
-      bannerSource2141.indexOf('onTouchCancel:') > 0,
-  ],
-  [
-    '배너: 마우스 포인터 드래그도 처리',
-    bannerSource2141.indexOf('onPointerDown:') > 0 &&
-      bannerSource2141.indexOf('onPointerMove:') > 0 &&
-      bannerSource2141.indexOf('onPointerUp:') > 0,
-  ],
-  [
-    '배너: 터치와 포인터가 겹치지 않게 터치 포인터는 건너뜀',
-    /ne\.pointerType === 'touch'\) return/.test(bannerSource2141),
-  ],
-  [
-    '배너: 네이티브는 PanResponder(세로 6px 이상일 때만)',
-    bannerSource2141.indexOf('PanResponder.create') > 0 &&
-      /onMoveShouldSetPanResponder: \(e, g\) => g\.dy <= -6/.test(bannerSource2141),
-  ],
-  [
-    '배너: 손가락을 따라 위로 밀림(setValue translateY)',
-    /translateY\.setValue\(/.test(bannerSource2141) && bannerSource2141.indexOf('DISMISS_OFFSCREEN_DISTANCE') > 0,
-  ],
-  [
-    '배너: 닫힘은 위로 밀며 투명해지는 애니메이션(160ms)',
-    /Animated\.parallel\(\[/.test(bannerSource2141) &&
-      /DISMISS_ANIM_MS = 160/.test(bannerSource2141) &&
-      /Animated\.timing\(opacity,[\s\S]{0,120}?toValue: 0/.test(bannerSource2141),
-  ],
-  [
-    '배너: 살짝 끌면 원위치 스냅백(spring)',
-    /Animated\.spring\(translateY,[\s\S]{0,80}?toValue: 0/.test(bannerSource2141),
-  ],
-  [
-    '배너: onDismiss 는 닫힘 애니메이션이 끝난 뒤 호출',
-    /\.start\(\(\{ finished \}\) => \{[\s\S]{0,160}?onDismissRef\.current/.test(bannerSource2141),
-  ],
-  [
-    '배너: 스와이프 뒤 딸려오는 탭은 한 번 무시(핀 상세 오픈 방지)',
-    bannerSource2141.indexOf('skipPressRef') > 0 && bannerSource2141.indexOf('handlePress(') > 0,
-  ],
-  ['배너: 임계값 32px · 플릭 0.5px/ms 공개 상수', bannerSource2141.indexOf('export const DISMISS_SWIPE_DISTANCE = 32') > 0 && bannerSource2141.indexOf('export const DISMISS_FLICK_VELOCITY = 0.5') > 0],
-  // ③ MapScreen — 닫힌 배너를 같은 상태에서는 다시 띄우지 않음
-  ['지도: dismissedBannerKey 상태', mapSource2141.indexOf('const [dismissedBannerKey, setDismissedBannerKey] = useState(') > 0],
-  [
-    '지도: 배너 키 = 가게 id + 모드(near/closest)',
-    /banner\.pin\.id \+ ':' \+ \(banner\.mode === 'closest' \? 'closest' : 'near'\)/.test(mapSource2141),
-  ],
-  ['지도: 닫힌 배너는 그리지 않음 (v2.17: 반경 500m 안일 때만)', mapSource2141.indexOf('const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey') > 0 && mapSource2141.indexOf('{bannerVisible && (') > 0],
-  ['지도: 배너에 onDismiss 전달', mapSource2141.indexOf('onDismiss={dismissBanner}') > 0],
-  [
-    '지도: [내 위치]를 새로 누르면 닫힘 기록을 지움',
-    /const locateFromUser = useCallback\([\s\S]{0,200}?setDismissedBannerKey\(''\)/.test(mapSource2141),
-  ],
+  // ① v2.28.0 — 반경 500m 알림은 세션에 한 번, 3초만
+  ['알림 토스트: 반경 안 개수로 한 줄 문구(geofence-toast 렌더)', geofenceToastHtml.indexOf('geofence-toast') > 0 && geofenceToastHtml.indexOf('반경 500m 안에 2곳 있어요') > 0],
+  ['지도: 같은 가게 묶음은 세션에 한 번만(shownNearKeyRef)', mapSource2141.indexOf('shownNearKeyRef') > 0 && mapSource2141.indexOf('if (shownNearKeyRef.current === nearKey) return undefined;') > 0],
+  ['지도: 3.2초 뒤 스스로 사라짐(GEOFENCE_TOAST_MS)', mapSource2141.indexOf('}, GEOFENCE_TOAST_MS);') > 0 && mapSource2141.indexOf('setNearbyToast(null)') > 0],
+  ['지도: [보기]는 🔔 알림 모음을 엽니다', /openNearbyFromToast = useCallback\(\(\) => \{[\s\S]{0,220}?header\.onPressAlerts\(\)/.test(mapSource2141)],
+  ['지도: [내 위치]를 새로 누르면 다시 한 번 보여 줌', /const locateFromUser = useCallback\([\s\S]{0,220}?shownNearKeyRef\.current = ''/.test(mapSource2141)],
+  ['지도: 예전 큰 배너(GeofenceBanner)는 지도에서 완전히 빠짐', mapSource2141.indexOf('<GeofenceBanner') < 0 && mapSource2141.indexOf('{bannerVisible && (') < 0 && mapSource2141.indexOf('onDismiss={dismissBanner}') < 0],
   // v2.17 — 반경 밖 안내 배너가 없어져 [내 위치] 자리가 FAB · 주변 500m 패널 · 오류 칩 세 곳으로 줄었습니다.
   [
     '지도: 내 위치 자리(오류 칩·주변 패널·FAB)가 모두 locateFromUser 사용',
@@ -1293,9 +1227,10 @@ const v2141Checks = [
       pinDetailSource.indexOf('testID="pin-sheet-header"') < pinDetailSource.indexOf('<ScrollView'),
   ],
   [
-    '배너: 스와이프 래퍼로 감싸 렌더됨(geofence-banner)',
-    bannerSwipeHtml.indexOf('geofence-banner') > 0 &&
-      bannerSwipeHtml.indexOf('반경 500m 앞, 저장한 맛집이 있어요') > 0,
+    // v2.28.0 — 토스트는 시트·레이어 아래에 깔리므로 z-index 경쟁이 없습니다(딤 레이어가 덮음)
+    '알림 토스트: 지도 상단 칩 줄 아래 한 줄 자리(좌우 버튼과 멀리)',
+    mapSource2141.indexOf('geofenceToastWrap') > 0 &&
+      /geofenceToastWrap: \{[\s\S]{0,160}?alignItems: 'center'/.test(mapSource2141),
   ],
 ];
 for (const [label, ok, extra] of v2141Checks) {
@@ -1500,7 +1435,7 @@ const v216Checks = [
   ['헤더: 저장 탭은 ✕ 포함 4개까지 그린다', headerSource215.indexOf('{onPressClose ? (') > 0 && headerSource215.indexOf('iconBtn') > 0],
   // ② 지도 탭 — 검색창 제거 + 칩 바만
   ['지도 탭: 지도 위 검색창 제거(헤더 🔍 로)', mapSource216.indexOf('<PinSearchBar') < 0 && mapSource216.indexOf('styles.searchWrap') < 0],
-  ['지도 탭: 필터 칩 바가 헤더 바로 아래(배너보다 위)', mapSource216.indexOf('styles.chipWrap') > 0 && mapSource216.indexOf('styles.chipWrap') < mapSource216.indexOf('<GeofenceBanner')],
+  ['지도 탭: 필터 칩 바가 헤더 바로 아래(알림 토스트보다 위)', mapSource216.indexOf('styles.chipWrap') > 0 && mapSource216.indexOf('styles.chipWrap') < mapSource216.indexOf('<GeofenceToast')],
   ['지도 탭: 그려진 화면에 검색 인풋 없음', mapHtml216.indexOf('pin-search-input') < 0],
   ['지도 탭: 분류 칩 한 줄만 (방문 칩 2번째 줄 없음)', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') < 0],
   // ③ 🔍 검색 레이어 팝업
@@ -1535,7 +1470,7 @@ const v216Checks = [
   // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
   ['메뉴(v2.19): 분류 관리 → 시트 안 서브 페이지', appSource215.indexOf('setCategoriesFocus(') < 0 && profileSource215.indexOf("openSub('categories')") > 0 && menuSource216.indexOf('onOpenSub={setSub}') > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
   ['메뉴(v2.19): 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && profileSource215.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.25.0 표기', menuHtml216.indexOf('릴스핀 v2.27.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.27.0', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.25.0 표기', menuHtml216.indexOf('릴스핀 v2.28.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.28.0', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1604,16 +1539,14 @@ const VISIT_SAMPLE = [
 ];
 
 const v217Checks = [
-  // ① 배너는 반경 500m 안('near')에만
-  ['배너: 반경 500m 안(near)이면 보입니다', shouldShowBanner('near') === true],
-  ['배너: 반경 밖 가장 가까운 곳(closest)은 숨김', shouldShowBanner('closest') === false],
-  ['배너: 내 위치 전(needs-location)은 숨김', shouldShowBanner('needs-location') === false],
-  ['배너: 저장한 핀 없음(empty)·none 도 숨김', shouldShowBanner('empty') === false && shouldShowBanner('none') === false && shouldShowBanner() === false],
-  ['지도: banner.mode 로 배너를 가립니다', mapSource217.indexOf('shouldShowBanner(banner.mode)') > 0 && mapSource217.indexOf('{bannerVisible && (') > 0],
+  // ① 반경 500m 알림은 반경 안('near')에만 — v2.28.0 부터는 3초 한줄 토스트
+  ['알림: 반경 500m 안(near)이면 띄웁니다', shouldToastNearby(2) === true && shouldToastNearby(1) === true],
+  ['알림: 반경 안 0곳(반경 밖·위치 전·핀 없음)은 숨김', shouldToastNearby(0) === false && shouldToastNearby(undefined) === false && nearbyToastMessage(0) === ''],
+  ['지도: 지도 위 큰 알림 카드를 그리지 않음(v2.28.0)', mapSource217.indexOf('<GeofenceBanner') < 0 && mapSource217.indexOf('{bannerVisible && (') < 0],
   ['지도: 위치 전·반경 밖 배너를 그리지 않음', mapSource217.indexOf('needsLocation={banner.needsLocation}') < 0 && mapSource217.indexOf('empty={banner.empty}') < 0],
-  ['지도 화면(위치 전): 알림 배너 없음', mapHtml217.indexOf('geofence-banner') < 0 && mapHtml217.indexOf('반경500m앞') < 0],
+  ['지도 화면(위치 전): 알림 없음', mapHtml217.indexOf('geofence-toast') < 0 && mapHtml217.indexOf('geofence-banner') < 0 && mapHtml217.indexOf('반경500m앞') < 0],
   ['지도 화면(위치 전): 반경 밖 가장 가까운 곳 배너도 없음', mapHtml217.indexOf('가장가까운저장장소') < 0],
-  ['지도 화면(핀 없음): 알림 배너 없음', mapEmptyHtml217.indexOf('geofence-banner') < 0 && mapEmptyHtml217.indexOf('아직저장한핀이없어요') < 0],
+  ['지도 화면(핀 없음): 알림 없음', mapEmptyHtml217.indexOf('geofence-toast') < 0 && mapEmptyHtml217.indexOf('geofence-banner') < 0 && mapEmptyHtml217.indexOf('아직저장한핀이없어요') < 0],
   ['지도 화면(핀 없음): 가운데 안내 카드는 그대로', mapEmptyHtml217.indexOf('지도가비어있어요') > 0],
   // ② 상단 2번째 줄(방문 칩) 제거 — 1줄 분류 칩만
   ['지도: 방문 필터 칩을 더 이상 그리지 않음', mapSource217.indexOf('VisitFilterChips') < 0 && mapSource217.indexOf('styles.visitWrap') < 0],
@@ -1651,7 +1584,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.27.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.27.0") > 0],
+  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.28.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.28.0") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1732,7 +1665,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.27.0'],
+  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.28.0'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1790,7 +1723,7 @@ const v218Checks = [
   ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
   ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
   ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
-  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.27.0') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.28.0') > 0],
   ['v2.19: ☰ 시트가 분류 관리 서브 페이지를 직접 연다', profileSource218.indexOf("openSub('categories')") > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
 ];
 for (const [label, ok, extra] of v218Checks) {
@@ -1911,7 +1844,7 @@ const v219Checks = [
   ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
-  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.27.0') > 0],
+  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.28.0') > 0],
   ['v2.19 앱: 내 정보 탭 제거 · ☰ 시트가 ProfileScreen(panel) 사용', appSource219.indexOf("tab !== 'profile'") < 0 && appSource219.indexOf('<MenuDrawerModal') > 0 && appSource219.indexOf('panel') < 0 && menuSource219.indexOf('panel') > 0],
   // ③ 📂 컬렉션 탭
   ['v2.19 컬렉션: 목록 머리(내 컬렉션 · N개 · M곳 · 새 컬렉션)', collectionsListHtml219.indexOf('내 컬렉션') > 0 && collectionsListHtml219.indexOf('2개 컬렉션 · 2곳 담김') > 0 && collectionsListHtml219.indexOf('collection-new') > 0],
@@ -1926,7 +1859,7 @@ const v219Checks = [
   ['v2.19 저장: 컬렉션은 기기에 저장(reelpin.collections.v1)', storageSource219.indexOf("'reelpin.collections.v1'") > 0 && appSource219.indexOf('saveCollections(collections)') > 0],
   ['v2.19 저장: 핀을 지우면 컬렉션에서도 정리(prune)', appSource219.indexOf('pruneCollections(prev, pins)') > 0],
   ['v2.19: 하단바 탭은 App 이 collections 를 그림', appSource219.indexOf('<CollectionsScreen') > 0 && appSource219.indexOf("tab !== 'collections'") > 0],
-  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.27.0' && profileSource219.indexOf("'릴스핀 v2.27.0'") > 0 && pkg.version === '2.27.0'],
+  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.28.0' && profileSource219.indexOf("'릴스핀 v2.28.0'") > 0 && pkg.version === '2.28.0'],
 ];
 for (const [label, ok, extra] of v219Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2083,7 +2016,7 @@ const v2191Checks = [
   ['시군구동: 검색 팝업 추천 카드에 그대로 보임', areaOverlayHtml191.indexOf('인천 서구 당하동') > 0 && areaOverlayHtml191.indexOf('서울 강남구 역삼동') > 0 && areaOverlayHtml191.indexOf('경기 고양시 일산서구 일산동') < 0],
   ['시군구동: `분류 · 지역` 한 줄 표기', placeMetaLabel(AREA_PINS_191[0]) === '맛집 · 인천 서구 당하동' && placeMetaLabel({ name: 'x' }) === '내 지도'],
   // ⑥ 버전
-  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.27.0' && APP_INFO_VERSION === '릴스핀 v2.27.0' && pkg.version === '2.27.0' && expoConfig.version === '2.27.0'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.28.0' && APP_INFO_VERSION === '릴스핀 v2.28.0' && pkg.version === '2.28.0' && expoConfig.version === '2.28.0'],
 ];
 for (const [label, ok, extra] of v2191Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2152,8 +2085,8 @@ const v2192Checks = [
       /name="close" size=\{18\} color=\{colors\.white\}/.test(pinSheetSource2192),
   ],
   [
-    'v2.19.2 핀 시트: 본문 끝 여백 = tabBar.floatTop + 10 (플로팅 하단바에 지도 버튼이 안 가림)',
-    /body: \{[\s\S]{0,320}?paddingBottom: tabBar\.floatTop \+ 10/.test(pinSheetSource2192) && tabBar.floatTop === 66,
+    'v2.19.2 핀 시트: 본문 끝 여백이 스크롤 안쪽에 있음 (v2.28.0 — 탭바가 숨으므로 28px, tabBar.floatTop 66 유지)',
+    /body: \{[\s\S]{0,320}?paddingBottom: 28/.test(pinSheetSource2192) && tabBar.floatTop === 66,
   ],
   // ② 레이어 팝업 서브 페이지 뒤로 버튼 = `‹` 만
   [
@@ -2231,7 +2164,7 @@ const v2192Checks = [
     mapControls.rightInset === 12 && mapSource2192.indexOf('right: mapControls.rightInset') > 0 && webMapSource2192.indexOf('right: mapControls.rightInset') > 0,
   ],
   // ④ 버전
-  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.27.0' && APP_INFO_VERSION === '릴스핀 v2.27.0' && pkg.version === '2.27.0' && expoConfig.version === '2.27.0'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.28.0' && APP_INFO_VERSION === '릴스핀 v2.28.0' && pkg.version === '2.28.0' && expoConfig.version === '2.28.0'],
 ];
 for (const [label, ok, extra] of v2192Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2276,24 +2209,13 @@ const breakHtml220 = renderToString(
 const unknownHtml220 = renderToString(
   <PinDetailSheet pin={{ ...SEARCH_PIN, hours: null }} radiusMeters={300} onClose={noop} onDelete={noop} onToast={noop} />
 );
-const bannerOpenHtml220 = renderToString(
-  <GeofenceBanner
-    pin={SEED_PINS[0]}
-    radiusMeters={500}
-    onPress={noop}
-    title="반경 500m 앞, 저장한 맛집이 있어요"
-    sub={SEED_PINS[0].name + ' · 320m'}
-    opening={{ text: '브레이크타임', tone: 'break', state: 'break' }}
-  />
-);
-const bannerNoHoursHtml220 = renderToString(
-  <GeofenceBanner pin={SEED_PINS[0]} radiusMeters={500} onPress={noop} title="반경 500m 앞, 저장한 맛집이 있어요" sub="320m" opening={{ text: '', tone: 'muted', state: 'unknown' }} />
-);
+const bannerOpenHtml220 = '';
+const bannerNoHoursHtml220 = '';
 const pasteSource220 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
 const extractorSource220 = fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8');
 const mapSource220 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
 const pinSheetSource220 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
-const bannerSource220 = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceBanner.js'), 'utf8');
+const bannerSource220 = fs.readFileSync(path.join(process.cwd(), 'src/components/GeofenceToast.js'), 'utf8');
 const geminiSource220 = fs.readFileSync(path.join(process.cwd(), 'api/gemini.js'), 'utf8');
 
 const v220Checks = [
@@ -2303,14 +2225,13 @@ const v220Checks = [
   ['v2.20 핀 시트: 영업시간이 없으면 "영업시간 미확인" 만 (지어내지 않음)', unknownHtml220.indexOf('영업시간 미확인') > 0 && unknownHtml220.indexOf('🟢') < 0, unknownHtml220.slice(0, 120)],
   ['v2.20 핀 시트: 배지·요약 testID', pinSheetSource220.indexOf('testID="pin-opening-badge"') > 0 && pinSheetSource220.indexOf('testID="pin-opening-summary"') > 0 && pinSheetSource220.indexOf('testID="pin-opening-unknown"') > 0],
   ['v2.20 핀 시트: 한국 시간 기준 계산(evaluateOpening/todaySummary)', pinSheetSource220.indexOf('evaluateOpening(pin.hours') > 0 && pinSheetSource220.indexOf('todaySummary(pin.hours)') > 0],
-  // ② 500m 배너 — 확인된 경우에만 작은 상태 뱃지
-  ['v2.20 배너: 영업 상태 뱃지가 부제 줄에 함께 뜸', bannerOpenHtml220.indexOf('브레이크타임') > 0 && bannerOpenHtml220.indexOf('320m') > 0, bannerOpenHtml220.slice(0, 160)],
-  ['v2.20 배너: 영업시간 미확인이면 뱃지를 그리지 않음', bannerNoHoursHtml220.indexOf('geofence-opening-badge') < 0, bannerNoHoursHtml220.slice(0, 160)],
-  ['v2.20 배너: 상태별 색(open/break/closed) 스타일', bannerSource220.indexOf('openPillOpen') > 0 && bannerSource220.indexOf('openPillBreak') > 0 && bannerSource220.indexOf('openPillClosed') > 0],
+  // ② 반경 500m 알림 토스트 — v2.28.0 부터 큰 카드(영업 상태 뱃지 포함) 대신 한 줄 토스트
+  ['v2.20 알림 토스트: 3초 한줄 토스트에는 영업 상태 뱃지를 넣지 않음(영업 상태는 상세 시트가 담당)', bannerSource220.indexOf('opening') < 0, bannerSource220.slice(0, 160)],
+  ['v2.20 알림 토스트: 영업 상태 표기는 상세 시트에 그대로', pinSheetSource220.indexOf('pin-opening-badge') > 0 && pinSheetSource220.indexOf('오늘 ') > 0],
   // ③ 매장 상세 조회 — 네이버/카카오 두 경로 + 6시간 캐시 + 반경 핀 미리 확인
   ['v2.20 지도: 매장 상세(영업시간) 조회 → 핀에 저장', mapSource220.indexOf('fetchPlaceInfo(pin)') > 0 && mapSource220.indexOf('onSavePinHours(pin.id, pinHoursPatch(result.place))') > 0],
   ['v2.20 지도: 보고 있는 핀 + 반경 500m 핀(최대 3곳) 미리 확인', mapSource220.indexOf('push(selectedPin)') > 0 && mapSource220.indexOf('nearby.slice(0, 3)') > 0],
-  ['v2.20 지도: 배너에 bannerOpeningBadge 를 넘김', mapSource220.indexOf('bannerOpeningBadge(banner.pin ? banner.pin.hours : null)') > 0 && mapSource220.indexOf('opening={bannerOpening}') > 0],
+  ['v2.20 지도: 반경 안 알림은 영업 상태 없이 개수만 알림(v2.28.0)', mapSource220.indexOf('bannerOpeningBadge(') < 0 && mapSource220.indexOf('opening={bannerOpening}') < 0 && mapSource220.indexOf('nearbyToastMessage(nearbyToast.count)') > 0],
   // ④ 저장 화면 — AI 한줄 메모 자동 채우기
   ['v2.20 저장 화면: 추출 결과의 memoDraft 로 메모를 자동 채움', pasteSource220.indexOf('String(result.memoDraft ||') > 0 && pasteSource220.indexOf('setMemo(draft)') > 0 && pasteSource220.indexOf('setMemo(photoDraft)') > 0],
   ['v2.20 저장 화면: AI 초안 안내 줄 + testID', pasteSource220.indexOf('paste-memo-auto-line') > 0 && pasteSource220.indexOf('AI가 한줄 메모 초안을 채웠어요') > 0],
@@ -2549,7 +2470,7 @@ const v2202Checks = [
   // ⑤ 버전
   [
     'v2.21.0 버전: 메뉴 · 앱 정보 · package · app.json',
-    APP_VERSION_LABEL === '릴스핀 v2.27.0' && APP_INFO_VERSION === '릴스핀 v2.27.0' && pkg.version === '2.27.0' && expoConfig.version === '2.27.0',
+    APP_VERSION_LABEL === '릴스핀 v2.28.0' && APP_INFO_VERSION === '릴스핀 v2.28.0' && pkg.version === '2.28.0' && expoConfig.version === '2.28.0',
   ],
 ];
 for (const [label, ok, extra] of v2202Checks) {
@@ -2631,7 +2552,7 @@ const v223Checks = [
   // ④ DB
   ['v2.23 DB: feedback.sql — 테이블·RLS·공감·어드민 RPC', feedbackSql223.indexOf('create table if not exists public.reelpin_feedback') > 0 && feedbackSql223.indexOf('increment_reelpin_feedback_like') > 0 && feedbackSql223.indexOf('reelpin_admin_feedback') > 0],
   // ⑤ 버전
-  ['v2.23 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.27.0' && APP_INFO_VERSION === '릴스핀 v2.27.0' && pkg.version === '2.27.0' && expoConfig.version === '2.27.0' && FEEDBACK_APP_VERSION === '2.27.0'],
+  ['v2.23 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.28.0' && APP_INFO_VERSION === '릴스핀 v2.28.0' && pkg.version === '2.28.0' && expoConfig.version === '2.28.0' && FEEDBACK_APP_VERSION === '2.28.0'],
 ];
 for (const [label, ok, extra] of v223Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2714,9 +2635,45 @@ const v225Checks = [
   ['v2.25 App: 레이어 닫기 콜백이 네 레이어를 모두 닫음', ['setSearchOpen(false)', 'setAlertOpen(false)', 'setMenuOpen(false)', 'setFeedbackOpen(false)', "setTab('map')"].every((t) => dismissOverlaysBody225.indexOf(t) > 0), dismissOverlaysBody225.slice(0, 160)],
   ['v2.25 App: 지도 화면에 onDismissOverlays 를 넘김', appSource225.indexOf('onDismissOverlays={dismissOverlaysForMap}') > 0],
   // ④ 버전
-  ['v2.25 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.27.0' && APP_INFO_VERSION === '릴스핀 v2.27.0' && pkg.version === '2.27.0' && expoConfig.version === '2.27.0' && FEEDBACK_APP_VERSION === '2.27.0'],
+  ['v2.25 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.28.0' && APP_INFO_VERSION === '릴스핀 v2.28.0' && pkg.version === '2.28.0' && expoConfig.version === '2.28.0' && FEEDBACK_APP_VERSION === '2.28.0'],
 ];
 for (const [label, ok, extra] of v225Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.28.0 상세 시트·레이어가 열리면 하단 탭바를 숨김 + 반경 500m 3초 토스트 ──
+// 상훈 님 요청(2026-11-18): "상세 시트가 열리면 하단 탭바가 바닥 버튼을 가려요. 숨겨 줘."
+// 결정(2026-11-18): "반경 500m 알림은 큰 배너 대신 3초짜리 한 줄 토스트 + 헤더 🔔 뱃지만."
+const appSource228 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+const mapSource228 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const collectionsSource228 = fs.readFileSync(path.join(process.cwd(), 'src/screens/CollectionsScreen.js'), 'utf8');
+const pinSheetSource228 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinDetailSheet.js'), 'utf8');
+const v228Checks = [
+  // ① 숨김 규칙 (순수 함수)
+  ['v2.28 탭바: 레이어가 없으면 보입니다', tabBarVisibility({}).visible === true && tabBarVisibility({ tab: 'map' }).hiddenBy === ''],
+  ['v2.28 탭바: 장소 상세 시트가 열리면 숨김', tabBarVisibility({ tab: 'map', pinDetail: true }).visible === false && tabBarHiddenReason({ tab: 'map', pinDetail: true }) === '장소 상세 시트'],
+  ['v2.28 탭바: 지도 탭이 아니면 남은 selectedPinId 로 숨기지 않음', tabBarVisibility({ tab: 'collections', pinDetail: true }).visible === true && tabBarVisibility({ tab: 'paste', listSheet: true }).visible === true],
+  ['v2.28 탭바: 목록·새 컬렉션·검색·알림·메뉴·제보 레이어도 숨김',
+    ['listSheet', 'collection', 'search', 'alerts', 'menu', 'feedback'].every((k) => tabBarVisibility({ tab: 'map', [k]: true }).visible === false)],
+  // ② App 배선 — 한 곳에서 판단하고 조건부로 그립니다
+  ['v2.28 App: 판단 규칙 모듈을 씀', appSource228.indexOf("from './src/utils/tabBarVisibility'") > 0 && appSource228.indexOf('tabBarVisibility({') > 0],
+  ['v2.28 App: 탭바는 조건부 렌더(숨김이면 DOM 에 없음)', appSource228.indexOf('{tabBarState.visible ? <TabBar active={tab} onChange={setTab} /> : null}') > 0],
+  ['v2.28 App: 모든 레이어 상태를 규칙에 넘김',
+    /tabBarVisibility\(\{[\s\S]{0,420}?pinDetail: Boolean\(selectedPinId\)[\s\S]{0,420}?search: searchOpen[\s\S]{0,240}?feedback: feedbackOpen/.test(appSource228)],
+  ['v2.28 App: 지도·컬렉션이 바닥 레이어를 위로 알림', appSource228.indexOf('onListSheetChange={setMapListSheet}') > 0 && appSource228.indexOf('onCreateSheetChange={setCollectionSheet}') > 0],
+  ['v2.28 지도: 목록 보기 상태를 위로 전달', /onListSheetChange\(view === 'list'\)/.test(mapSource228)],
+  ['v2.28 컬렉션: 새 컬렉션 시트 상태를 위로 전달', /onCreateSheetChange\(creating\)/.test(collectionsSource228)],
+  // ③ 상세 시트 본문 끝 여백 — 탭바가 숨는 만큼만 남깁니다
+  ['v2.28 핀 시트: 본문 끝 여백이 탭바 높이에 묶여 있지 않음', !/paddingBottom: tabBar\.floatTop/.test(pinSheetSource228) && /paddingBottom: 28/.test(pinSheetSource228)],
+  // ④ 반경 500m 알림 = 상단 한 줄 토스트(지도 버튼과 안 겹침)
+  ['v2.28 지도: 토스트는 상단 칩 줄 아래 한 줄 자리', mapSource228.indexOf('geofenceToastWrap') > 0 && mapSource228.indexOf('<GeofenceToast') > 0],
+  ['v2.28 지도: [내 위치]를 눌러도 주변 500m 패널을 저절로 열지 않음(지도를 가리지 않게)', !/if \(near\.length\) \{\s*setNearbyOpen\(true\)/.test(mapSource228)],
+];
+for (const [label, ok, extra] of v228Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -2765,6 +2722,9 @@ const total =
   v223Checks.length +
   v224Checks.length +
   v225Checks.length +
+  // v2.28.0 — 상세 시트 열린 동안 하단 탭바 숨김 + 반경 500m 3초 토스트
+  v228Checks.length +
+  v228RuleChecks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);

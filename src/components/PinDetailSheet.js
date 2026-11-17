@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, radius, sheetShadow, tabBar, typography } from '../theme';
+import { colors, radius, sheetShadow, typography } from '../theme';
 import { openMap, openPhone, openSource, telUrlOf } from '../utils/links';
 import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
@@ -560,10 +560,9 @@ const styles = StyleSheet.create({
   body: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    // v2.19.2 — 시트가 화면 바닥까지 내려오는데 플로팅 하단바(알약)가 그 위에 떠 있어,
-    //   맨 아래 `네이버지도 / 카카오맵 열기` 버튼이 알약에 살짝 가렸습니다.
-    //   본문 끝 여백을 알약 높이 + 뜬 간격(tabBar.floatTop) + 10px 만큼 확보합니다.
-    paddingBottom: tabBar.floatTop + 10,
+    // v2.28.0 — 상세 시트가 열려 있는 동안 하단 탭바(알약)는 숨겨지므로(App), 예전처럼
+    //   `tabBar.floatTop + 10`(76px) 만큼 비워 둘 필요가 없습니다. 손끝 여백만 남깁니다.
+    paddingBottom: 28,
   },
   chipRow: {
     flexDirection: 'row',

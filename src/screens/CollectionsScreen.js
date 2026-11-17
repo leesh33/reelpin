@@ -95,6 +95,8 @@ export default function CollectionsScreen({
   onOpenPin,
   onGoPaste,
   onToast,
+  // v2.28.0 — 새 컬렉션 시트가 열렸는지 App 에게 알려 줍니다(하단 탭바를 숨기기 위해).
+  onCreateSheetChange,
   // 검사·딥링크용 — 열자마자 이 컬렉션의 상세를 보여 줍니다(기본 null)
   initialCollectionId = null,
 }) {
@@ -117,6 +119,13 @@ export default function CollectionsScreen({
   const [editError, setEditError] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [sharing, setSharing] = useState(false);
+
+  /** v2.28.0 — 새 컬렉션 시트가 화면 아래를 덮는 동안 하단 탭바는 숨깁니다. */
+  useEffect(() => {
+    if (typeof onCreateSheetChange !== 'function') return undefined;
+    onCreateSheetChange(creating);
+    return () => onCreateSheetChange(false);
+  }, [creating, onCreateSheetChange]);
 
   const list = Array.isArray(collections) ? collections : [];
   const detail = useMemo(() => list.find((c) => c.id === detailId) || null, [list, detailId]);

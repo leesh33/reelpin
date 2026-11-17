@@ -15,6 +15,8 @@ import MapScreen from './src/screens/MapScreen';
 import PasteScreen from './src/screens/PasteScreen';
 import CollectionsScreen from './src/screens/CollectionsScreen';
 import TabBar from './src/components/TabBar';
+// v2.28.0 — 상세 시트·레이어가 열려 있는 동안 하단 탭바를 숨깁니다(바닥 버튼을 가리지 않게).
+import { tabBarVisibility } from './src/utils/tabBarVisibility';
 import Toast, { toastTopBelowSheetHeader } from './src/components/Toast';
 // v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
 // v2.16 — 호갱노노처럼 헤더(🔍 · 🔔 · ☰) + 🔍 검색 레이어 팝업 · ☰ 메뉴 시트
@@ -135,6 +137,11 @@ export default function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   // v2.23 — ☰ 내 정보에서 여는 💬 제안 · 버그 제보 시트 (내 정보 위에 겹쳐 올라갑니다)
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  // v2.28.0 — 각 화면이 여는 **바닥 레이어**도 하단 탭바를 숨깁니다.
+  //   mapListSheet    … 지도 `목록 보기` 레이어 (MapScreen 이 알려 줌)
+  //   collectionSheet … 컬렉션 `새 컬렉션` 시트 (CollectionsScreen 이 알려 줌)
+  const [mapListSheet, setMapListSheet] = useState(false);
+  const [collectionSheet, setCollectionSheet] = useState(false);
   // v2.21 — 지금 주소가 /admin 인지 (웹). 네이티브에서는 항상 false.
   const adminRoute = useMemo(() => (Platform.OS === 'web' ? ADMIN_PATH_PATTERN.test(typeof window !== 'undefined' && window.location ? window.location.pathname : '') : false), []);
   const adminPreview = useMemo(() => (adminRoute && Platform.OS === 'web' ? isAdminPreview() : false), [adminRoute]);
@@ -1058,6 +1065,26 @@ export default function App() {
     [alertFeed.badgeCount, openSearch, openAlerts, openMenu, signedIn]
   );
 
+  /**
+   * v2.28.0 — 하단 탭바를 그릴지 (상세 시트·레이어가 떠 있으면 숨김).
+   *   판단 규칙은 `src/utils/tabBarVisibility.js` 한 곳에 있습니다.
+   *   지도 탭이 아닐 때는 `selectedPinId` 가 남아 있어도 상세 시트가 없으므로 세지 않습니다.
+   */
+  const tabBarState = useMemo(
+    () =>
+      tabBarVisibility({
+        tab,
+        pinDetail: Boolean(selectedPinId),
+        listSheet: mapListSheet,
+        collection: collectionSheet,
+        search: searchOpen,
+        alerts: alertOpen,
+        menu: menuOpen,
+        feedback: feedbackOpen,
+      }),
+    [tab, selectedPinId, mapListSheet, collectionSheet, searchOpen, alertOpen, menuOpen, feedbackOpen]
+  );
+
   // v2.21 🛡️ `/admin` — 앱 화면 대신 어드민 화면을 그립니다. (권한은 /api/admin 이 최종 확인)
   if (adminRoute) {
     return (
@@ -1115,6 +1142,7 @@ export default function App() {
               alertsEnabled={alertsEnabled}
               onToggleAlerts={handleToggleAlerts}
               onDismissOverlays={dismissOverlaysForMap}
+              onListSheetChange={setMapListSheet}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
@@ -1143,13 +1171,18 @@ export default function App() {
               onOpenPin={openPinOnMap}
               onGoPaste={() => setTab('paste')}
               onToast={showToast}
+              onCreateSheetChange={setCollectionSheet}
             />
           </View>
         </View>
 
         {/* v2.18 — 플로팅 알약 탭바: 화면 바닥에 붙지 않고 살짝 떠서 지도·목록 위에 그려집니다.
             (그래서 화면 높이를 차지하지 않고, 지도 오른쪽·왼쪽 하단 컨트롤은 theme.tabBar 만큼 위로 올라갑니다) */}
-        <TabBar active={tab} onChange={setTab} />
+        {/* v2.28.0 — 장소 상세 시트·목록 보기·새 컬렉션·🔍·🔔·☰·💬 레이어가 열려 있으면
+            하단 탭바를 **그리지 않습니다**. 예전에는 시트 아래(흰 바탕)에 알약이 떠 있어
+            `지도에서 보기`·`네이버지도 열기`·`카카오맵 열기` 버튼을 가렸고, 시트가 열린 채로
+            탭을 바꿀 수도 있었습니다. 지도·저장·컬렉션 화면에서는 그대로 보입니다. */}
+        {tabBarState.visible ? <TabBar active={tab} onChange={setTab} /> : null}
         <Toast
           message={toast ? toast.message : null}
           tone={toast ? toast.tone : 'dark'}

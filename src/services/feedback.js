@@ -26,7 +26,7 @@ export const FEEDBACK_TABLE = 'reelpin_feedback';
 export const FEEDBACK_LIKE_RPC = 'increment_reelpin_feedback_like';
 
 /** 글에 자동으로 붙는 앱 버전 (package.json · app.json 과 함께 올립니다) */
-export const APP_VERSION_NAME = '2.27.0';
+export const APP_VERSION_NAME = '2.28.0';
 
 /** 닉네임을 비우면 이 이름으로 올라갑니다. */
 export const ANON_AUTHOR = '익명';

@@ -21,10 +21,10 @@ import {
   nextFilterAfterRemoval,
   nextFilterAfterRename,
 } from '../utils/categories';
-import GeofenceBanner, { shouldShowBanner } from '../components/GeofenceBanner';
+import GeofenceToast, { GEOFENCE_TOAST_MS, nearbyToastMessage } from '../components/GeofenceToast';
 import PinDetailSheet from '../components/PinDetailSheet';
-// v2.20 — 영업 상태 배지(한국 시간 기준) · 매장 상세 조회(영업시간·추천 메뉴)
-import { bannerOpeningBadge } from '../utils/openingStatus';
+// v2.20 — 매장 상세 조회(영업시간·추천 메뉴)
+// v2.28.0 — 지도 위 영업 상태 뱃지(bannerOpeningBadge)는 배너와 함께 걷어냈습니다(3초 토스트엔 넣지 않음).
 import { fetchPlaceInfo, needsPlaceInfo, pinHoursPatch } from '../services/placeInfo';
 import {
   NEARBY_RADIUS_M,
@@ -96,6 +96,8 @@ export default function MapScreen({
   onToggleAlerts,
   // v2.25.0 — 상세 시트의 [🗺️ 지도에서 보기]: 검색·알림·메뉴 같은 앞선 레이어를 닫고 지도 탭으로
   onDismissOverlays,
+  // v2.28.0 — `목록 보기` 레이어가 열렸는지 App 에게 알려 줍니다(하단 탭바를 숨기기 위해).
+  onListSheetChange,
 }) {
   /**
    * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
@@ -130,6 +132,16 @@ export default function MapScreen({
   const viewBeforeRef = useRef('map');
   const searchActiveRef = useRef(false);
   const navKeyRef = useRef('');
+
+  /**
+   * v2.28.0 — `목록 보기` 레이어가 열려 있는 동안 App 은 하단 탭바를 숨깁니다.
+   *   목록 시트는 화면 바닥까지 내려오므로, 그 뒤에 남은 알약이 시트 아래로 비쳐 보이지 않게 합니다.
+   */
+  useEffect(() => {
+    if (typeof onListSheetChange !== 'function') return undefined;
+    onListSheetChange(view === 'list');
+    return () => onListSheetChange(false);
+  }, [view, onListSheetChange]);
 
   // v2.19 — 컬렉션만 보기: 지금 걸린 컬렉션과 그 핀 id 집합 (아래 필터·효과가 함께 씁니다)
   const collectionActive = Boolean(collectionFilter && collectionFilter.id);
@@ -195,8 +207,14 @@ export default function MapScreen({
   // v2.19.1 — 반경 내 알림은 App(내 정보 › 알림 설정)이 가진 값 하나를 그대로 따릅니다.
   //           (예전처럼 지도 안에서만 켜고 끄면 설정 화면과 어귯나는 일이 없음)
   const alertsOn = Boolean(alertsEnabled);
-  // v2.14.1 — 위로 스와이프로 닫은 배너의 키 (같은 상태면 다시 뜨지 않게)
-  const [dismissedBannerKey, setDismissedBannerKey] = useState('');
+  // v2.28.0 — 반경 500m 알림 토스트 상태
+  //   nearbyToast     … 지금 떠 있는 한 줄 알림 { key, count } · null 이면 안 보임
+  //   shownNearKeyRef … 이번 세션에서 이미 알린 가게 묶음 키 (같은 묶음은 다시 띄우지 않음)
+  //   nearKeyNonce    … [내 위치]를 직접 누르면 +1 — 같은 묶음이라도 다시 보여 줍니다
+  const [nearbyToast, setNearbyToast] = useState(null);
+  const shownNearKeyRef = useRef('');
+  const [nearKeyNonce, setNearKeyNonce] = useState(0);
+  const nearbyToastTimer = useRef(null);
   const [notifyPermission, setNotifyPermission] = useState(() => notificationPermission());
 
   const notifiedRef = useRef(new Set());
@@ -304,10 +322,9 @@ export default function MapScreen({
         writeLocationGrantedFlag(true);
         if (announce) {
           const near = findNearbyPins(pinsRef.current, position, NEARBY_RADIUS_M);
-          if (near.length) {
-            setNearbyOpen(true);
-            showToast('현재 위치 확인 · 반경 ' + NEARBY_RADIUS_M + 'm 안에 ' + near.length + '곳이 있어요');
-          } else {
+          // v2.28.0 — 반경 안에 저장한 곳이 있으면 **3초짜리 한 줄 토스트**(nearKey 효과)가 알립니다.
+          //   예전처럼 `주변 500m` 패널을 저절로 열어 지도를 가리지 않습니다.
+          if (!near.length) {
             const close = nearestPin(pinsRef.current, position);
             showToast(
               close
@@ -334,11 +351,12 @@ export default function MapScreen({
 
   /**
    * v2.14.1 — 사용자가 직접 누른 [내 위치] 버튼.
-   * 스와이프로 닫아 둔 배너라도 위치를 새로 확인하면 다시 보여 줄 수 있게 닫힘 기록을 지웁니다.
+   * v2.28.0 — 한 번 지나간 반경 500m 알림도 위치를 새로 확인하면 **다시** 한 번 보여 줍니다.
    */
   const locateFromUser = useCallback(
     (options) => {
-      setDismissedBannerKey('');
+      shownNearKeyRef.current = '';
+      setNearKeyNonce((n) => n + 1);
       return locate(options);
     },
     [locate]
@@ -589,48 +607,60 @@ export default function MapScreen({
     };
   }, [alertsOn, applyPosition, showToast, onToggleAlerts]);
 
-  // ── 배너 문구 (v2.1.3: 사실만 — 위치를 모를 때 가짜 거리·가게명을 지어내지 않음) ──
-  //   v2.17 — `mode` 를 처음으로 명시합니다. 배너는 **mode === 'near'(반경 500m 안)** 때만 그립니다.
-  //           (shouldShowBanner · GeofenceBanner)
-  const banner = useMemo(() => {
-    if (pins.length === 0) {
-      return { mode: 'empty', pin: null, target: null };
-    }
+  // ── v2.28.0 반경 500m 알림 = **3초짜리 한 줄 토스트** ─────────────────────
+  //   상훈 님 결정(2026-11-18): "지도 위에 큰 카드로 떠 있는 배너는 지도를 가린다.
+  //   반경 500m 안에 저장한 곳이 있으면 작은 한 줄 토스트로 3초만 알려 주고,
+  //   계속 남는 표시는 헤더 🔔 뱃지 하나로 충분하다."
+  //
+  //   · 예전 GeofenceBanner(큰 카드 · 스와이프 닫기 · 영업 상태 뱃지)는 지도에서 걷어냈습니다.
+  //   · 토스트는 **반경 안(near)일 때만**, 한 번 뜨고 GEOFENCE_TOAST_MS(3.2초) 뒤 스스로 사라집니다.
+  //   · 같은 가게 묶음(nearKey)은 세션에서 한 번만 — [내 위치]를 새로 누르면 다시 보입니다.
+  //   · 지도는 가리지 않습니다: 상단 분류 칩 아래 한 줄, 좌우 🎛·`내 위치` 버튼과 멀리 떨어진 자리.
+  const nearKey = useMemo(() => {
+    if (!nearby.length) return '';
+    return 'near:' + nearby.map((hit) => hit.pin.id).join(',');
+  }, [nearby]);
 
-    if (!myCoords) {
-      return { mode: 'needs-location', pin: null, target: null };
+  useEffect(() => {
+    if (!nearKey) {
+      if (nearbyToastTimer.current) {
+        clearTimeout(nearbyToastTimer.current);
+        nearbyToastTimer.current = null;
+      }
+      setNearbyToast(null);
+      return undefined;
     }
+    // 같은 가게 묶음은 세션에서 한 번만 — 다만 [내 위치]를 누르면 shownNearKeyRef 를 비웁니다.
+    if (shownNearKeyRef.current === nearKey) return undefined;
+    shownNearKeyRef.current = nearKey;
+    setNearbyToast({ key: nearKey, count: nearby.length });
+    if (nearbyToastTimer.current) clearTimeout(nearbyToastTimer.current);
+    nearbyToastTimer.current = setTimeout(() => {
+      nearbyToastTimer.current = null;
+      setNearbyToast(null);
+    }, GEOFENCE_TOAST_MS);
+    // 정리(cleanup)에서 타이머를 끄지 않습니다 — 위치 갱신으로 nearby 가 새 배열이 되어도
+    // 3초 타이머는 그대로 흘러 스스로 사라져야 하기 때문입니다(아래 unmount 정리만).
+    return undefined;
+  }, [nearKey, nearKeyNonce, nearby.length]);
 
-    if (nearby.length) {
-      const top = nearby[0];
-      return {
-        mode: 'near',
-        pin: top.pin,
-        title: '반경 ' + NEARBY_RADIUS_M + 'm 앞, 저장한 맛집이 있어요',
-        sub: top.pin.name + ' · ' + formatDistance(top.distanceMeters),
-        badge: '지금',
-        tone: undefined,
-        target: top.pin,
-      };
-    }
+  // 화면을 떠날 때 남은 타이머 정리
+  useEffect(
+    () => () => {
+      if (nearbyToastTimer.current) {
+        clearTimeout(nearbyToastTimer.current);
+        nearbyToastTimer.current = null;
+      }
+    },
+    []
+  );
 
-    if (closest && closest.pin) {
-      // 반경 밖 가장 가까운 곳 — 사실은 알고 있지만 지도를 가리지 않게 **배너로는 안 보여 줍니다.**
-      // (가까운 저장 장소는 헤더 🔔 알림 모음 · 오른쪽 `주변 500m` 패널에서 그대로 볼 수 있음)
-      return {
-        mode: 'closest',
-        pin: closest.pin,
-        title: '가장 가까운 저장 장소: ' + closest.pin.name,
-        sub: formatDistance(closest.distanceMeters) + ' · 반경 ' + NEARBY_RADIUS_M + 'm 밖',
-        badge: '내 위치',
-        tone: 'muted',
-        target: closest.pin,
-      };
-    }
-
-    // 위치는 있지만 좌표 있는 핀이 하나도 없을 때 — 지어내지 않고 아무 배너도 그리지 않습니다.
-    return { mode: 'none', pin: null, target: null };
-  }, [myCoords, nearby, closest, pins.length]);
+  /** 토스트의 [보기] — 헤더 🔔 알림 모음(같은 위치 기준)을 열고 토스트는 닫습니다. */
+  const openNearbyFromToast = useCallback(() => {
+    setNearbyToast(null);
+    if (header && typeof header.onPressAlerts === 'function') header.onPressAlerts();
+    else setNearbyOpen(true);
+  }, [header]);
 
   /**
    * v2.20 — 지금 화면에 필요한 매장 상세(영업시간·추천 메뉴)를 **조용히** 확인해 핀에 저장합니다.
@@ -681,41 +711,6 @@ export default function MapScreen({
       cancelled = true;
     };
   }, [selectedPin, nearby, onSavePinHours]);
-
-  /** v2.20 — 반경 500m 배너의 영업 상태 배지 (확인된 경우에만 글자가 있습니다) */
-  const bannerOpening = useMemo(
-    () => bannerOpeningBadge(banner.pin ? banner.pin.hours : null),
-    [banner.pin]
-  );
-
-  /**
-   * v2.14.1 — 배너 한 장을 가리키는 키. 위로 스와이프해 닫으면 이 키를 기억해 두고,
-   * 같은 키(같은 가게·같은 모드)의 배너는 다시 띄우지 않습니다.
-   * · 다른 가게가 가장 가까워지거나 반경 안팎이 바뀌면 키가 달라져 다시 보입니다.
-   * · 사용자가 [내 위치]를 새로 누르면 닫힘 기록을 지워 다시 보입니다(locateFromUser).
-   */
-  const bannerKey = useMemo(() => {
-    if (banner.mode === 'empty') return 'empty';
-    if (banner.mode === 'needs-location') return 'needs-location';
-    if (banner.pin) return banner.pin.id + ':' + (banner.mode === 'closest' ? 'closest' : 'near');
-    return '';
-  }, [banner]);
-
-  const bannerHidden = Boolean(bannerKey) && dismissedBannerKey === bannerKey;
-  // v2.17 — 반경 500m 안(near)일 때만 그립니다.
-  const bannerVisible = shouldShowBanner(banner.mode) && !bannerHidden;
-
-  const dismissBanner = useCallback(() => {
-    if (bannerKey) setDismissedBannerKey(bannerKey);
-  }, [bannerKey]);
-
-  const focusBannerPin = () => {
-    if (!banner.target) {
-      if (typeof onGoPaste === 'function') onGoPaste();
-      return;
-    }
-    focusOnPin(banner.target);
-  };
 
   /** v2.0 — 내 맛집 지도를 링크로 공유(공유 시트 또는 클립보드) */
   const shareMyMap = useCallback(async () => {
@@ -884,19 +879,10 @@ export default function MapScreen({
               </Pressable>
             </View>
           )}
-          {bannerVisible && (
-            <GeofenceBanner
-              key={bannerKey}
-              pin={banner.pin}
-              radiusMeters={radiusMeters}
-              onPress={focusBannerPin}
-              onDismiss={dismissBanner}
-              title={banner.title}
-              sub={banner.sub}
-              badge={banner.badge}
-              tone={banner.tone}
-              opening={bannerOpening}
-            />
+          {nearbyToast && (
+            <View style={styles.geofenceToastWrap} pointerEvents="box-none">
+              <GeofenceToast message={nearbyToastMessage(nearbyToast.count)} onPress={openNearbyFromToast} />
+            </View>
           )}
           {!!locationError && (
             <Pressable style={styles.errorChip} onPress={() => locateFromUser()} accessibilityRole="button">
@@ -1186,6 +1172,13 @@ const styles = StyleSheet.create({
     top: 8,
     left: 0,
     right: 0,
+  },
+  // v2.28.0 — 반경 500m 알림 토스트 자리: 분류 칩 줄 **바로 아래**, 가운데 정렬.
+  //   좌하단 🎛(12,~724) · 우하단 `내 위치` FAB 와 멀어진 상단이라 지도 버튼과 겹치지 않습니다.
+  geofenceToastWrap: {
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 10,
   },
   sharedBanner: {
     flexDirection: 'row',
