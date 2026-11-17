@@ -139,6 +139,13 @@ function sinceLabel(value) {
   return dateLabel(value);
 }
 
+/** 미리보기용 — 모의 제보를 유형·상태로 거릅니다. */
+function filterPreviewFeedback(list, kind, status) {
+  return (Array.isArray(list) ? list : []).filter(
+    (item) => (!kind || item.kind === kind) && (!status || item.status === status)
+  );
+}
+
 /** 가입 경로 라벨 */
 function providerLabel(provider) {
   const id = String(provider || '').toLowerCase();
@@ -439,7 +446,11 @@ export default function AdminScreen({ preview = false }) {
   // ── 데이터 불러오기 ──────────────────────────────
   const loadTab =useCallback(
     async (which) => {
-      if (preview) return;
+      if (preview) {
+        // 미리보기 — 모의 제보도 필터가 실제로 걸리는 것처럼 보이도록 화면에서 직접 거릅니다.
+        if (which === 'feedback') setFeedback(filterPreviewFeedback(PREVIEW_DATA.feedback, feedbackKind, feedbackStatus));
+        return;
+      }
       const token = await currentToken();
       if (!token) {
         setGate('anon');

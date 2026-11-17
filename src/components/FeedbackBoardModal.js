@@ -34,7 +34,6 @@ import {
   FEEDBACK_LIMITS,
   FEEDBACK_SORTS,
   FEEDBACK_STATUS,
-  countByKind,
   cooldownLabel,
   cooldownRemaining,
   fetchFeedback,
@@ -199,7 +198,6 @@ export default function FeedbackBoardModal({
     return () => clearInterval(timer);
   }, [cooldownMs]);
 
-  const counts = useMemo(() => countByKind(items), [items]);
   const current = useMemo(() => kindInfo(kind), [kind]);
   const titleLength = title.trim().length;
   const contentLength = content.trim().length;
@@ -389,7 +387,6 @@ export default function FeedbackBoardModal({
         <View style={styles.tabs}>
           {FEEDBACK_KINDS.map((k) => {
             const on = kind === k.id;
-            const count = k.id === 'idea' ? counts.idea : counts.bug;
             return (
               <Pressable
                 key={k.id}
@@ -406,9 +403,6 @@ export default function FeedbackBoardModal({
                 <Text style={[styles.tabText, on && styles.tabTextOn]}>
                   {k.emoji} {k.label}
                 </Text>
-                <View style={[styles.tabCount, on && styles.tabCountOn]}>
-                  <Text style={[styles.tabCountText, on && styles.tabCountTextOn]}>{count}</Text>
-                </View>
               </Pressable>
             );
           })}
@@ -551,17 +545,6 @@ const styles = StyleSheet.create({
   tabOn: { backgroundColor: colors.charcoal, borderColor: colors.charcoal },
   tabText: { fontSize: 12.5, fontWeight: '800', color: colors.textSub },
   tabTextOn: { color: colors.white },
-  tabCount: {
-    minWidth: 18,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
-    borderRadius: radius.pill,
-    backgroundColor: colors.lineSoft,
-    alignItems: 'center',
-  },
-  tabCountOn: { backgroundColor: colors.charcoalPill },
-  tabCountText: { fontSize: 10, fontWeight: '800', color: colors.textSub },
-  tabCountTextOn: { color: colors.white },
 
   sortRow: {
     flexDirection: 'row',

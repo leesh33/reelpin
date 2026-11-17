@@ -352,6 +352,11 @@ check(
   ''
 );
 check(
+  '어드민: 미리보기에서도 유형·상태 필터가 걸림',
+  adminScreenSource.indexOf('filterPreviewFeedback(PREVIEW_DATA.feedback') > 0 && adminScreenSource.indexOf('function filterPreviewFeedback') > 0,
+  ''
+);
+check(
   'API: 제보 조회·상태 변경·삭제 경로',
   adminApiSource.indexOf("view === 'feedback'") > 0 &&
     adminApiSource.indexOf("action === 'update-feedback-status'") > 0 &&
