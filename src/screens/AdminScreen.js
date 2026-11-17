@@ -2054,7 +2054,10 @@ export default function AdminScreen({ preview = false }) {
         accessibilityLabel={t.label}
       >
         <Ionicons name={t.icon} size={wide ? 16 : 15} color={on ? (wide ? colors.white : colors.brandDark) : colors.textSub} />
-        <Text style={[wide ? styles.sideText : styles.tabText, on && (wide ? styles.sideTextOn : styles.tabTextOn)]}>
+        <Text
+          style={[wide ? styles.sideText : styles.tabText, on && (wide ? styles.sideTextOn : styles.tabTextOn)]}
+          numberOfLines={1}
+        >
           {t.label}
         </Text>
       </Pressable>
@@ -2106,7 +2109,17 @@ export default function AdminScreen({ preview = false }) {
       <View style={[styles.body, wide && styles.bodyWide]}>
         {wide ? <View style={styles.sidebar}>{navItems}</View> : null}
         <ScrollView style={styles.content} contentContainerStyle={[styles.contentInner, wide && styles.contentInnerWide]}>
-          {!wide && gate === 'ready' ? <View style={styles.tabsRow}>{navItems}</View> : null}
+          {!wide && gate === 'ready' ? (
+            // v2.31 — 탭이 5개가 되어 390px 에서는 가로로 밀어 볼 수 있게 합니다(라벨 줄바꿈 방지).
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.tabsScroll}
+              contentContainerStyle={styles.tabsRow}
+            >
+              {navItems}
+            </ScrollView>
+          ) : null}
           {body}
           <Text style={styles.footNote}>릴스핀 v2.31 · 관리자 화면은 서버에서 권한을 다시 확인합니다</Text>
         </ScrollView>
@@ -2241,13 +2254,14 @@ const styles = StyleSheet.create({
   contentInner: { padding: 14, paddingBottom: 40 },
   contentInnerWide: { padding: 24, maxWidth: 1060, width: '100%', alignSelf: 'center' },
 
-  tabsRow: { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  tabsScroll: { flexGrow: 0, marginBottom: 14 },
+  tabsRow: { flexDirection: 'row', gap: 6, paddingRight: 4 },
   tabItem: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    gap: 4,
+    paddingHorizontal: 11,
     paddingVertical: 9,
     borderRadius: 999,
     backgroundColor: colors.white,
