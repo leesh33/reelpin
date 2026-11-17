@@ -601,7 +601,31 @@ revoke all on function public.reelpin_admin_delete_curated(uuid) from public;
 revoke all on function public.reelpin_admin_delete_curated(uuid) from anon;
 grant execute on function public.reelpin_admin_delete_curated(uuid) to authenticated;
 
--- 5. 확인용 (선택) ────────────────────────────────────────────
+-- 6. (선택) 첫 화면 확인용 예시 — **비어 있을 때만** 한 번 들어갑니다.
+--    지우고 싶으면 `/admin` → `📌 기획전·배너` 에서 삭제하면 됩니다.
+insert into public.reelpin_banners (title, subtitle, badge, sort_order, active)
+select '서울 도심 산책 코스', '릴스에서 본 그 길, 지금 담아 두세요', '기획전', 0, true
+where not exists (select 1 from public.reelpin_banners);
+
+insert into public.reelpin_curated_collections
+  (title, description, sponsor, badge, emoji, color, places, sort_order, active)
+select
+  '서울 도심 산책 코스',
+  '주말에 걷기 좋은 세 곳을 모았어요',
+  '운영자 추천',
+  '기획전',
+  '🏞️',
+  '#0D9488',
+  '[
+     {"name":"경복궁","category":"가볼곳","area":"종로구","address":"서울 종로구 사직로 161","lat":37.579621,"lng":126.977041},
+     {"name":"광화문광장","category":"가볼곳","area":"종로구","address":"서울 종로구 세종대로 172","lat":37.571679,"lng":126.976705},
+     {"name":"청계광장","category":"가볼곳","area":"종로구","address":"서울 종로구 청계천로 1","lat":37.569649,"lng":126.978378}
+   ]'::jsonb,
+  0,
+  true
+where not exists (select 1 from public.reelpin_curated_collections);
+
+-- 7. 확인용 (선택) ────────────────────────────────────────────
 -- select public.reelpin_public_banners();            -- 켜 둔 배너
 -- select public.reelpin_public_curated();            -- 켜 둔 기획전
 -- select proname from pg_proc where proname like 'reelpin_%curated%' or proname like 'reelpin_%banner%';
