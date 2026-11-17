@@ -165,7 +165,18 @@ handler = (url) => {
     return jsonRes({ title: '제목( oEmbed )', author_name: '호키도리', thumbnail_url: 'https://i.ytimg.com/vi/2QZPPEle9IY/hq.jpg' });
   }
   if (url.indexOf('https://www.googleapis.com') === 0) return errRes(500);
-  return jsonRes({ documents: [KAKAO_DOC], items: [NAVER_ITEM] });
+  // v2.22 — 지도는 검색어에 맞는 **실제 이름**을 돌려줘야 후보 검증(이름 일치)을 통과합니다.
+  if (url.indexOf('/api/kakao-local') === 0) {
+    const q = decodeURIComponent(url.split('query=')[1].split('&')[0]);
+    return jsonRes({
+      documents: [
+        q.indexOf('엄마손') >= 0
+          ? { ...KAKAO_DOC, place_name: '엄마손횟집', address_name: '제주 제주시 연동 123-4', road_address_name: '제주 제주시 연동 123-4' }
+          : { ...KAKAO_DOC, place_name: '제주 연동 맛집', address_name: '제주 제주시 연동 1' },
+      ],
+    });
+  }
+  return jsonRes({ items: [NAVER_ITEM] });
 };
 const ytUrl = 'https://youtube.com/shorts/2QZPPEle9IY';
 const ytProxy = await fetchYouTubeProxy(parseUrl(ytUrl));

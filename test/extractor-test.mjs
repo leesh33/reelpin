@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { Platform } from 'react-native';
 import path from 'node:path';
 import {
   parseUrl,
@@ -66,6 +67,14 @@ import {
   NAVER_DISPLAY_MAX,
   isQuantityOrPriceToken,
   isAreaOnlyQuery,
+  // v2.22 — Precision-first (상호 근거 등급·후보 검증·명확한 상호 표기·메뉴 단어)
+  MENU_WORDS,
+  explicitStoreNames,
+  classifyQuery,
+  isStoreQuery,
+  candidateMatchesQuery,
+  isMenuWord,
+  ownerCommentOf,
 } from '../src/services/extractor.js';
 import {
   naverMapAppUrl,
@@ -824,7 +833,7 @@ handler = (url) => {
 };
 const retry = await extractPlaces('https://youtu.be/9Xk2mQpLz7A');
 check('재시도: 두 번째 후보에서 결과', retry.query === '베통' && retry.candidates.length > 0, retry.query);
-check('재시도: 시도 기록 2건', Array.isArray(retry.attempts) && retry.attempts.length === 2, JSON.stringify(retry.attempts));
+check('재시도: 두 번째 후보까지 시도 기록', Array.isArray(retry.attempts) && retry.attempts.length >= 2 && retry.attempts[1].query === '베통', JSON.stringify(retry.attempts.map((a) => a.query)));
 check('재시도: 첫 시도는 결과 0건', retry.attempts[0].resultCount === 0, JSON.stringify(retry.attempts[0]));
 
 // 9-10. 링크가 없는 입력은 안내 문구로 거절
@@ -1231,7 +1240,20 @@ handler = (url) => {
   if (u.includes('dapi.kakao.com')) {
     const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
     if (q.indexOf('뚜레쥬르') >= 0) return jsonRes({ documents: [DOC_TOUR] });
-    if (q.indexOf('우동') >= 0) return jsonRes({ documents: [{ ...DOC_BETONG, id: 'u1', place_name: '망원동 우동집' }] });
+    if (q.indexOf('우동') >= 0)
+      return jsonRes({
+        documents: [
+          {
+            ...DOC_BETONG,
+            id: 'u1',
+            place_name: '망원동 우동집',
+            address_name: '서울 마포구 망원동 45-1',
+            road_address_name: '서울 마포구 월드컵로 77',
+            x: '126.9020',
+            y: '37.5560',
+          },
+        ],
+      });
     return jsonRes({ documents: [DOC_BETONG] });
   }
   return jsonRes({ documents: [], items: [], places: [] });
@@ -2177,8 +2199,14 @@ check('v2.21 994t_EyrIiA: 지역 = 가평', eyr.area === '가평', eyr.area);
 check('v2.21 994t_EyrIiA: 첫 검색어가 가게/메뉴+지역', /가평/.test(eyr.queries[0]) && /닭볶음탕|솥뚜껑/.test(eyr.queries[0]), eyr.queries[0]);
 check('v2.21 994t_EyrIiA: 상호명은 비움(지어내지 않음)', eyr.storeName === '', eyr.storeName);
 check(
-  'v2.21 지역뿐인 검색어 판정',
-  isAreaOnlyQuery('가평') === true && isAreaOnlyQuery('성수동 맛집') === true && isAreaOnlyQuery('가평 닭볶음탕') === false,
+  'v2.22 상호 근거 판정: 지역·메뉴·수량뿐인 검색어',
+  isAreaOnlyQuery('가평') === true &&
+    isAreaOnlyQuery('성수동 맛집') === true &&
+    // v2.22 — 메뉴·지역 조합(`가평 닭볶음탕`)도 **가게를 특정하지 못한** 검색어입니다.
+    isAreaOnlyQuery('가평 닭볶음탕') === true &&
+    isAreaOnlyQuery('1마리') === true &&
+    isAreaOnlyQuery('성수동 베통') === false &&
+    isAreaOnlyQuery('디오디아') === false,
   '지역 판정'
 );
 
@@ -2190,12 +2218,352 @@ check(
   'Gemini 폴백 없음'
 );
 check(
-  'v2.21 지역뿐인 검색어는 뒤로 미룸',
-  geminiFallbackSource.indexOf('const strongList = mergedList.filter((q) => !isAreaOnlyQuery(q))') > 0,
-  'strongList 필터 없음'
+  'v2.22 상호 근거 없는 검색어는 지도 1위를 믿지 않음',
+  geminiFallbackSource.indexOf('storeQueries.concat(weakQueries)') > 0 &&
+    geminiFallbackSource.indexOf('candidateMatchesQuery(c, q, matchOptions)') > 0,
+  '상호 근거 필터 없음'
+);
+
+
+// ═════════════════════════════════════════════════════════════
+// v2.22 — 이 블록은 **웹(Vercel) 런타임**을 흉내 냅니다.
+//   (Gemini 영상 분석 폴백은 서버 프록시가 있는 웹에서만 동작합니다)
+Platform.OS = 'web';
+
+// ═════════════════════════════════════════════════════════════
+// v2.22 · Precision-first — “상호를 특정하지 못하면 AI 영상 분석으로”
+//   상훈 님 제보(2026-11-17): “이 영상만 고쳐서 될 건 아닌거 같고, 전체적인 로직 점검을 1번 해 봐야 될 거 같애”
+//   → 메뉴·수량·수식어·채널명·지역만 있는 제목이 **다른 동네 다른 가게**를 저장하던 문제를 막습니다.
+// ═════════════════════════════════════════════════════════════
+
+// ── 1) 명확한 상호 표기(`📍`·`상호:`·`[가게]`)만 뽑기 ──
+check(
+  'v2.22 상호 표기: 📍 뒤 상호(지역·메뉴는 걷어냄)',
+  JSON.stringify(explicitStoreNames('📍 가평 산골농원 솥뚜껑 닭볶음탕', '가평')) === '["산골농원"]',
+  JSON.stringify(explicitStoreNames('📍 가평 산골농원 솥뚜껑 닭볶음탕', '가평'))
+);
+check(
+  'v2.22 상호 표기: 상호: / 가게명:',
+  JSON.stringify(explicitStoreNames('상호: 착한부대찌개\n가게명: 쌍문동점')) === '["착한부대찌개","쌍문동점"]',
+  JSON.stringify(explicitStoreNames('상호: 착한부대찌개\n가게명: 쌍문동점'))
+);
+check(
+  'v2.22 상호 표기: 대괄호 상호',
+  JSON.stringify(explicitStoreNames('[런던베이글] 성수 소금빵 웨이팅 후기')) === '["런던베이글"]',
+  JSON.stringify(explicitStoreNames('[런던베이글] 성수 소금빵 웨이팅 후기'))
+);
+check(
+  'v2.22 상호 표기: 소괄호 금액 안내는 상호가 아님',
+  explicitStoreNames('(예약금 10만원 있어요~)', '연동').length === 0,
+  JSON.stringify(explicitStoreNames('(예약금 10만원 있어요~)', '연동'))
+);
+check(
+  'v2.22 상호 표기: 메뉴만 적힌 표기는 상호가 아님',
+  explicitStoreNames('📍 닭볶음탕 무한리필', '가평').length === 0,
+  JSON.stringify(explicitStoreNames('📍 닭볶음탕 무한리필', '가평'))
+);
+
+// ── 2) 검색어가 가게를 특정했는가 (classifyQuery) ──
+const QK = (q, area) => classifyQuery(q, { area }).kind;
+check(
+  'v2.22 검색어 등급: 메뉴·수량·수식어뿐이면 area',
+  QK('가평 닭볶음탕', '가평') === 'area' &&
+    QK('닭볶음탕') === 'area' &&
+    QK('순대국') === 'area' &&
+    QK('오마카세') === 'area' &&
+    QK('돈까스') === 'area' &&
+    QK('24시') === 'area' &&
+    QK('3대') === 'area' &&
+    QK('1인분') === 'area' &&
+    QK('2인') === 'area' &&
+    QK('만원') === 'area' &&
+    QK('무한리필') === 'area' &&
+    QK('인생맛집') === 'area' &&
+    QK('역대급') === 'area' &&
+    QK('미친맛') === 'area' &&
+    QK('숨은맛집') === 'area' &&
+    QK('줄서는집') === 'area' &&
+    QK('노포') === 'area' &&
+    QK('가성비') === 'area' &&
+    QK('웨이팅') === 'area',
+  ['가평 닭볶음탕','닭볶음탕','순대국','24시','3대','무한리필','인생맛집','노포','가성비'].map((q) => q + '=' + QK(q, '가평')).join(' / ')
+);
+check(
+  'v2.22 검색어 등급: 상호가 있으면 store',
+  QK('가평 산골농원', '가평') === 'store' &&
+    QK('성수동 베통', '성수동') === 'store' &&
+    QK('디오디아') === 'store' &&
+    QK('쌍문동 착한부대찌개', '쌍문동') === 'store',
+  ['가평 산골농원','성수동 베통','디오디아'].map((q) => q + '=' + QK(q)).join(' / ')
+);
+check(
+  'v2.22 검색어 등급: 채널 이름은 상호가 아님',
+  QK('미니로운생활', undefined) === 'store' &&
+    classifyQuery('가평 미니로운생활', { area: '가평', channel: '미니로운생활' }).kind === 'area',
+  JSON.stringify(classifyQuery('가평 미니로운생활', { area: '가평', channel: '미니로운생활' }))
+);
+
+// ── 3) 지도 1위를 믿어도 되는가 (candidateMatchesQuery) ──
+const CAND = (name, address, area) => ({ name, address, area, roadAddress: address });
+check(
+  'v2.22 후보 검증: 메뉴 검색어가 데려온 다른 가게는 거부',
+  candidateMatchesQuery(CAND('광어1마리15000원', '경기 가평군 청평면 1', '청평면'), '1마리', { area: '가평' }) === false
+);
+check(
+  'v2.22 후보 검증: 상호가 아닌 검색어(솥뚜껑)로 잡힌 다른 동네 가게는 거부',
+  candidateMatchesQuery(CAND('솥뚜껑매운탕', '충남 공주시 사곡면 아래안영골길 4', '사곡면'), '솥뚜껑', { area: '가평' }) === false
+);
+check(
+  'v2.22 후보 검증: 지역이 같은 상호는 채택',
+  candidateMatchesQuery(CAND('산골농원', '경기 가평군 설악면 어비산길99번길 75-7', '설악면'), '가평 산골농원', { area: '가평' }) === true
+);
+check(
+  'v2.22 후보 검증: 이름이 더 길어도 상호를 포함하면 채택',
+  candidateMatchesQuery(CAND('런던베이글뮤지엄', '서울 성동구 성수동2가 1', '성수동2가'), '성수동 런던베이글', { area: '성수동' }) === true
+);
+check(
+  'v2.22 후보 검증: 동네가 어긋나는 동명이인은 거부',
+  candidateMatchesQuery(CAND('엄마손횟집', '부산 해운대구 우동 1', '우동'), '연동 엄마손횟집', { area: '연동' }) === false
+);
+check(
+  'v2.22 후보 검증: 작성자가 적은 📍 상호는 그대로 신뢰',
+  candidateMatchesQuery(CAND('산골농원', '경기 가평군 설악면 어비산길99번길 75-7', '설악면'), '협재 해변', {
+    area: '협재',
+    explicit: true,
+  }) === true
+);
+check(
+  'v2.22 후보 검증: 시청자 댓글 검색어는 이름이 똑같을 때만',
+  candidateMatchesQuery(CAND('영화장', '서울 동대문구 휘경로 3-8', '이문동'), '외대앞역 영화장', { exactOnly: true }) === true &&
+    candidateMatchesQuery(CAND('영화장 본점', '서울 동대문구 휘경로 3-8', '이문동'), '외대앞역 영화장', { exactOnly: true }) === false
+);
+
+// ── 4) 제목에 상호가 없을 때 — 수식어·메뉴·채널명이 검색어 1순위가 되지 않음 ──
+const hype = extractSearchQueries('역대급 숨은맛집! 미친맛 순대국 8,000원 #노포 #가성비');
+check(
+  'v2.22 수식어·메뉴·가격: 검색어에 섞이지 않음',
+  hype.queries.every((q) => !/인생|역대급|숨은|미친|노포|가성비|8,000|8000/.test(q)),
+  hype.queries.join(' / ')
+);
+check('v2.22 수식어·메뉴: 상호를 지어내지 않음', hype.storeName === '', hype.storeName);
+check(
+  'v2.22 채널명 해시태그는 검색어에서 제외',
+  extractSearchQueries('닭 1마리 80,000원?! 솥뚜껑 닭볶음탕?! #리뷰\n#미니로운생활 #가평 #닭볶음탕', {
+    channel: '미니로운생활',
+  }).queries.every((q) => q.indexOf('미니로운생활') < 0),
+  extractSearchQueries('닭 1마리 #미니로운생활', { channel: '미니로운생활' }).queries.join(' / ')
+);
+check(
+  'v2.22 짜장면(면으로 끝나는 음식)은 동네가 아님',
+  extractSearchQueries('짜장면 맛집 추천').area === '',
+  extractSearchQueries('짜장면 맛집 추천').area
+);
+
+// ── 5) 실제 제보 영상(994t_EyrIiA) 전체 흐름 — 모의 지도·AI 응답 ──
+//   제목: `닭 1마리 80,000원?! 솥뚜껑 닭볶음탕?! #리뷰`, 설명: 가평 해시태그, 시청자 댓글: “8만원??”
+const EYR_TITLE = '닭 1마리 80,000원?! 솥뚜껑 닭볶음탕?! #리뷰';
+const EYR_DESC = '#가평 #가평맛집 #닭볶음탕 #휴가';
+const EYR_COMMENTS = '8만원?? 가격 개사악하네 ㄷㄷㄷ\n닭한마리가 8만원?? 미쳤네';
+const EYR_WRONG = {
+  id: 'wrong1',
+  place_name: '솥뚜껑매운탕',
+  category_name: '음식점 > 한식',
+  category_group_code: 'FD6',
+  address_name: '충남 공주시 사곡면 아래안영골길 4',
+  road_address_name: '충남 공주시 사곡면 아래안영골길 4',
+  x: '127.1000',
+  y: '36.5000',
+  place_url: 'http://place.map.kakao.com/111',
+};
+const EYR_RIGHT = {
+  id: 'right1',
+  place_name: '산골농원',
+  category_name: '음식점 > 한식',
+  category_group_code: 'FD6',
+  address_name: '경기 가평군 설악면 어빈산길99번길 75-7',
+  road_address_name: '경기 가평군 설악면 어비산길99번길 75-7',
+  x: '127.4800',
+  y: '37.5800',
+  place_url: 'http://place.map.kakao.com/222',
+};
+
+const youTubeMock = ({ title, description = '', comments = '', ownerComment = '', channelTitle = '' }) => (url) => {
+  const u = String(url);
+  if (u.includes('youtube.com/oembed')) return jsonRes({ title, author_name: channelTitle });
+  if (u.includes('/api/youtube')) return jsonRes({ title, description, comments, ownerComment, channelTitle, thumbnail: '' });
+  return null;
+};
+
+// 5-1. 지도는 엉뚱한 가게만 주고 AI 는 아무것도 못 찾은 경우 → 그 가게를 '저장'하지 않고
+//      비슷한 곳(가평 닭볶음탕)을 **확인 필요**로 보여 줍니다.
+setKeys({});
+delete process.env.EXPO_PUBLIC_YOUTUBE_API_KEY;
+calls = [];
+handler = (url) => {
+  const base = youTubeMock({ title: EYR_TITLE, description: EYR_DESC, comments: EYR_COMMENTS, channelTitle: '미니로운생활' })(url);
+  if (base) return base;
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    // 실제 지도처럼: 지역(가평)이 들어간 검색어는 가평 안의 가게를 돌려줍니다.
+    if (q.indexOf('가평') >= 0) return jsonRes({ documents: [EYR_RIGHT, EYR_WRONG] });
+    if (q.indexOf('솥뚜껑') >= 0) return jsonRes({ documents: [EYR_WRONG] });
+    return jsonRes({ documents: [] });
+  }
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '', area: '', menu: '', category: '', places: [] });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const eyrNoAi = await extractPlaces('https://youtube.com/shorts/994t_EyrIiA');
+check('v2.22 994t: 공주 ‘솥뚜껑매운탕’을 저장하지 않음', !(eyrNoAi.candidates || []).some((c) => String(c.name).indexOf('솥뚜껑') >= 0), JSON.stringify((eyrNoAi.candidates || []).map((c) => c.name)));
+check('v2.22 994t: 검색어에 1마리·인스타·휴가 없음', (eyrNoAi.queryList || []).every((q) => !/1마리|인스타|휴가/.test(q)), (eyrNoAi.queryList || []).join(' / '));
+check('v2.22 994t: AI 가 못 찾으면 확인 필요(weak) 로 안내', eyrNoAi.matchStatus === 'weak' && String(eyrNoAi.aiNote).indexOf('비슷한 곳') > 0, eyrNoAi.matchStatus + ' / ' + eyrNoAi.aiNote);
+
+// 5-2. AI 가 영상에서 `산골농원(가평)` 을 읽은 경우 → 그것으로 다시 지도 조회 → 정답 1곳
+calls = [];
+handler = (url) => {
+  const base = youTubeMock({ title: EYR_TITLE, description: EYR_DESC, comments: EYR_COMMENTS, channelTitle: '미니로운생활' })(url);
+  if (base) return base;
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    if (q.indexOf('산골농원') >= 0) return jsonRes({ documents: [EYR_RIGHT] });
+    if (q.indexOf('솥뚜껑') >= 0) return jsonRes({ documents: [EYR_WRONG] });
+    if (q.indexOf('닭볶음탕') >= 0) return jsonRes({ documents: [EYR_RIGHT] });
+    return jsonRes({ documents: [] });
+  }
+  if (u.includes('/api/gemini'))
+    return jsonRes({ storeName: '산골농원', area: '가평', menu: '솥뚜껑 닭볶음탕', category: '맛집', places: [] });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const eyrAi = await extractPlaces('https://youtube.com/shorts/994t_EyrIiA');
+check('v2.22 994t: AI 영상 분석 → 산골농원', (eyrAi.candidates || [])[0] && eyrAi.candidates[0].name === '산골농원', JSON.stringify((eyrAi.candidates || []).map((c) => c.name)));
+check('v2.22 994t: AI 로 찾았다는 근거 문구', String(eyrAi.aiNote).indexOf('AI 영상 분석') >= 0 && eyrAi.matchStatus === 'gemini', eyrAi.aiNote + ' / ' + eyrAi.matchStatus);
+check('v2.22 994t: AI 호출 1회', calls.filter((c) => String(c.url).includes('/api/gemini')).length === 1, String(calls.filter((c) => String(c.url).includes('/api/gemini')).length));
+
+// ── 6) 이미 명확한 상호가 있으면 AI 를 부르지 않습니다(느려지지 않게) ──
+const BETONG_DOC = {
+  id: 'betong',
+  place_name: '베통 성수',
+  category_name: '음식점 > 간식 > 제과,베이커리',
+  category_group_code: 'FD6',
+  address_name: '서울 성동구 성수동2가 315-17',
+  road_address_name: '서울 성동구 연무장7가길 8',
+  x: '127.0557',
+  y: '37.5429',
+  place_url: 'http://place.map.kakao.com/333',
+};
+calls = [];
+handler = (url) => {
+  const base = youTubeMock({ title: '성수동 베통 소금빵 웨이팅 후기', description: '#성수 #소금빵', channelTitle: '베이커리탐험' })(url);
+  if (base) return base;
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({ documents: q.indexOf('베통') >= 0 ? [BETONG_DOC] : [] });
+  }
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '베통 성수', area: '성수동' });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const betong = await extractPlaces('https://youtube.com/shorts/Ny9VvBetong');
+check('v2.22 빠른 길: 상호가 맞으면 확인(verified)', betong.matchStatus === 'verified' && (betong.candidates[0] || {}).name === '베통 성수', betong.matchStatus + ' / ' + JSON.stringify((betong.candidates || []).map((c) => c.name)));
+check(
+  'v2.22 빠른 길: AI 영상 분석을 부르지 않음',
+  calls.filter((c) => String(c.url).includes('/api/gemini')).length === 0,
+  String(calls.filter((c) => String(c.url).includes('/api/gemini')).length)
+);
+
+// ── 7) 지도 1위 이름이 상호와 어긋나면 AI 로 넘어감 ──
+calls = [];
+handler = (url) => {
+  const base = youTubeMock({ title: '성수동 베통 소금빵 웨이팅 후기', channelTitle: '베이커리탐험' })(url);
+  if (base) return base;
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    // 첫 검색어(`성수동 베통`)에는 **다른 가게**만, AI 가 알려 준 상호로 다시 찾으면 정확히 나옵니다.
+    if (q.indexOf('베통') >= 0 && calls.filter((c) => String(c.url).includes('/api/gemini')).length)
+      return jsonRes({ documents: [BETONG_DOC] });
+    return jsonRes({ documents: [{ ...BETONG_DOC, place_name: '성수 소금빵집' }] });
+  }
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '베통', area: '성수동' });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const mismatch = await extractPlaces('https://youtube.com/shorts/Ny9VvBetong2');
+check('v2.22 이름 불일치: AI 영상 분석 호출', calls.filter((c) => String(c.url).includes('/api/gemini')).length === 1, String(calls.filter((c) => String(c.url).includes('/api/gemini')).length));
+check('v2.22 이름 불일치: AI 가 읽은 상호로 저장', mismatch.matchStatus === 'gemini' && (mismatch.candidates[0] || {}).name.indexOf('베통') >= 0, mismatch.matchStatus + ' / ' + JSON.stringify((mismatch.candidates || []).map((c) => c.name)));
+
+// ── 8) 📍 상호는 지도 이름이 조금 달라도 믿습니다 ──
+calls = [];
+handler = (url) => {
+  const base = youTubeMock({ title: '제주 협재 바다뷰 카페', description: '📍 협재 오른카페\n주차 무료', channelTitle: '제주여행' })(url);
+  if (base) return base;
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({
+      documents: q.indexOf('오른카페') >= 0
+        ? [{ ...BETONG_DOC, id: 'orn', place_name: '오른카페 협재점', address_name: '제주 제주시 한림읍 협재리 1', road_address_name: '제주 제주시 한림읍 협재로 1' }]
+        : [],
+    });
+  }
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '', area: '' });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const explicitCase = await extractPlaces('https://youtube.com/shorts/Ny9Explicit');
+check('v2.22 📍 상호: 지도 결과를 그대로 채택', explicitCase.matchStatus === 'verified' && (explicitCase.candidates[0] || {}).name === '오른카페 협재점', explicitCase.matchStatus + ' / ' + JSON.stringify((explicitCase.candidates || []).map((c) => c.name)));
+check('v2.22 📍 상호: AI 를 부르지 않음', calls.filter((c) => String(c.url).includes('/api/gemini')).length === 0, String(calls.filter((c) => String(c.url).includes('/api/gemini')).length));
+
+// ── 9) 업로더 고정댓글은 강한 근거, 시청자 댓글은 약한 근거 ──
+calls = [];
+handler = (url) => {
+  const base = youTubeMock({
+    title: '평균리뷰 1000개 이상, 성수동 카페추천! ☕️',
+    description: '이번 주에 다녀온 카페 모음입니다.',
+    comments: '여기 성수동 카모플라쥬에요!',
+    ownerComment: '여기 성수동 카모플라쥬에요!',
+    channelTitle: '호키도리',
+  })(url);
+  if (base) return base;
+  const u = String(url);
+  if (u.includes('/api/kakao-local')) {
+    const q = decodeURIComponent(u.split('query=')[1].split('&')[0]);
+    return jsonRes({
+      documents: q.indexOf('카모플라쥬') >= 0
+        ? [{ ...BETONG_DOC, id: 'camo', place_name: '카모플라쥬 성수', address_name: '서울 성동구 성수동2가 1', road_address_name: '서울 성동구 연무장길 5' }]
+        : [],
+    });
+  }
+  if (u.includes('/api/gemini')) return jsonRes({ storeName: '', area: '' });
+  return jsonRes({ items: [], documents: [], places: [] });
+};
+const camoNew = await extractPlaces('https://youtube.com/shorts/EKbeq6BnREI');
+check('v2.22 업로더 고정댓글: 상호를 잡음', (camoNew.queryList || []).some((q) => q.indexOf('카모플라쥬') >= 0), (camoNew.queryList || []).join(' / '));
+check('v2.22 업로더 고정댓글: 확인(verified) 후보', camoNew.matchStatus === 'verified' && (camoNew.candidates[0] || {}).name === '카모플라쥬 성수', camoNew.matchStatus + ' / ' + JSON.stringify((camoNew.candidates || []).map((c) => c.name)));
+
+// 시청자 댓글 잡담은 검색어 1순위가 되지 않습니다.
+const chatter = extractSearchQueries('부대찌개집 발견...ㄷㄷ');
+check('v2.22 제목만으로는 상호를 지어내지 않음', chatter.storeName === '', chatter.storeName);
+check(
+  'v2.22 시청자 댓글 잡담(질문·미니님)은 상호 근거가 아님',
+  classifyQuery('미니님 질문', { channel: '미니로운생활' }).kind === 'area',
+  JSON.stringify(classifyQuery('미니님 질문'))
+);
+
+// ── 10) 메뉴·수량 단어 목록 ──
+check(
+  'v2.22 메뉴 단어 판정',
+  ['닭볶음탕', '순대국', '파스타', '오마카세', '돈까스', '부대찌개', '솥뚜껑'].every((w) => isMenuWord(w) === true) &&
+    ['베통', '디오디아', '산골농원', '카모플라쥬'].every((w) => isMenuWord(w) === false),
+  '메뉴 판정'
+);
+check(
+  'v2.22 수량·시간 단위 확장',
+  ['24시', '3대', '2인', '1인분', '3명', '2시간', '2호점'].every((t) => isQuantityOrPriceToken(t) === true),
+  '수량 판정'
 );
 
 // ── 원복 ─────────────────────────────────────────────────────
+Platform.OS = 'ios';
 globalThis.fetch = realFetch;
 [
   'EXPO_PUBLIC_KAKAO_REST_API_KEY',

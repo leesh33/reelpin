@@ -60,6 +60,28 @@ function commentsToText(items, uploaderChannelId) {
     .slice(0, 1200);
 }
 
+/**
+ * v2.22 — **업로더(작성자) 댓글만** 따로. 고정댓글은 가게 정보를 적어 두는 자리라
+ * 제목·설명글과 같은 '강한 근거'로 씁니다. (시청자 댓글은 잡담·감상이 섞임)
+ */
+function ownerCommentText(items, uploaderChannelId) {
+  const owner = String(uploaderChannelId || '').trim();
+  if (!owner) return '';
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const s =
+        (item && item.snippet && item.snippet.topLevelComment && item.snippet.topLevelComment.snippet) || {};
+      return {
+        text: String(s.textDisplay || s.textOriginal || '').replace(/\s+/g, ' ').trim(),
+        authorChannelId: String((s.authorChannelId && s.authorChannelId.value) || ''),
+      };
+    })
+    .filter((c) => c.text && c.authorChannelId === owner)
+    .map((c) => c.text.slice(0, COMMENT_MAX_CHARS))
+    .join('\n')
+    .slice(0, 600);
+}
+
 /** 키 없이: oEmbed 한 번. 실패하면 null */
 async function fetchOembed(videoId) {
   const url =
@@ -96,7 +118,9 @@ module.exports = async function handler(req, res) {
         description: '',
         thumbnail: oembed.thumbnail,
         comments: '',
+        ownerComment: '',
         channelId: '',
+        channelTitle: oembed.authorName || '',
         source: 'oembed',
       },
       600
@@ -136,7 +160,9 @@ module.exports = async function handler(req, res) {
           description: '',
           thumbnail: oembed.thumbnail,
           comments: '',
+          ownerComment: '',
           channelId: '',
+          channelTitle: oembed.authorName || '',
           source: 'oembed',
         },
         600
@@ -161,6 +187,9 @@ module.exports = async function handler(req, res) {
         (oembed && oembed.thumbnail) ||
         (snippet.thumbnails && snippet.thumbnails.high ? snippet.thumbnails.high.url : null),
       comments: commentsToText((commentsJson && commentsJson.items) || [], channelId),
+      // v2.22 — 업로더 고정댓글(가게 정보가 적히는 자리) · 채널 이름(상호가 아님)
+      ownerComment: ownerCommentText((commentsJson && commentsJson.items) || [], channelId),
+      channelTitle: stripTags(snippet.channelTitle) || (oembed && oembed.authorName) || '',
       channelId,
       source: 'youtube-api',
     },

@@ -394,6 +394,23 @@ export function commentsToText(list, uploaderChannelId) {
 }
 
 /**
+ * v2.22 — 업로더(작성자) 댓글만 따로. 고정댓글은 가게 정보를 적어 두는 자리라
+ * 제목·설명글과 같은 '강한 근거'로 씁니다. (시청자 댓글은 감상·잡담이 섞임)
+ * @param {Array<{text:string, authorChannelId:string}>} list
+ * @param {string} uploaderChannelId
+ */
+export function ownerCommentOf(list, uploaderChannelId) {
+  const owner = String(uploaderChannelId || '').trim();
+  if (!owner) return '';
+  return orderYouTubeComments(list, owner)
+    .filter((c) => String(c.authorChannelId || '') === owner)
+    .map((c) => String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, YOUTUBE_COMMENT_MAX_CHARS))
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 600);
+}
+
+/**
  * GET https://www.googleapis.com/youtube/v3/commentThreads?part=snippet&videoId=…&order=relevance&maxResults=5&textFormat=plainText&key=…
  * 실패(403 댓글 비허용 · 404 · 네트워크 · 타임아웃)는 예의 없이 **빈 배열**입니다.
  * @returns {Promise<Array<{text:string, authorChannelId:string, likeCount:number}>>}
@@ -573,6 +590,9 @@ export async function fetchYouTubeProxy(parsed, options = {}) {
     title,
     description: description.slice(0, 3000),
     comments: comments.slice(0, 1200),
+    // v2.22 — 업로더 고정댓글(강한 근거) · 채널 이름(상호 아님)
+    ownerComment: String(json.ownerComment || '').trim().slice(0, 600),
+    channelTitle: String(json.channelTitle || '').trim(),
     thumbnail: json.thumbnail || null,
     channelId: String(json.channelId || ''),
     source: 'youtube-proxy',
@@ -1410,7 +1430,49 @@ export const CAPTION_STOPWORDS = [
   // v2.8 — 설명글 줄글의 서술 명사. 목록 줄 판정에서 상호로 오인되지 않게 합니다.
   //   ("특이한 비주얼이 압권" → '압권'은 가게가 아님)
   '압권', '끝내줌', '꿀맛', '존맛', '굿',
+  // v2.22 — 제목·해시태그의 **홍보 수식어**. 가게 이름이 아니라서 검색어 1순위가 되면 안 됩니다.
+  //   ("역대급 숨은맛집" · "찐 노포" · "무한리필 가성비" 같은 어그로성 제목)
+  '인생', '역대급', '레전드급', '미친맛', '숨은맛집', '숨은', '찐맛집', '찐', '노포', '전설',
+  '줄서는집', '무한리필', '리필', '혜자', '극찬', '리얼', '오늘의', '이번달', '떡상', '요물',
+  '찐맛', '찐리뷰', '인생맛', '인생카페', '갓맛', '미쳤', '대박집', '핫한곳', '핫한집',
+  // v2.22 — 플랫폼·채널 잡음. (`#인스타맛집` → '인스타' 가 검색어 1위가 되던 문제)
+  '인스타', '인스타그램', '유튜브', '틱톡', '쇼츠', '방송', '채널', '크리에이터', '구독자',
+  // v2.22 — 여행·나들이 주제어. (`#휴가` → '가평 휴가' → '휴가펜션' 이 상호로 오인되던 사례)
+  '휴가', '휴양', '나들이', '드라이브', '관광', '캠핑', '차박', '여행지', '여행스타그램',
+  // v2.22 — 시청자 댓글의 말걸기
+  '질문', '궁금', '알려', '정보좀', '위치',
+  // v2.22 — 금액 단위만 있는 낱말
+  '만원', '천원', '억원',
 ];
+
+/**
+ * v2.22 — 메뉴·음식 이름. **상호가 아닙니다.**
+ *   상호 판정(`findStoreName`)과 검색어 신뢰도(`classifyQuery`)에서 '가게를 특정한 근거'로 쓰지 않습니다.
+ *   (실제 사례: 쇼츠 제목 “닭 1마리 80,000원?! 솥뚜껑 닭볶음탕?!” → `닭볶음탕`·`솥뚜껑` 으로
+ *    지도를 찍어 충남 공주의 다른 가게가 1순위로 저장됨 — 2026-11-17 상훈 님 제보)
+ *   ⚠️ 업종 분류(`CAPTION_CATEGORY_WORDS`)와는 별개입니다 — 분류 값은 '맛집·카페…' 여섯 가지로 고정입니다.
+ */
+export const MENU_WORDS = [
+  '닭볶음탕', '볶음탕', '닭한마리', '삼계탕', '백숙', '감자탕', '설렁탕', '곰탕', '갈비탕', '해장국',
+  '순대국', '순댓국', '국밥', '부대찌개', '김치찌개', '된장찌개', '순두부찌개', '찌개', '전골', '불고기',
+  '파스타', '스파게티', '리조또', '피자', '버거', '햄버거', '샌드위치', '돈까스', '돈가스', '카츠',
+  '텐동', '우동', '소바', '라멘', '쌀국수', '짬뽕', '짜장면', '탕수육', '마라탕', '마라샹궈', '훠궈',
+  '양꼬치', '딤섬', '오마카세', '스시', '초밥', '사시미', '회덮밥', '물회', '참치', '장어', '대게',
+  '랍스터', '조개구이', '해물찜', '아구찜', '찜닭', '닭갈비', '삼겹살', '목살', '갈비', '곱창', '대창',
+  '막창', '족발', '보쌈', '치킨', '통닭', '떡볶이', '순대', '김밥', '라볶이', '냉면', '밀면', '콩국수',
+  '칼국수', '수제비', '만두', '소금빵', '크루아상', '케이크', '마카롱', '와플', '빙수', '도넛', '베이글',
+  '아메리카노', '라떼', '에이드', '스무디', '스테이크', '솥뚜껑', '숯불구이', '무한리필',
+];
+const MENU_WORD_SET = new Set(MENU_WORDS);
+
+/** 토큰이 메뉴·음식 이름인가 */
+export function isMenuWord(token) {
+  const t = String(token || '').trim();
+  if (!t) return false;
+  if (MENU_WORD_SET.has(t)) return true;
+  const stripped = stripTokenSuffixes(stripParticles(t));
+  return Boolean(stripped) && MENU_WORD_SET.has(stripped);
+}
 
 /** 카테고리 단어는 지우지 않고 '지역 + 카테고리' 검색어 재료로 씁니다. */
 export const CAPTION_CATEGORY_WORDS = [
@@ -1420,6 +1482,8 @@ export const CAPTION_CATEGORY_WORDS = [
   '횟집', '초밥집', '이자카야', '포차', '오마카세', '스시', '고기', '해산물', '해물',
   '삼겹살', '곱창', '돈까스', '쌀국수', '피자', '버거', '한식', '일식', '중식', '양식',
   '참치', '장어', '대게', '떡볶이', '마라탕', '쭈꾸미', '닭갈비', '족발', '보쌈', '덮밥',
+  // v2.22 — '중국집'·'분식집'처럼 '집'이 붙은 업종도 카테고리 재료입니다 (§문서 제보: “80년된 중국집”)
+  '중국집', '일식집', '한식집', '양식집', '분식집', '백반집', '국수집', '기사식당', '포차집',
   // v2.7 — 제목에만 나오는 업종도 '지역 + 업종' 검색어 재료로 (예: “강남 럭셔리 뷔페”)
   '뷔페', '한정식', '코스요리', '스테이크', '리조또',
 ];
@@ -1444,6 +1508,8 @@ const TOKEN_SUFFIXES = [
   '브이로그', '맛집추천', '카페추천', '데이트코스', '데이트맛집', '줄서는식당', '핫플레이스',
   '인생맛집', '먹방', '내돈내산', '솔직후기', '후기', '리뷰', '추천', '핫플', '데이트', '코스',
   '저장', '공유', '모음', '리스트', '정리', '정보', '신상', '오픈런', '웨이팅', '맛집',
+  // v2.22 — '맛집소개'·'카페소개' 처럼 끝에 붙는 말
+  '소개', '안내', '공유해요',
   '브런치카페', '카페맛집', '카페',
   'shorts', 'vlog', '릴스', 'reels',
 ];
@@ -1503,7 +1569,7 @@ export function cleanCaptionText(text) {
 
 /** 서술어 꼬리(‘있고·나오는·해요’)를 가진 말은 지명·메뉴가 아니므로 걸러냅니다. */
 const PREDICATE_TAIL_RE =
-  /(습니다|입니다|해요|예요|이에요|했어요|했음|됐다|됐어요|되었|있었|없었|나옴|나오고|나오는|갔더니|맞춰|드렸고|해서|했는지|인데|는데|더니|지만|면서|니까|려고|도록|같음|같은|있고|없고|했던|하며|가요|네요|군요|데요|어요|지요|나요|래요|죠)$/;
+  /(습니다|입니다|해요|예요|이에요|했어요|했음|됐다|됐어요|되었|있었|없었|나옴|나오고|나오는|갔더니|맞춰|드렸고|해서|했는지|인데|는데|더니|지만|면서|니까|려고|도록|같음|같은|있고|없고|했던|하며|가요|네요|군요|데요|어요|지요|나요|래요|죠|구나|더라|잖아)$/;
 
 /**
  * v2.7 — 형용사·동사 **기본형**('좋다'·'귀엽다'·'고맙다')은 상호가 아닙니다.
@@ -1528,6 +1594,20 @@ export const KNOWN_AREAS = [
   '이시가키', '오키나와', '후쿠오카', '오사카', '도쿄', '교토', '나고야', '방콕', '다낭', '타이베이',
   // v2.21 — 수도권 나들이 지역 (상훈 님 제보: 쇼츠 “#가평 #닭볶음탕” → 지역 인식 실패로 ‘가평’만 검색)
   '가평', '청평', '양평', '춘천', '강화', '파주', '포천',
+  // v2.22 — 지도 이름이 아닌 **동네·번화가 이름**도 지역으로 인식합니다.
+  //   ("동대문"이 상호로 오인되어 ‘동대문디자인플라자’가 가게로 저장되던 문제)
+  '동대문', '남대문', '종로', '광화문', '인사동', '익선동', '북촌', '삼청', '서촌', '가로수길',
+  '신촌', '이대', '홍대', '합정', '상수', '망원', '연남', '성수', '뚝섬', '서울숲', '건대', '화양',
+  '잠실', '송파', '석촌', '가락', '문정', '천호', '강동', '노원', '상계', '중계', '공릉', '월계',
+  '성북', '길음', '미아', '수유', '도봉', '창동', '쌍문', '은평', '불광', '연신내', '서대문', '아현',
+  '공덕', '마포', '용산', '이촌', '금호', '옥수', '약수', '신당', '동묘', '제기', '회기', '외대앞',
+  '이문', '휘경', '장안', '답십리', '군자', '어린이대공원', '논현', '반포', '서초', '양재', '방배',
+  '사당', '신림', '봉천', '신도림', '구로', '영등포', '여의도', '당산', '선유도', '문래', '삼성',
+  '선릉', '대치', '도곡', '개포', '압구정', '청담', '신사', '한남', '이태원', '명동', '을지로',
+  '수원', '분당', '판교', '일산', '부천', '광명', '안양', '평촌', '과천', '군포', '안산', '시흥',
+  '김포', '고양', '하남', '남양주', '구리', '용인', '수지', '기흥', '동탄', '화성', '오산', '평택',
+  '강릉', '속초', '양양', '평창', '원주', '경주', '전주', '군산', '여수', '순천', '통영', '거제',
+  '애월', '한림', '성산', '중문', '서귀포', '협재',
 ];
 
 const AREA_SUFFIX_BLOCK = ['특별시', '광역시', '특별자치시', '특별자치도', '자치구', '자치동', '특별', '광역', '자치'];
@@ -1679,19 +1759,23 @@ const STORE_KEYWORD_RE =
   /(?:맛집|카페|식당|베이커리|빵집|디저트집|분식집|국밥집|고기집|술집|브런치|레스토랑)\s*[:\-–]?\s*([0-9A-Za-z가-힣]{2,12})/;
 const VERB_TAIL_RE = /(어요|아요|여요|습니다|입니다|했다|한다|하는|했어|왔어|가요|해요|되요|돼요|같아요|주세요)$/;
 
-export function findStoreName(rawText, area) {
+export function findStoreName(rawText, area, options = {}) {
   const full = String(rawText || '');
+  // v2.22 — 작성자가 `📍`·`상호:` 로 직접 적은 이름이 가장 확실합니다.
+  const explicit = explicitStoreNames(full, area);
+  if (explicit.length) return explicit[0];
   const head = leadingText(full);
-  const fromHead = findStoreNameInText(head, area);
+  const fromHead = findStoreNameInText(head, area, options);
   if (fromHead) return fromHead;
   if (!head || head.length >= full.length) return '';
-  return findStoreNameInText(full, area);
+  return findStoreNameInText(full, area, options);
 }
 
-function findStoreNameInText(rawText, area) {
+function findStoreNameInText(rawText, area, options = {}) {
   const raw = String(rawText || '')
     .replace(URL_IN_TEXT, ' ')
     .replace(EMOJI_RE, ' ');
+  const channelList = channelTokenList(options.channel, options.channelName);
   const candidates = [];
   const bracket = raw.match(/[\[(【〈《'"“]([^\])】〉》'"”]{2,20})[\])】〉》'"”]/);
   if (bracket) candidates.push(bracket[1]);
@@ -1708,6 +1792,9 @@ function findStoreNameInText(rawText, area) {
     if (!name || name.length < 2 || name.length > 15) continue;
     if (isStopToken(name, stopSet)) continue;
     if (CAPTION_CATEGORY_WORDS.indexOf(name) >= 0) continue;
+    // v2.22 — 메뉴 이름(`[닭볶음탕]`)·채널 이름은 상호가 아닙니다.
+    if (isMenuWord(name)) continue;
+    if (isChannelToken(name, channelList)) continue;
     if (VERB_TAIL_RE.test(name)) continue;
     if (isBasePredicate(name)) continue;
     if (area && (name === area || name.indexOf(area) === 0)) continue;
@@ -1758,10 +1845,19 @@ function isStopToken(token, stopSet) {
  *   → { area:'성수동', storeName:'베통', keywords:['소금빵'], queries:['성수동 베통','베통','성수동 소금빵',...] }
  *
  * @param {string} text
- * @returns {{queries:string[], area:string, storeName:string, category:string, keywords:string[], cleaned:string}}
+ * @param {{channel?:string, channelName?:string, channelNames?:string[]}} [options]
+ *        `channel` — 영상 **채널 이름**. 채널명은 상호가 아니므로 검색어에서 뻘집니다. (v2.22)
+ * @returns {{queries:string[], area:string, storeName:string, category:string, keywords:string[],
+ *            hashtags:string[], explicit:string[], cleaned:string}}
  */
-export function extractSearchQueries(text) {
+export function extractSearchQueries(text, options = {}) {
   const raw = String(text || '');
+  const channelList = channelTokenList(options.channel, options.channelName);
+  (Array.isArray(options.channelNames) ? options.channelNames : []).forEach((n) => {
+    channelTokenList(n).forEach((t) => {
+      if (channelList.indexOf(t) < 0) channelList.push(t);
+    });
+  });
   const cleaned = cleanCaptionText(raw);
   // 설명글(description)이 길 때는 앞부분 → 뒷부분 순으로 씨알을 뽑아, 앞쪽 단서가 먼저 오게 합니다.
   const head = leadingText(raw);
@@ -1781,6 +1877,8 @@ export function extractSearchQueries(text) {
 
   rawTokens.forEach((rawTok) => {
     const bare = String(rawTok).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
+    // v2.22 — 채널 이름(`미니로운생활`)은 상호가 아닙니다. (설명글 해시태그로 자주 들어옴)
+    if (bare && isChannelToken(bare, channelList)) return;
     // 걷어낼 말은 원형 그대로 먼저 걸러냅니다. (단 '맛집'·'카페'는 카테고리 재료로 남깁니다)
     if (bare && isStopToken(bare, stopSet) && CAPTION_CATEGORY_WORDS.indexOf(bare) < 0) return;
     // '좋다'·'귀엽다' 같은 기본형은 상호가 아닙니다. (시청자 감상어)
@@ -1796,9 +1894,11 @@ export function extractSearchQueries(text) {
     if (isQuantityOrPriceToken(tok)) return;
     if (/^[0-9]/.test(tok) && !/[가-힣A-Za-z]/.test(tok.replace(/[0-9]/g, ''))) return;
     if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
+    // v2.22 — 호칭(`미니님`)·감탄 꼴리는 낱말은 상호가 아닙니다.
+    if (/님$/.test(tok)) return;
     if (PREDICATE_TAIL_RE.test(tok)) return;
     if (isBasePredicate(tok)) return;
-    if (CITY_NOISE.indexOf(tok) >= 0) {
+    if (CITY_NOISE.indexOf(tok.replace(/(특별시|광역시|도)$/, '')) >= 0 || CITY_NOISE.indexOf(tok) >= 0) {
       // '제주도'·'경기도'처럼 시·도 이름만 있어도, 아는 지명이면 지역으로 살립니다. (제목만 있을 때)
       const base = tok.replace(/(특별자치시|특별자치도|특별시|광역시|도)$/, '');
       if (!area && base && base !== tok && KNOWN_AREAS.indexOf(base) >= 0) area = base;
@@ -1818,6 +1918,11 @@ export function extractSearchQueries(text) {
         suffixArea[2] === '역' || suffixArea[2] === '구' || suffixArea[2] === '시'
           ? suffixArea[1]
           : suffixArea[1] + suffixArea[2];
+      // v2.22 — `짜장면`·`볶음면`·`찐밥면` 처럼 **음식 이름**이 '면'으로 끝난다고 동네가 되면 안 됩니다.
+      //   ('읍/면'은 주소형(`가평군 설악면`)에서만 인정하고, 모르는 이름은 지역으로 쓰지 않음)
+      if (suffixArea[2] === '면' || suffixArea[2] === '읍') {
+        if (isMenuWord(tok) || isMenuWord(name) || KNOWN_AREAS.indexOf(name) < 0) return;
+      }
       if (!area) area = name;
       return;
     }
@@ -1845,7 +1950,8 @@ export function extractSearchQueries(text) {
     pushUnique(keywords, tok);
   });
 
-  const storeName = findStoreName(raw, area);
+  const explicit = explicitStoreNames(raw, area);
+  const storeName = explicit[0] || findStoreName(raw, area, options);
   // 상호명은 이미 첫 검색어('지역 + 상호')로 들어가므로 키워드 목록에서는 뺍니다.
   const keywordList = keywords
     .filter((k) => !storeName || normalizeName(k) !== normalizeName(storeName))
@@ -1856,6 +1962,7 @@ export function extractSearchQueries(text) {
   extractHashtagTokens(raw).forEach((tag) => {
     const bare = String(tag).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
     if (!bare || bare.length < 2 || bare.length > 12) return;
+    if (isChannelToken(bare, channelList)) return; // 채널명 해시태그(#미니로운생활)는 제외 (v2.22)
     if (!/[가-힣A-Za-z]/.test(bare)) return;
     if (isQuantityOrPriceToken(bare)) return;
     if (/^[0-9]/.test(bare)) return;
@@ -1886,6 +1993,8 @@ export function extractSearchQueries(text) {
   if (storeName) {
     if (area) pushQuery([area, storeName]);
     pushQuery([storeName]);
+    // v2.22 — 작성자가 `📍`·`상호:` 로 직접 적은 이름은 가장 확실한 단서입니다.
+    if (explicit.length && area) pushQuery([area, explicit[0]]);
   }
   // 해시태그 상호(‘디오디아’)는 지역과 묶어 먼저 찾습니다. (v2.7)
   hashtagList.slice(0, 3).forEach((tok) => {
@@ -1908,7 +2017,7 @@ export function extractSearchQueries(text) {
   });
   if (!queries.length && cleaned) pushQuery([cleaned.slice(0, 40)]);
 
-  return { queries, area, storeName, category, keywords: keywordList, hashtags: hashtagList, cleaned };
+  return { queries, area, storeName, category, keywords: keywordList, hashtags: hashtagList, explicit, cleaned };
 }
 
 /** 캡션이 아니라 '제목'이 막힌 플랫폼에서 화면에 띄울 안내 문구 */
@@ -1939,8 +2048,8 @@ const NUMBERED_LINE_RE = /^\s*(?:[\u2460-\u2473\u2776-\u277F]|\(?\d{1,2}[.)\]]|\
 const QUANTITY_NUMBER_ONLY_RE = /^\d+(?:[.,]\d+)?$/;
 /** `80000원` · `1만원` · `350,000원짜리` 같은 금액 표현 */
 const PRICE_TOKEN_RE = /^\d+(?:[.,]\d+)?(?:만|천|억|백)?(?:원|만원|천원|억원)(?:짜리|대|정도|이상|미만|부터|까지)?$/;
-/** `1마리` · `2인분` · `1개` … 숫자 + 수량 단위 */
-const QUANTITY_UNIT_RE = /^\d+(?:[.,]\d+)?(?:마리|인분|인|명|개|병|잔|그릇|접시|kg|g|ml|L|분|시간|초|일|호|번|점|층)$/i;
+/** `1마리` · `2인분` · `24시` · `3대` … 숫자 + 수량/시간 단위 */
+const QUANTITY_UNIT_RE = /^\d+(?:[.,]\d+)?(?:마리|인분|인|명|개|병|잔|그릇|접시|kg|g|ml|L|분|시간|초|일|시|년|월|주|회|배|대|차|종|살|세|곳|호점|호|번|점|층)$/i;
 
 export function isQuantityOrPriceToken(token) {
   const raw = String(token == null ? '' : token).replace(/\s+/g, ' ').trim();
@@ -1952,6 +2061,224 @@ export function isQuantityOrPriceToken(token) {
   if (PRICE_TOKEN_RE.test(compact)) return true;
   if (QUANTITY_UNIT_RE.test(compact)) return true;
   return false;
+}
+
+// ─────────────────────────────────────────────────────────────
+// v2.22 · Precision-first — "이 검색어가 가게를 **특정했는가**"
+// ─────────────────────────────────────────────────────────────
+//  지금까지는 제목·설명에서 뽑은 **아무 낱말**이나 검색어가 되었고, 지도가 1건이라도
+//  돌려주면 그 1위를 그대로 저장했습니다. 그래서 `솥뚜껑`(메뉴)·`1마리`(수량)·
+//  `가평 닭볶음탕`(지역+메뉴) 같은 검색어가 **다른 동네의 다른 가게**를 데려왔습니다.
+//  (2026-11-17 상훈 님: “이 영상만 고쳐서 될 건 아닌거 같고, 전체적인 로직 점검을 한 번 해봐야 될 거 같애”)
+//
+//  정책: 제목·설명에 **명확한 상호 표기**(📍·상호:·따옴표 등)나 **상호로 쓸 만한 낱말**이 있을 때만
+//  지도 1위를 믿고, 아니면 AI 영상 분석(Gemini)으로 넘깁니다.
+
+/** 상호 표기로 사람이 직접 적어 둔 표식 — 가게 이름이 바로 뒤에 옵니다 */
+const EXPLICIT_MARKER_RE =
+  /(?:📍|📌|🏠|🍽)\uFE0F?|(?:상호명|상호|가게명|가게|매장명|매장|업체명|업체|식당명|카페명)\s*[:：]/g;
+
+/** 상호 표기 뒤 문구에서 '이름만' 남깁니다. (`📍 성수동 베통 소금빵` → `베통`) */
+function storeNameFromSegment(segment, area) {
+  const cleaned = cleanCaptionText(segment);
+  if (!cleaned) return '';
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  const tokens = cleaned.split(' ').filter(Boolean);
+  const usable = (bare) => {
+    if (!bare || bare.length < 2) return false;
+    if (isAreaToken(bare) || CITY_NOISE.indexOf(bare) >= 0) return false;
+    if (area && bare === area) return false;
+    if (CAPTION_CATEGORY_WORDS.indexOf(bare) >= 0) return false;
+    if (isMenuWord(bare)) return false;
+    if (isStopToken(bare, stopSet) || isBasePredicate(bare) || VERB_TAIL_RE.test(bare)) return false;
+    if (isQuantityOrPriceToken(bare) || /^[0-9]/.test(bare)) return false;
+    return true;
+  };
+  for (const raw of tokens) {
+    // 작성자가 직접 적은 이름은 **그대로** 먼저 살립니다. (`오른카페` → `오른카페`)
+    const direct = stripParticles(raw);
+    if (usable(direct)) return direct;
+    const bare = stripTokenSuffixes(direct);
+    if (bare !== direct && usable(bare)) return bare;
+  }
+  return '';
+}
+
+/**
+ * 글에 **명확하게 적힌 상호**만 모읍니다. (`📍 성수동 베통` · `상호: 산골농원` · `[런던베이글]`)
+ *   → 이 이름으로 찾은 지도 결과는 이름이 조금 달라도 믿습니다(작성자가 직접 적은 근거).
+ * @param {string} rawText
+ * @param {string} [area]
+ * @returns {string[]}
+ */
+export function explicitStoreNames(rawText, area) {
+  const text = String(rawText || '');
+  const found = [];
+  const push = (name) => {
+    const v = String(name || '').trim();
+    if (v && v.length >= 2 && found.indexOf(v) < 0) found.push(v);
+  };
+  if (!text) return found;
+  EXPLICIT_MARKER_RE.lastIndex = 0;
+  let m;
+  while ((m = EXPLICIT_MARKER_RE.exec(text))) {
+    // 표식 **뒤** 한 줄만 봅니다. (`📍 성수동 베통` → `성수동 베통`)
+    const rest = text.slice(EXPLICIT_MARKER_RE.lastIndex).split('\n')[0].slice(0, 40);
+    const segment = rest.replace(/^[\s:：\-–—>·]+/, '').trim();
+    if (!segment) continue;
+    const base = findAreaFromText(cleanCaptionText(segment)) || area || '';
+    const name = storeNameFromSegment(segment, base);
+    if (name) push(name);
+  }
+  // `[런던베이글]` — 줄 앞머리 **대괄호·겹낫표**만 (소괄호는 문장·금액 안내라 제외: "(예약금 10만원 있어요~)")
+  const bracketLines = text.replace(/\r\n?/g, '\n').split('\n');
+  for (const line of bracketLines) {
+    const b = String(line || '').match(/^\s*[\[\u3010\u300A]\s*([^\]\u3011\u300B]{2,20})\s*[\]\u3011\u300B]/);
+    if (!b) continue;
+    if (PRICE_OR_TIME_RE.test(b[1])) continue; // `[예약금 10만원]` 같은 정보는 상호가 아님
+    const base = findAreaFromText(cleanCaptionText(line)) || area || '';
+    const name = storeNameFromSegment(b[1], base);
+    if (name) push(name);
+  }
+  return found;
+}
+
+/** 채널·시리즈 이름을 낱말 단위로 비교할 수 있게 준비합니다. ("미니로운생활" → ['미니로운생활']) */
+function channelTokenList(...names) {
+  const out = [];
+  names.forEach((name) => {
+    const raw = String(name || '').replace(/\s+/g, ' ').trim();
+    if (!raw) return;
+    const parts = [raw].concat(raw.split(' '));
+    parts.forEach((p) => {
+      const n = normalizeName(p.replace(/[#@]/g, ''));
+      if (n && n.length >= 2 && out.indexOf(n) < 0) out.push(n);
+    });
+  });
+  return out;
+}
+
+/** 토큰이 채널 이름(또는 그 조각)인가 — 채널명은 상호가 아닙니다 */
+function isChannelToken(token, channelList) {
+  const n = normalizeName(token);
+  if (!n || n.length < 2 || !channelList || !channelList.length) return false;
+  return channelList.some((c) => c === n || c.indexOf(n) >= 0);
+}
+
+/**
+ * 검색어가 **가게를 특정했는가**를 판정합니다.
+ *   · `store` — 상호로 쓸 만한 낱말이 들어 있음 (`성수동 베통` · `디오디아`)
+ *   · `area`  — 지역·업종·메뉴·수식어뿐 (`가평` · `성수동 맛집` · `가평 닭볶음탕` · `솥뚜껑`은 메뉴라 area 등급)
+ * @param {string} query
+ * @param {{area?:string, channel?:string, channelNames?:string[]}} [options]
+ * @returns {{kind:'store'|'area', text:string, tokens:string[], storeTokens:string[], otherTokens:string[]}}
+ */
+export function classifyQuery(query, options = {}) {
+  const text = String(query == null ? '' : query)
+    .replace(/\s+/g, ' ')
+    .trim();
+  const area = String(options.area || '').trim();
+  const channelList = channelTokenList(options.channel, options.channelName);
+  (Array.isArray(options.channelNames) ? options.channelNames : []).forEach((n) => {
+    channelTokenList(n).forEach((t) => {
+      if (channelList.indexOf(t) < 0) channelList.push(t);
+    });
+  });
+  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
+  const tokens = text ? text.split(' ').filter(Boolean) : [];
+  const storeTokens = [];
+  const otherTokens = [];
+  tokens.forEach((raw) => {
+    const bare = String(raw).replace(/^[^0-9A-Za-z가-힣]+|[^0-9A-Za-z가-힣]+$/g, '');
+    if (!bare) return;
+    const t = stripTokenSuffixes(stripParticles(bare)) || bare;
+    if (!t) return;
+    if (
+      isAreaToken(t) ||
+      CITY_NOISE.indexOf(t) >= 0 ||
+      CAPTION_CATEGORY_WORDS.indexOf(t) >= 0 ||
+      isMenuWord(t) ||
+      (area && (t === area || t.indexOf(area) === 0 || area.indexOf(t) === 0))
+    ) {
+      otherTokens.push(t);
+      return;
+    }
+    if (isStopToken(t, stopSet) || isBasePredicate(t) || isQuantityOrPriceToken(t)) return;
+    if (/^[0-9]/.test(t) || !/[가-힣A-Za-z]/.test(t)) return;
+    if (t.length < 2) return;
+    if (/님$/.test(t)) return; // 호칭(`미니님`)은 상호가 아님
+    if (isChannelToken(t, channelList)) return;
+    if (storeTokens.indexOf(t) < 0) storeTokens.push(t);
+  });
+  return {
+    kind: storeTokens.length ? 'store' : 'area',
+    text,
+    tokens,
+    storeTokens,
+    otherTokens,
+  };
+}
+
+/** 검색어가 지역·업종·메뉴뿐인가 (가게를 특정하지 못함) */
+export function isStoreQuery(query, options) {
+  return classifyQuery(query, options).kind === 'store';
+}
+
+/** 주소·지역 문자열이 기준 동네를 가리키는가 */
+function addressInArea(candidate, area) {
+  const base = String(area || '').trim();
+  if (!base) return true;
+  // v2.22 — `외대앞역`처럼 **역·시·구 이름**만 있는 단서는 주소(도로명)에 안 나오는 경우가 많습니다.
+  //   그런 광역 단서로는 주소를 따지지 않습니다. (동네·아는 지명일 때만 엄격하게 보기)
+  const strict = KNOWN_AREAS.indexOf(base) >= 0 || /(동|읍|면)$/.test(base);
+  if (!strict) return true;
+  const hay = [candidate && candidate.area, candidate && candidate.address, candidate && candidate.roadAddress]
+    .filter(Boolean)
+    .join(' ');
+  if (!hay) return true; // 주소를 받지 못했으면(해외 등) 판단하지 않습니다
+  if (hay.indexOf(base) >= 0) return true;
+  const baseStem = base.replace(/(특별시|광역시|특별자치시|특별자치도|시|도|구|군|동|읍|면|가)$/g, '') || base;
+  const tokens = hay.replace(/[(),]/g, ' ').split(' ').filter(Boolean);
+  return tokens.some((token) => {
+    const t = token.replace(/\d+가?$/, '');
+    if (!t) return false;
+    return (
+      t === base ||
+      t.indexOf(base) === 0 ||
+      base.indexOf(t) === 0 ||
+      (baseStem.length >= 2 && (t.indexOf(baseStem) === 0 || t.indexOf(baseStem) >= 0))
+    );
+  });
+}
+
+/**
+ * 지도 1위 후보를 **그 검색어의 결과로 믿어도 되는가**.
+ *   ① 작성자가 적은 명확한 상호 표기가 있으면 믿습니다.
+ *   ② 검색어에 상호로 쓸 만한 낱말이 있고, **지도가 돌려준 이름이 그 낱말을 포함**하면 믿습니다.
+ *   ③ 지역까지 적혀 있는데 후보가 **다른 동네**면 믿지 않습니다(동명이인).
+ *   → 믿지 못하면 호출부가 AI 영상 분석으로 넘깁니다.
+ * @param {object} candidate
+ * @param {string} query
+ * @param {{area?:string, channel?:string, channelNames?:string[], explicit?:boolean}} [options]
+ */
+export function candidateMatchesQuery(candidate, query, options = {}) {
+  const name = normalizeName(candidate && candidate.name);
+  if (!name) return false;
+  if (options.explicit) return true;
+  const info = classifyQuery(query, options);
+  if (!info.storeTokens.length) return false; // 가게를 특정한 낱말이 없는 검색어 → 1위를 믿지 않음
+  const hit = info.storeTokens.some((token) => {
+    const t = normalizeName(token);
+    if (!t || t.length < 2) return false;
+    if (name === t) return true;
+    // 시청자 댓글에서 온 검색어는 **이름이 똑같을 때만** 믿습니다. (댓글은 잡담이 섞임)
+    if (options.exactOnly) return false;
+    if (name.indexOf(t) >= 0) return true; // '런던베이글뮤지엄' ⊃ '런던베이글'
+    if (t.indexOf(name) >= 0 && name.length >= Math.max(2, t.length - 1)) return true;
+    return false;
+  });
+  if (!hit) return false;
+  return addressInArea(candidate, options.area);
 }
 
 /**
@@ -2001,20 +2328,8 @@ function isAreaToken(token) {
  *   → 상호·메뉴가 들어간 다른 검색어가 있으면 뒤로 미루고, 그것도 없으면 Gemini 폴백으로 넘깁니다.
  */
 export function isAreaOnlyQuery(query) {
-  const tokens = String(query == null ? '' : query)
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(' ')
-    .filter(Boolean);
-  if (!tokens.length) return true;
-  const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
-  return tokens.every(
-    (t) =>
-      isAreaToken(t) ||
-      CITY_NOISE.indexOf(t) >= 0 ||
-      CAPTION_CATEGORY_WORDS.indexOf(t) >= 0 ||
-      isStopToken(t, stopSet)
-  );
+  // v2.22 — 메뉴·수량만 있는 검색어(`닭볶음탕`·`1마리`)도 '가게를 특정하지 못한 검색어'입니다.
+  return classifyQuery(query).kind === 'area';
 }
 
 /**
@@ -2049,6 +2364,8 @@ export function parseListItem(line, index = 0, options = {}) {
       if (SENTENCE_TAIL_RE.test(tok)) return false;
       if (isBasePredicate(tok)) return false;
       if (isStopToken(tok, stopSet)) return false;
+      // 메뉴 이름(`닭볶음탕`)은 상호가 아닙니다. (v2.22)
+      if (isMenuWord(tok)) return false;
       // '350' · '000원' · '3곳' · '1마리' · '2인분' 같은 수량·금액 토큰은 상호가 아닙니다. (v2.21)
       if (isQuantityOrPriceToken(tok)) return false;
       if (/^[0-9]/.test(tok)) return false;
@@ -2118,6 +2435,7 @@ export function looksLikeListLine(line) {
   if (isAreaToken(last)) return false;
   if (CAPTION_CATEGORY_WORDS.indexOf(last) >= 0) return false;
   if (isQuantityOrPriceToken(last)) return false;
+  if (isMenuWord(last)) return false; // 메뉴 이름은 가게 이름 줄이 아님 (v2.22)
   if (/^[0-9]/.test(last)) return false;
   const stopSet = new Set(CAPTION_STOPWORDS.map((w) => w.toLowerCase()));
   if (isStopToken(last, stopSet)) return false;
@@ -2237,14 +2555,19 @@ export async function searchMultiPlaces(items, options = {}) {
         (res.providersTried || []).forEach((p) => providersTried.add(p));
         (res.failures || []).forEach((f) => failures.push({ ...f, query: q }));
         if (res.candidates && res.candidates.length) {
-          const top = res.candidates[0];
-          return {
-            ...item,
-            query: q,
-            status: 'matched',
-            candidate: { ...top, multiIndex: item.index, multiLabel: item.label },
-            alternatives: res.candidates.slice(1, 3),
-          };
+          // v2.22 — 목록 줄의 이름과 지도가 돌려준 이름이 맞을 때만 그 후보를 채택합니다.
+          //   (`가평 닭볶음탕` 같은 메뉴 줄이 다른 동네 가게를 데려오는 걸 막음)
+          const listCandidates = res.candidates || [];
+          const top = listCandidates.find((c) => candidateMatchesQuery(c, q, { area: item.area })) || null;
+          if (top) {
+            return {
+              ...item,
+              query: q,
+              status: 'matched',
+              candidate: { ...top, multiIndex: item.index, multiLabel: item.label },
+              alternatives: listCandidates.filter((c) => c !== top).slice(0, 2),
+            };
+          }
         }
       }
       return { ...item, status: 'unmatched', candidate: null, alternatives: [] };
@@ -2469,6 +2792,10 @@ export const sourceAdapters = {
         description: (proxied && proxied.description) || (page && page.description) || '',
         // 프록시가 상위·업로더 댓글을 한 덩어리 텍스트로 줍니다. (없으면 빈 문자열)
         comments: (proxied && proxied.comments) || '',
+        // v2.22 — 업로더 고정댓글 · 채널 이름
+        ownerComment: (proxied && proxied.ownerComment) || '',
+        channelTitle:
+          (proxied && proxied.channelTitle) || (oembed && oembed.authorName) || '',
         thumbnail: (proxied && proxied.thumbnail) || (oembed ? oembed.thumbnail : null),
         authorName: (oembed && oembed.authorName) || '',
         source: proxied
@@ -2513,6 +2840,9 @@ export const sourceAdapters = {
           description,
           // 업로더(고정) 댓글을 맨 앞에 둔 상위 댓글 텍스트 — 없으면 빈 문자열
           comments: commentsToText(commentList, snippet.channelId),
+          // v2.22 — 업로더 고정댓글 · 채널 이름 (네이티브 Data API 경로)
+          ownerComment: ownerCommentOf(commentList, snippet.channelId),
+          channelTitle: String(snippet.channelTitle || (oembed && oembed.authorName) || ''),
           thumbnail:
             base.thumbnail ||
             (snippet.thumbnails && snippet.thumbnails.high ? snippet.thumbnails.high.url : null),
@@ -3464,7 +3794,7 @@ export const localSearchAdapter = {
 // ─────────────────────────────────────────────────────────────
 // 검색어 만들기 — LLM이 있으면 정확하게, 없으면 v1.2 키워드 정제기로
 // ─────────────────────────────────────────────────────────────
-function deriveQuery(text, llm) {
+function deriveQuery(text, llm, options = {}) {
   if (llm && llm.name) {
     // 가게명에 이미 동네 이름이 들어 있으면('성수동 소금빵집') 중복해서 붙이지 않습니다.
     const name = String(llm.name);
@@ -3480,7 +3810,7 @@ function deriveQuery(text, llm) {
     };
   }
   // 키가 없거나 LLM 결과가 비었을 때: v1.2 정제기가 만든 '지역+상호/메뉴' 후보를 순서대로 씁니다.
-  const keyworded = extractSearchQueries(text);
+  const keyworded = extractSearchQueries(text, options);
   return {
     query: keyworded.queries[0] || '',
     name: keyworded.storeName || '',
@@ -3664,19 +3994,34 @@ export async function extractPlaces(rawInput, options = {}) {
   const sourceTitle = String((meta && meta.title) || '').trim();
   const description = String((meta && meta.description) || '').trim();
   const comments = String((meta && meta.comments) || '').trim();
+  // v2.22 — 채널명(제목 아래 뜀)과 **업로더 고정댓글**. 채널명은 상호가 아니고,
+  //   고정댓글은 작성자가 가게 정보를 적어 두는 자리라 설명글과 같은 '강한 근거'로 봅니다.
+  //   ⚠️ 단, **채널 이름이 제목에도 나오면**(가게 이름과 채널이 같은 경우 — `#디오디아`) 채널명 필터를 끕니다.
+  const rawChannelName = String((meta && (meta.channelTitle || meta.authorName)) || '').trim();
+  const channelName = rawChannelName && !sourceTitle.replace(/\s+/g, '').includes(rawChannelName.replace(/\s+/g, ''))
+    ? rawChannelName
+    : '';
+  const ownerComment = String((meta && meta.ownerComment) || '').trim();
   // 같은 문구가 제목·설명글·공유 캡션에 겹쳐 오는 경우가 있어(인스타 공유 캡션), 한 번만 씁니다.
-  const primaryText = Array.from(new Set([sourceTitle, description, sharedCaption].filter(Boolean))).join('\n');
+  // v2.22 — 업로더 고정댓글은 **설명글보다 먼저** 봅니다. (작성자가 가게 이름을 적어 두는 자리)
+  const primaryText = Array.from(
+    new Set([sourceTitle, ownerComment, description, sharedCaption].filter(Boolean))
+  ).join('\n');
   // 댓글은 잡담이 섞이기 쉽습니다. (v2.7)
   //  · 제목·설명글에서 **상호를 잡았으면** 댓글은 아예 쓰지 않습니다.
   //  · 제목·설명글에서 **동네를 확정했으면**, 댓글이 다른 동네를 가리키는 후보는 걷어냅니다.
   //    (“항상 솔직하게 말하셔서 좋다” → 댓글 폴백이 '울산 중구 떡볶이' 를 1순위로 올리던 문제)
   //  · 댓글은 검색어 후보(commentQueries)로만 쓰고, 기본 분석(text)에는 섞지 않습니다.
-  const primary = extractSearchQueries(primaryText);
-  const useComments = Boolean(comments) && !primary.storeName;
+  //  · v2.22 — 업로더 고정댓글은 위 primaryText 에 이미 들어 있으므로, 여기서는 **시청자 댓글**만 봅니다.
+  const primary = extractSearchQueries(primaryText, { channel: channelName });
+  const useComments = Boolean(comments) && !primary.storeName && !(primary.explicit || []).length;
   const text = primaryText || '';
+  // 시청자 댓글은 **상호로 쓸 만한 낱말만** 후보로 씁니다. (“8만원??”·“미쳤네” 같은 감상은 버립니다)
   const commentQueries = useComments
     ? filterQueriesByArea(
-        extractSearchQueries([sourceTitle, comments].filter(Boolean).join('\n')).queries,
+        extractSearchQueries([sourceTitle, comments].filter(Boolean).join('\n'), {
+          channel: channelName,
+        }).queries.filter((q) => classifyQuery(q, { area: primary.area, channel: channelName }).kind === 'store'),
         primary.area
       )
     : [];
@@ -3697,7 +4042,7 @@ export async function extractPlaces(rawInput, options = {}) {
     !sourceTitle && !sharedCaption
       ? titleNoticeOf(parsed.platform) + ' — 가게명으로 바로 찾아보세요.'
       : '';
-  const suggested = extractSearchQueries(text || sharedCaption);
+  const suggested = extractSearchQueries(text || sharedCaption, { channel: channelName });
   const suggestedQuery = suggested.queries[0] || '';
 
   // 결과 공통부 — 모든 반환 경로가 같은 모양(제목·상태·안내)을 갖게 합니다.
@@ -3797,9 +4142,11 @@ export async function extractPlaces(rawInput, options = {}) {
 
   // 1) 캡션 분석(LLM) → 검색어 후보 확정
   const llm = await llmAdapter.extractPlaceJson(text);
-  const derived = deriveQuery(text, llm);
+  const queryOptions = { area: primary.area, channel: channelName };
+  const explicitNames = primary.explicit || [];
+  const hasExplicit = explicitNames.length > 0;
+  const derived = deriveQuery(text, llm, { channel: channelName });
   const limitQueries = Math.max(1, Number(options.maxQueries) || 2);
-  // 댓글에서 나온 후보(구체적인 상호)를 맨 앞에, 그 뒤에 제목·설명글 후보를 붙입니다.
   const derivedList =
     derived.queryList && derived.queryList.length
       ? derived.queryList
@@ -3807,14 +4154,23 @@ export async function extractPlaces(rawInput, options = {}) {
       ? [derived.query]
       : [];
   const mergedList = [];
-  commentQueries.concat(derivedList).forEach((q) => {
+  // v2.22 — **제목·설명·업로더 고정댓글(강한 근거)만** 여기서 검색어를 만듭니다.
+  //   시청자 댓글은 잡담이라(‘질문’·‘미니미’·‘예쁘’) 상호 근거로 쓰지 않고,
+  //   마지막 안전망(weakQueries)으로만 붙입니다. (v2.7 카모플라쥬처럼 **업로더** 댓글에만 있으면
+  //   이미 primaryText 에 들어 있어 여기서 잡힙니다)
+  derivedList.forEach((q) => {
     const v = String(q || '').trim();
     if (v && mergedList.indexOf(v) < 0) mergedList.push(v);
   });
-  // v2.21 — `가평` 처럼 지역 이름만 있는 검색어로는 가게를 못 찾습니다(관광지가 잡힘).
-  //   상호·메뉴가 들어간 검색어가 하나라도 있으면 그것부터 시도하고, 없으면 Gemini 폴백으로 넘깁니다.
-  const strongList = mergedList.filter((q) => !isAreaOnlyQuery(q));
-  const queryList = (strongList.length ? strongList : mergedList).slice(0, limitQueries);
+  // v2.22 — 검색어를 **상호 근거 유무**로 나눕니다. (Precision-first)
+  //   · storeQueries — 상호로 쓸 만한 낱말이 들어 있음 (`성수동 베통`·`디오디아`·`가평 산골농원`)
+  //   · weakQueries  — 지역·업종·메뉴·수량·수식어·시청자 댓글 (`가평`·`가평 닭볶음탕`·`솥뚜껑`·`1마리`)
+  //     이런 검색어로 지도 1위를 그대로 저장하면 **다른 동네의 다른 가게**가 저장됩니다.
+  const storeQueries = mergedList.filter((q) => classifyQuery(q, queryOptions).kind === 'store');
+  const weakQueries = mergedList
+    .filter((q) => storeQueries.indexOf(q) < 0)
+    .concat(commentQueries.filter((q) => mergedList.indexOf(q) < 0));
+  const queryList = storeQueries.concat(weakQueries).slice(0, Math.max(2, limitQueries));
 
   // 2) 후보 검색어를 순서대로 조회 + 후보 병합 (첫 후보로 결과가 없으면 다음 후보로 자동 재시도)
   let chain = {
@@ -3827,7 +4183,8 @@ export async function extractPlaces(rawInput, options = {}) {
   let usedQuery = '';
   const attempts = [];
   let naverBackfill = { queries: [], matched: 0 };
-  for (const q of queryList) {
+
+  const searchOneQuery = async (q) => {
     const res = await searchPlaceProviders({ query: q, limit: 3 });
     attempts.push({
       query: q,
@@ -3855,11 +4212,55 @@ export async function extractPlaces(rawInput, options = {}) {
       failures: [...(chain.failures || []), ...(res.failures || [])],
       reason: res.reason,
     };
-    if (chain.candidates.length) {
+    return res;
+  };
+
+  // ── 2-A) 상호 근거가 있는 검색어 — 지도가 돌려준 이름이 검색어의 상호와 **맞을 때만** 채택 ──
+  //   · `가평 닭볶음탕` → 충남 공주 `솥뚜껑매운탕` 처럼 이름이 어긋나는 1위는 채택하지 않습니다.
+  //   · 채택하지 못한 결과는 버리지 않고 '약한 후보'로 보관 → AI 분석이 실패했을 때만 안전망으로 씁니다.
+  let accepted = null;
+  const weakHits = [];
+  for (const q of storeQueries.slice(0, limitQueries)) {
+    const res = await searchOneQuery(q);
+    if (!res.candidates || !res.candidates.length) continue;
+    const matchOptions = { ...queryOptions, explicit: hasExplicit };
+    const pick = hasExplicit
+      ? res.candidates[0]
+      : res.candidates.find((c) => candidateMatchesQuery(c, q, matchOptions)) || null;
+    if (pick) {
+      accepted = { query: q, pick };
       usedQuery = q;
+      chain = { ...chain, candidates: [pick].concat(res.candidates.filter((c) => c !== pick)) };
       break;
     }
+    weakHits.push({ query: q, res });
   }
+
+  // ── 2-A") 시청자 댓글에서 온 상호 — 지도 결과 이름이 **똑같을 때만** 채택 (2회까지) ──
+  //   (`외대앞역 영화장` 처럼 댓글에만 상호가 있는 경우, AI 없이 0.5초대에 끝나는 길을 살립니다)
+  if (!accepted) {
+    for (const q of commentQueries.filter((c) => classifyQuery(c, queryOptions).kind === 'store').slice(0, 2)) {
+      const res = await searchOneQuery(q);
+      if (!res.candidates || !res.candidates.length) continue;
+      const pick =
+        res.candidates.find((c) => candidateMatchesQuery(c, q, { ...queryOptions, exactOnly: true })) || null;
+      if (pick) {
+        accepted = { query: q, pick };
+        usedQuery = q;
+        chain = { ...chain, candidates: [pick].concat(res.candidates.filter((c) => c !== pick)) };
+        break;
+      }
+      weakHits.push({ query: q, res });
+    }
+  }
+
+  // 약한 검색어는 AI 분석과 **동시에** 한 번만 찔러 둡니다. (AI 가 실패해도 빈손이 아니게)
+  //   · 여러 개면 **낱말이 많은(=더 구체적인) 것**부터 — `가평` 보다 `가평 닭볶음탕`
+  const weakOrdered = weakQueries
+    .slice()
+    .sort((a, b) => b.split(' ').filter(Boolean).length - a.split(' ').filter(Boolean).length);
+  const weakSearchPromise =
+    !accepted && weakOrdered.length ? searchOneQuery(weakOrdered[0]).catch(() => null) : null;
 
   const base = {
     ...baseInfo,
@@ -3868,9 +4269,11 @@ export async function extractPlaces(rawInput, options = {}) {
     queryList,
     attempts,
     naverBackfill,
+    // v2.22 — 제목·설명에 적힌 **명확한 상호 표기** (📍·상호:·[상호])
+    explicitNames,
   };
 
-  if (chain.candidates.length) {
+  if (accepted) {
     const kind = [llm && llm.name ? 'llm' : null, ...chain.providersUsed].filter(Boolean).join('+');
     return {
       ...base,
@@ -3882,16 +4285,17 @@ export async function extractPlaces(rawInput, options = {}) {
         menuTags: derived.menuTags && derived.menuTags.length ? derived.menuTags : c.menuTags || [],
       })),
       usedAdapter: kind,
+      matchStatus: 'verified',
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
     };
   }
 
-  // ── v2.9 (3) 1차(제목·설명글·댓글 + 지도)로 **실매장을 못 찾았을 때만** Gemini 가 영상을 봅니다 ──
+  // ── v2.22 (3) **상호를 확신하지 못했을 때** Gemini 가 영상을 봅니다. (Precision-first) ──
   //   · 유튜브 쇼츠만 대상입니다. (인스타·틱톡은 영상 접근이 막혀 있어 프록시도 빈 결과)
-  //   · 정상적으로 찾은 릴스(디오디아2.0·엄마손횟집 등)는 위에서 이미 반환되므로
-  //     여기까지 오지 않습니다 → 0.5초 만에 끝나고 Gemini 호출·크레딧을 쓰지 않습니다.
+  //   · 위 2-A 에서 상호가 맞은 후보를 찾았으면 이미 반환되었습니다(0.5~1초).
+  //     즉 “가평 닭볶음탕”·“솥뚜껑” 처럼 **가게를 특정하지 못한 검색어**만 여기까지 옵니다.
   //   · 웹(프록시)에서만 호출합니다. 네이티브는 키가 번들에 없어 건너뜁니다.
   let gemini = null;
   if (options.gemini !== false && parsed.platform === 'youtube' && isWebPlatform()) {
@@ -3963,6 +4367,7 @@ export async function extractPlaces(rawInput, options = {}) {
           menuTags: geminiMenuTags.length ? geminiMenuTags : c.menuTags || [],
         })),
         usedAdapter: geminiAdapter,
+        matchStatus: 'gemini',
         providersTried: Array.from(new Set([...(chain.providersTried || []), ...geminiChain.providersTried])),
         providersUsed: geminiChain.providersUsed,
         failures: [...(chain.failures || []), ...geminiChain.failures],
@@ -3997,6 +4402,7 @@ export async function extractPlaces(rawInput, options = {}) {
         },
       ],
       usedAdapter: geminiAdapter,
+      matchStatus: 'gemini-manual',
       providersTried: Array.from(new Set([...(chain.providersTried || []), ...geminiChain.providersTried])),
       providersUsed: geminiChain.providersUsed,
       failures: [...(chain.failures || []), ...geminiChain.failures],
@@ -4006,7 +4412,51 @@ export async function extractPlaces(rawInput, options = {}) {
     };
   }
 
-  // 3) 지도 결과는 없지만 LLM이 장소명을 잡은 경우 → 수동 확인 후보
+  // 3-A) v2.22 — AI 까지 봤는데도 상호를 확신하지 못했습니다.
+  //   이때는 **버리지 않고** 가게를 특정하지 못한 검색어로 찾은 후보를 '확인 필요'로 보여 줍니다.
+  //   (화면에는 “가게 이름 없이 …로 찾은 비슷한 곳” 이라는 안내가 같이 뜹니다 — 저장 전에 한 번 보게)
+  if (weakSearchPromise || weakHits.length) {
+    const weakRes = weakSearchPromise ? await weakSearchPromise : null;
+    const weakCandidates = (weakRes && weakRes.candidates) || [];
+    const fallback = weakCandidates.length
+      ? { query: weakOrdered[0], res: weakRes }
+      : weakHits.length
+      ? weakHits[0]
+      : null;
+    // v2.22 — 동네가 확정된 영상이면, 약한 후보에서도 **다른 동네 가게**는 빼고 보여 줍니다.
+    const rawList = (fallback && fallback.res && fallback.res.candidates) || [];
+    const areaFiltered = primary.area ? rawList.filter((c) => addressInArea(c, primary.area)) : rawList;
+    const list = areaFiltered.length ? areaFiltered : rawList;
+    if (list.length) {
+      const weakQuery = fallback.query;
+      const weakUsed = { ...(fallback.res || {}) };
+      const queryNote =
+        '가게 이름 없이 “' + String(weakQuery || '').trim() + '” 로 찾은 비슷한 곳이에요 · 저장 전에 확인해 주세요';
+      return {
+        ...base,
+        title: list[0].name,
+        query: weakQuery || base.query,
+        candidates: list.map((c) => ({
+          ...c,
+          category: c.rawCategory ? c.category : derived.category || c.category || '맛집',
+          menuTags: derived.menuTags && derived.menuTags.length ? derived.menuTags : c.menuTags || [],
+        })),
+        usedAdapter: (weakUsed.providersUsed || []).join('+') || 'weak',
+        matchStatus: 'weak',
+        lowConfidence: true,
+        aiNote: queryNote,
+        providersTried: Array.from(
+          new Set([...(chain.providersTried || []), ...(weakUsed.providersTried || [])])
+        ),
+        providersUsed: Array.from(
+          new Set([...(chain.providersUsed || []), ...(weakUsed.providersUsed || [])])
+        ),
+        failures: [...(chain.failures || []), ...(weakUsed.failures || [])],
+      };
+    }
+  }
+
+  // 3-B) 지도 결과는 없지만 LLM이 장소명을 잡은 경우 → 수동 확인 후보
   if (llm && llm.name) {
     return {
       ...base,
