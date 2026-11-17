@@ -447,22 +447,36 @@ export default function PinDetailSheet({
           <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.65)" />
         </Pressable>
 
-        <View style={styles.btnRow}>
+        {/* v2.29.0 — 외부 지도 앱으로 **나가는** 동작은 조용한 보조 칩으로 낮춥니다.
+            예전엔 초록(#03C75A)·노랑(#FEE500) 꽉 찬 큰 버튼이라, 앱 안에서 지도를 옮기는
+            주 동작(🗺️ 지도에서 보기)보다 눈에 띄어 "나가기"를 권하는 것처럼 보였습니다.
+            지금은 회색 테두리 칩 + 작은 브랜드 점(N·K) 하나만 남겨, 주 동작은 하나로 둡니다. */}
+        <View style={styles.exitRow}>
           <Pressable
-            style={[styles.mapBtn, { backgroundColor: colors.naver }]}
+            style={({ pressed }) => [styles.exitChip, pressed && styles.exitChipPressed]}
             onPress={() => handleMap('naver')}
             accessibilityRole="button"
             accessibilityLabel="네이버지도 열기"
+            testID="pin-open-naver"
           >
-            <Text style={[styles.mapBtnText, { color: colors.white }]}>네이버지도 열기</Text>
+            <View style={[styles.exitDot, { backgroundColor: colors.naver }]}>
+              <Text style={[styles.exitDotText, { color: colors.naverText }]}>N</Text>
+            </View>
+            <Text style={styles.exitChipText}>네이버지도</Text>
+            <Ionicons name="open-outline" size={10} color={colors.textMuted} />
           </Pressable>
           <Pressable
-            style={[styles.mapBtn, { backgroundColor: colors.kakao }]}
+            style={({ pressed }) => [styles.exitChip, pressed && styles.exitChipPressed]}
             onPress={() => handleMap('kakao')}
             accessibilityRole="button"
             accessibilityLabel="카카오맵 열기"
+            testID="pin-open-kakao"
           >
-            <Text style={[styles.mapBtnText, { color: colors.kakaoText }]}>카카오맵 열기</Text>
+            <View style={[styles.exitDot, { backgroundColor: colors.kakao }]}>
+              <Text style={[styles.exitDotText, { color: colors.kakaoText }]}>K</Text>
+            </View>
+            <Text style={styles.exitChipText}>카카오맵</Text>
+            <Ionicons name="open-outline" size={10} color={colors.textMuted} />
           </Pressable>
         </View>
 
@@ -984,21 +998,45 @@ const styles = StyleSheet.create({
     color: colors.charcoalSub,
     marginTop: 1,
   },
-  btnRow: {
+  // v2.29.0 — 보조(외부 지도 앱) 칩: 주 버튼과 경쟁하지 않는 회색 계열 · 높이 32
+  exitRow: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 8,
   },
-  mapBtn: {
-    flex: 1,
-    height: 44,
-    borderRadius: radius.md,
+  exitChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    height: 32,
+    paddingHorizontal: 9,
+    borderRadius: radius.pill,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  exitChipPressed: {
+    backgroundColor: '#E5E7EB',
+  },
+  exitDot: {
+    width: 15,
+    height: 15,
+    borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  mapBtnText: {
-    fontSize: 14,
+  exitDotText: {
+    fontSize: 9,
     fontWeight: '800',
+    lineHeight: 11,
+  },
+  exitChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    letterSpacing: -0.2,
+    color: colors.textSub,
   },
   deleteBtn: {
     marginTop: 8,
