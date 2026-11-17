@@ -1604,7 +1604,14 @@ export async function extractFromImage(input, options = {}) {
   // ── 목록형 캡처(가게 2곳 이상) → 각 가게를 따로 지도 조회 ──
   const placeItems = imagePlaceItems(analysis);
   if (placeItems.length >= 2) {
-    const multi = await searchMultiPlaces(placeItems, { limit: 3, providers: options.providers, near });
+    const multi = await searchMultiPlaces(placeItems, {
+      limit: 3,
+      providers: options.providers,
+      near,
+      // v2.26 — 사진 흐름에서만 목록 줄의 동네로 타지역 동명이인을 걸러 냅니다.
+      //   (링크·설명글 흐름은 동네 별칭(연남동↔동교동) 때문에 기존 동작을 유지)
+      areaPerItem: true,
+    });
     if (multi.candidates.length) {
       const candidates = multi.candidates.map((c) => {
         const place = analysis.places[(Number(c.multiIndex) || 1) - 1] || null;
@@ -2964,7 +2971,8 @@ export function extractCandidatesFromText(text, options = {}) {
  * (후보의 검색어를 앞에서부터 시도 → 결과가 나오면 다음 후보로)
  *
  * @param {Array<object>} items extractCandidatesFromText 결과
- * @param {{limit?:number, providers?:string[]}} [options]
+ * @param {{limit?:number, providers?:string[], near?:{lat:number,lng:number}, areaPerItem?:boolean}} [options]
+ *        `near` 는 위치 단서(가까운 곳 가중치) · `areaPerItem` 은 **사진 흐름 전용**(줄의 동네로 타지역 결과 제외, v2.26)
  * @returns {Promise<{items:Array<object>, candidates:Array<object>, matched:number, unmatched:Array<object>,
  *                    providersUsed:string[], providersTried:string[], failures:Array<object>}>}
  */
@@ -2984,7 +2992,8 @@ export async function searchMultiPlaces(items, options = {}) {
           limit,
           providers: options.providers,
           // v2.26 — 목록 줄의 동네가 있으면 그 동네와 주소가 맞는 결과만 (타지역 동명이인 방지)
-          area: item.area || undefined,
+          //          `areaPerItem` 은 사진 흐름에서만 켭니다.
+          area: options.areaPerItem ? item.area || undefined : undefined,
           near: options.near,
           // 여러 가게를 동시에 찾을 때는 후보마다 1회까지만 보강합니다(요청 폭주 방지).
           backfill: 1,
