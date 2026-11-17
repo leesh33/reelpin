@@ -13,6 +13,8 @@
  *   · v2.19.1 — 지도의 `☰ 목록` 버튼으로 열리면 **내 정보·돋보기·알림 모음과 같은 레이어 팝업**
  *     (LayerSheet) 안에 들어갑니다. 그때는 `embedded` 로 전체 화면을 차지하지 않고
  *     시트 본문을 채웁니다.
+ *   · v2.24.0 — 헤더 안의 `지도 보기` 버튼을 없앴습니다. 시트 헤더 ✕ 나 바깥 탭으로 닫으면
+ *     바로 지도로 돌아가므로 같은 일을 하는 버튼이 두 개였습니다.
  */
 import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -46,7 +48,6 @@ export default function PinListView({
   myCoords = null,
   onSelectPin,
   onOpenPin,
-  onToggleView,
   onGoPaste,
   // v2.19.1 — 레이어 팝업(LayerSheet) 본문으로 들어갈 때 true (전체 화면 absoluteFill 아님)
   embedded = false,
@@ -82,20 +83,10 @@ export default function PinListView({
             onDark={false}
           />
         </View>
-        <View style={styles.metaRow}>
+        <View style={styles.metaRow} testID="pin-list-meta">
           <Text style={styles.metaText} numberOfLines={1}>
             {summary}
           </Text>
-          <Pressable
-            style={styles.mapBtn}
-            onPress={onToggleView}
-            accessibilityRole="button"
-            accessibilityLabel="지도 보기로 전환"
-            testID="view-toggle-list"
-          >
-            <Ionicons name="map-outline" size={13} color={colors.white} />
-            <Text style={styles.mapBtnText}>지도 보기</Text>
-          </Pressable>
         </View>
       </View>
 
@@ -272,7 +263,6 @@ const styles = StyleSheet.create({
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
     paddingHorizontal: 16,
     paddingTop: 8,
   },
@@ -281,20 +271,6 @@ const styles = StyleSheet.create({
     color: colors.textSub,
     fontSize: 11.5,
     fontWeight: '700',
-  },
-  mapBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    height: 28,
-    paddingHorizontal: 10,
-    borderRadius: radius.pill,
-    backgroundColor: colors.navy,
-  },
-  mapBtnText: {
-    color: colors.white,
-    fontSize: 11,
-    fontWeight: '800',
   },
   scroll: {
     flex: 1,

@@ -354,7 +354,10 @@ export default function MapScreen({
 
   /**
    * v2.5 — 지도 ↔ 목록 전환. 목록으로 갈 때는 '주변 500m' 패널을 닫아 겹치지 않게 합니다.
-   * v2.6 — 목록에서 지도로 돌아올 때는 지금 보이던 핀이 **모두 한눈에** 들어오게 범위를 맞춥니다.
+   * v2.24.0 — 목록을 닫을 때는 **지도를 건드리지 않습니다**.
+   *   (v2.6 에서는 닫을 때 보이는 핀 전체에 `fit` 을 다시 걸어서, 보던 동네가 전국으로
+   *    튀었습니다. 지도는 목록 뒤에 그대로 살아 있으므로 화면만 되돌리면 됩니다.)
+   *   목록에서 특정 장소를 눌러 이동하는 경우만 openPinFromList 가 그 핀으로 옮깁니다.
    */
   const toggleView = useCallback(() => {
     if (view === 'map') {
@@ -362,16 +365,8 @@ export default function MapScreen({
       setView('list');
       return;
     }
-    const coords = mapCoordsOf(filtered);
     setView('map');
-    if (coords.length >= 2) {
-      setFit(coords);
-      setFitKey((k) => k + 1);
-    } else if (coords.length === 1) {
-      setFocus({ lat: coords[0].lat, lng: coords[0].lng });
-      setFocusKey((k) => k + 1);
-    }
-  }, [view, filtered]);
+  }, [view]);
 
   /** v2.6 — 목록·검색 결과에서 핀을 고르면 지도로 돌아가 그 핀을 확대하고 상세 시트를 엽니다. */
   const openPinFromList = useCallback(
@@ -1086,7 +1081,6 @@ export default function MapScreen({
             myCoords={myCoords}
             onSelectPin={onSelectPin}
             onOpenPin={openPinFromList}
-            onToggleView={toggleView}
             onGoPaste={onGoPaste}
           />
         </LayerSheet>

@@ -317,7 +317,10 @@ const wiring = [
   ['화면: 지도 위에는 결과 패널 없이 필터 칩만', screenSource.indexOf('<PinSearchResults') < 0 && screenSource.indexOf('styles.chipWrap') > 0],
   ['화면: 결과 목록 컴포넌트는 그대로 남아 있음(목록 보기)', fs.existsSync(path.join(process.cwd(), 'src/components/PinSearchResults.js'))],
   ['화면: 목록·결과에서 고르면 지도 + 상세 시트', screenSource.indexOf('openPinFromList') > 0 && screenSource.indexOf('onSelectPin(pin.id)') > 0],
-  ['화면: 목록 → 지도 전환 시 범위 맞추기', /const coords = mapCoordsOf\(filtered\)/.test(screenSource) && /setFit\(coords\)/.test(screenSource)],
+  // v2.24 — 목록을 닫을 때는 지도를 다시 맞추지 않습니다(보던 중심·줌 유지).
+  //          핀을 골라 이동하는 경우만 openPinFromList 가 그 핀으로 옮깁니다.
+  ['화면: 목록 → 지도 전환은 보던 지도 그대로', /const toggleView = useCallback\(\(\) => \{[\s\S]{0,600}?\n  \}, \[view\]\);/.test(screenSource) && !/const toggleView = useCallback\([\s\S]{0,600}?setFit\(/.test(screenSource)],
+  ['화면: 목록에서 고른 핀으로 바로 이동(focus)', screenSource.indexOf('openPinFromList') > 0 && /openPinFromList[\s\S]{0,400}?setFocus\(coords\)/.test(screenSource)],
   ['화면: 검색어 지우기는 즉시 복귀', screenSource.indexOf('setNavQuery(\'\')') > 0],
   ['목록: 행을 누르면 onOpenPin (지도로 이동)', listSource.indexOf('onOpenPin(pin)') > 0],
   ['결과 목록: 최대 개수만 그리고 [전체 N곳]', resultsSource.indexOf('SEARCH_RESULT_MAX') > 0 && resultsSource.indexOf('전체 ') > 0],

@@ -265,7 +265,7 @@ check('admin/db: 토큰 없으면 호출하지 않음', noTokenRpc.ok === false 
 
 // ── 5. v2.23 💬 제보 — 목록 조회 · 상태 변경 · 삭제 ─────────
 authUser = { id: 'user-admin', email: 'andy.leesh33@gmail.com' };
-rpcReply = { ok: true, body: [{ id: 'f1', kind: 'bug', title: '지도 흰 화면', content: '사파리에서 흰 화면', author: '꼬야네', userEmail: '', appVersion: '2.23.0', likes: 3, status: 'open', createdAt: '2026-11-17T09:00:00+09:00' }] };
+rpcReply = { ok: true, body: [{ id: 'f1', kind: 'bug', title: '지도 흰 화면', content: '사파리에서 흰 화면', author: '꼬야네', userEmail: '', appVersion: '2.24.0', likes: 3, status: 'open', createdAt: '2026-11-17T09:00:00+09:00' }] };
 calls = [];
 res = makeRes();
 await adminHandler(
