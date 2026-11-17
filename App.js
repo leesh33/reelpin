@@ -270,6 +270,8 @@ export default function App() {
 
   /** v2.31 — 운영자 배너·기획전 불러오기 (설정 전·오프라인이면 조용히 빈 목록) */
   const loadCuration = useCallback(async () => {
+    // 웹은 Supabase 설정을 `/api/auth-config` 에서 늦게 받아옵니다 — 먼저 기다립니다.
+    await loadSupabaseConfig();
     const [bannerResult, curatedResult] = await Promise.all([fetchPublicBanners(), fetchPublicCurated()]);
     if (bannerResult.ok) setBanners(bannerResult.items);
     if (curatedResult.ok) setCurated(curatedResult.items);
@@ -295,6 +297,7 @@ export default function App() {
     if (!shareId) return undefined;
     let alive = true;
     (async () => {
+      await loadSupabaseConfig();
       const res = await fetchSharedCollection(shareId);
       if (!alive) return;
       if (res.ok) {

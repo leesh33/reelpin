@@ -16,7 +16,7 @@
  *
  * 준비물: `supabase/curation.sql` 을 Supabase SQL Editor 에서 한 번 실행해 두면 됩니다.
  */
-import { isSupabaseConfigured, supabase } from './supabase';
+import { isSupabaseConfigured, loadSupabaseConfig, supabase } from './supabase';
 import {
   buildCollectionShareUrl,
   normalizeBanners,
@@ -38,6 +38,10 @@ const NETWORK_MESSAGE = '네트워크가 불안정해요. 잠시 뒤 다시 시�
 const NOT_READY_MESSAGE = '기획전·공유 기능이 아직 켜지지 않았어요. 잠시 뒤 다시 시도해 주세요.';
 const SCHEMA_MISSING_MESSAGE = '기획전·공유 DB 가 아직 준비되지 않았어요 (supabase/curation.sql).';
 
+/**
+ * 클라이언트를 고릅니다. 웹은 Supabase 설정(`/api/auth-config`)을 늦게 받아오므로
+ * 호출부에서 `await loadSupabaseConfig()` 를 먼저 기다린 뒤 이 함수를 부릅니다.
+ */
 function resolveClient(client) {
   if (client) return client;
   if (!isSupabaseConfigured()) return null;
@@ -69,6 +73,7 @@ export function friendlyCurationError(error) {
 
 /** 켜 둔 배너 목록 — 실패해도 화면은 조용히 배너 없이 그립니다 */
 export async function fetchPublicBanners(options = {}) {
+  if (!options.client) await loadSupabaseConfig();
   const client = resolveClient(options.client);
   if (!client) return { ok: false, items: [], message: NOT_READY_MESSAGE };
   try {
@@ -83,6 +88,7 @@ export async function fetchPublicBanners(options = {}) {
 
 /** 켜 둔 기획전 목록 */
 export async function fetchPublicCurated(options = {}) {
+  if (!options.client) await loadSupabaseConfig();
   const client = resolveClient(options.client);
   if (!client) return { ok: false, items: [], message: NOT_READY_MESSAGE };
   try {
@@ -105,6 +111,7 @@ export async function shareCollectionSnapshot(collection, pins, options = {}) {
   if (!places.length) {
     return { ok: false, message: '이 컬렉션에 담긴 핀이 없어요 · 먼저 핀을 담아 주세요' };
   }
+  if (!options.client) await loadSupabaseConfig();
   const client = resolveClient(options.client);
   if (!client) return { ok: false, message: NOT_READY_MESSAGE };
 
@@ -137,6 +144,7 @@ export async function shareCollectionSnapshot(collection, pins, options = {}) {
 export async function fetchSharedCollection(shareId, options = {}) {
   const id = String(shareId == null ? '' : shareId).trim();
   if (!id) return { ok: false, item: null, message: '공유 링크가 비어 있어요.' };
+  if (!options.client) await loadSupabaseConfig();
   const client = resolveClient(options.client);
   if (!client) return { ok: false, item: null, message: NOT_READY_MESSAGE };
   try {
