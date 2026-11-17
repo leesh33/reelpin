@@ -418,9 +418,12 @@ export async function signInWithOAuth(provider, options = {}) {
   if (!oauthProviderReady(id)) return fail('provider-pending', OAUTH_PENDING_MESSAGE);
   try {
     const web = typeof window !== 'undefined' && !!window;
+    // 구글은 매번 계정 선택 화면을 띄웁니다. (브라우저에 이미 로그인된 계정으로 조용히 통과하지 않게)
+    const oauthOptions = { redirectTo: options.redirectTo || authRedirectUrl(), skipBrowserRedirect: !web };
+    if (id === 'google') oauthOptions.queryParams = { prompt: 'select_account' };
     const { data, error } = await client.auth.signInWithOAuth({
       provider: id,
-      options: { redirectTo: options.redirectTo || authRedirectUrl(), skipBrowserRedirect: !web },
+      options: oauthOptions,
     });
     if (error) return { ok: false, error: error.code || error.name || 'auth-error', message: friendlyAuthError(error) };
     const url = data && data.url;

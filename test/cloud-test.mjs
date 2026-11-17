@@ -520,6 +520,27 @@ check('소셜: 카카오 provider 전달', kakao.ok === true && oauthCall && oau
 check('소셜: 네이티브에서는 직접 리다이렉트하지 않음(skipBrowserRedirect)', oauthCall && oauthCall[1].options.skipBrowserRedirect === true);
 check('소셜: 지원하지 않는 provider 거름', (await signInWithOAuth('naver')).error === 'unsupported-provider');
 check('소셜: 3개 provider (카카오·구글·Apple)', OAUTH_PROVIDERS.map((p) => p.id).join(',') === 'kakao,google,apple');
+check(
+  '소셜: 카카오에는 queryParams 를 붙이지 않음',
+  oauthCall && oauthCall[1].options.queryParams === undefined,
+  oauthCall && JSON.stringify(oauthCall[1].options.queryParams)
+);
+
+const googleClient = makeClient();
+__setSupabaseClient(googleClient);
+const google = await signInWithOAuth('google', { redirectTo: 'https://reelpin.vercel.app/admin' });
+const googleCall = googleClient.calls.find((c) => c[0] === 'auth.signInWithOAuth');
+check('소셜: 구글 provider 전달', google.ok === true && googleCall && googleCall[1].provider === 'google');
+check(
+  '소셜: 구글은 prompt=select_account 로 계정 선택 화면',
+  googleCall && googleCall[1].options.queryParams && googleCall[1].options.queryParams.prompt === 'select_account',
+  googleCall && JSON.stringify(googleCall[1].options.queryParams)
+);
+check(
+  '소셜: 구글도 redirectTo 는 그대로',
+  googleCall && googleCall[1].options.redirectTo === 'https://reelpin.vercel.app/admin',
+  googleCall && googleCall[1].options.redirectTo
+);
 
 const sessionClient = makeClient({ session: { data: { session: { user: { id: USER, email: 'andy@b.com' } } }, error: null } });
 __setSupabaseClient(sessionClient);
