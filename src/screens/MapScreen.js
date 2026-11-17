@@ -250,6 +250,10 @@ export default function MapScreen({
     if (base.some((p) => p && String(p.id) === String(revealPin.id))) return base;
     return base.concat(revealPin);
   }, [previewPins, filtered, revealPin]);
+  // 필터를 바꾸면 "이 핀만 보여 주기"도 끝냅니다 — 다음부터는 그 필터의 규칙을 그대로 따릅니다.
+  useEffect(() => {
+    setRevealPinId(null);
+  }, [filter, query, visitFilter, collectionActive]);
 
   const counts = useMemo(() => countByCategory(pins, categories), [pins, categories]);
 
