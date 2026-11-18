@@ -220,6 +220,16 @@ if (!only || only === 'longpress') {
   });
 }
 
+if (!only || only === 'paste') {
+  // v2.33.4 — 저장 화면(링크·사진·가게명)의 ✅ 가봤어요 토글과 저장 페이로드(visited·visitedAt)
+  failed += await runSuite({
+    name: '저장 화면 가봤어요 토글·저장 페이로드 테스트',
+    entry: 'paste-visited-test.mjs',
+    out: 'paste-visited-test.bundle.mjs',
+    format: 'esm',
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

@@ -250,7 +250,12 @@ const wiring = [
   ['지도: 이름 변경·삭제 시 필터 정리', mapSource.indexOf('nextFilterAfterRename') > 0 && mapSource.indexOf('nextFilterAfterRemoval') > 0],
   ['지도: 상세 시트에 분류 변경 연결', mapSource.indexOf('onChangeCategory={onChangePinCategory}') > 0],
   ['저장: 분류 직접 선택 칩 바', pasteSource.indexOf('<CategoryPicker') > 0 && pasteSource.indexOf('saveCategory') > 0],
-  ['저장: 고른 분류로 핀 생성', /buildPin\(\{ \.\.\.candidate, category: saveCategory \}/.test(pasteSource)],
+  // v2.33.4 — 저장 페이로드가 `utils/saveResult.buildResultPins` 로 옮겨졌습니다(가봤어요·링크·메모를 한 곳에서).
+  ['저장: 고른 분류로 핀 생성',
+    /buildResultPins\(selectedCandidates,[\s\S]{0,220}?category: saveCategory/.test(pasteSource) &&
+      fs
+        .readFileSync(path.join(process.cwd(), 'src/utils/saveResult.js'), 'utf8')
+        .indexOf('category: category || candidate.category ||') > 0],
   ['저장: 자동 분류를 기본값으로', pasteSource.indexOf('자동 분류: ') > 0],
   ['상세: 분류 변경 칩 + 읽기 전용 제외', sheetSource.indexOf('<CategoryPicker') > 0 && sheetSource.indexOf('readOnly') > 0 && sheetSource.indexOf('onChangeCategory') > 0],
   ['내 정보: 분류 관리 카드(수정·삭제·추가)', profileSource.indexOf('분류 관리') > 0 && profileSource.indexOf('CategoryManager') > 0 && profileSource.indexOf('이름 수정') > 0 && profileSource.indexOf('삭제 확인') > 0],

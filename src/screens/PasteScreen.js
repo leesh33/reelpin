@@ -26,7 +26,10 @@ import OverlayHeader from '../components/OverlayHeader';
 import ProviderBadges from '../components/ProviderBadge';
 import ExtractedTitleNote from '../components/ExtractedTitleNote';
 import CategoryPicker from '../components/CategoryPicker';
-import { buildPin } from '../utils/pins';
+// v2.33.4 — ✅ 가봤어요 토글 카드(꾹 눌러 등록 시트·상세 시트와 같은 결)
+import VisitedToggleCard from '../components/VisitedToggleCard';
+// v2.33.4 — 선택한 후보 → 핀 목록(가봤어요·한줄 메모·링크까지 한 곳에서)
+import { buildResultPins } from '../utils/saveResult';
 import { DEFAULT_CATEGORIES, getCategoryColor, mapLegacyCategory } from '../utils/categories';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 
@@ -90,6 +93,12 @@ export default function PasteScreen({
   const [memoAutoFilled, setMemoAutoFilled] = useState(false);
   // v2.13 — 📸 사진을 읽고 있는 동안 (버튼 자체가 'AI 사진 분석 중…' 으로 바뀝니다)
   const [photoBusy, setPhotoBusy] = useState(false);
+  /**
+   * v2.33.4 — ✅ 가봤어요. 이미 다녀온 곳이면 저장과 함께 방문 완료로 남깁니다.
+   *   · 기본 미체크 · 새 검색/추출 결과가 오거나 저장한 뒤·탭을 옮기면 다시 풀립니다.
+   *   · 링크·사진·가게명 찾기 **세 탭 모두** 같은 값을 씁니다(결과 카드 아래 한 곳).
+   */
+  const [visited, setVisited] = useState(false);
   const scrollRef = useRef(null);
 
   /**
@@ -108,6 +117,8 @@ export default function PasteScreen({
     setCandidates([]);
     setSelectedIds([]);
     setMeta(null);
+    // v2.33.4 — 새 검색 요청이면 ✅ 가봤어요도 미체크로 시작합니다.
+    setVisited(false);
   }, [request, canUsePhoto]);
   /**
    * v2.14 — 분석이 도는 동안 다른 탭으로 옮겨 갈 수 있습니다(탭은 잠그지 않습니다).
@@ -157,6 +168,8 @@ export default function PasteScreen({
     setMemoAutoFilled(false);
     setExtracting(false);
     setPhotoBusy(false);
+    // v2.33.4 — 탭을 옮기면 ✅ 가봤어요도 풀립니다(탭마다 새 결과이므로).
+    setVisited(false);
   };
 
   const startProgress = () => {
@@ -190,6 +203,8 @@ export default function PasteScreen({
     setSelectedIds([]);
     setCategoryTouched(false);
     setPickedCategory('');
+    // v2.33.4 — 새 결과를 찾기 시작하면 ✅ 가봤어요는 미체크로 돌아갑니다.
+    setVisited(false);
 
     const stageTimer = startProgress();
 
@@ -261,6 +276,7 @@ export default function PasteScreen({
     setSelectedIds([]);
     setCategoryTouched(false);
     setPickedCategory('');
+    setVisited(false); // v2.33.4 — 새 검색이면 ✅ 가봤어요 미체크
     if (targetQuery != null) setQuery(targetQuery);
 
     const stageTimer = startProgress();
@@ -321,6 +337,7 @@ export default function PasteScreen({
     setCategoryTouched(false);
     setPickedCategory('');
     setMemo('');
+    setVisited(false); // v2.33.4 — 새 사진이면 ✅ 가봤어요 미체크
     setStage(1); // 'AI 사진 분석'
     setPhotoBusy(true);
     try {
@@ -378,6 +395,7 @@ export default function PasteScreen({
     setSelectedIds([]);
     setMeta(null);
     setStage(0);
+    setVisited(false);
     setQuery(nextQuery);
     if (nextQuery.length >= 2) runSearch(nextQuery);
   };
@@ -428,6 +446,8 @@ export default function PasteScreen({
     setPickedCategory('');
     setMemo('');
     setMemoAutoFilled(false);
+    // v2.33.4 — 저장한 뒤에는 ✅ 가봤어요를 다시 미체크로 (다음 저장에 끌려가지 않게)
+    setVisited(false);
   };
 
   /** 선택한 후보를 핀으로 만들어 저장합니다. (1곳이든 N곳이든 같은 버튼) */
@@ -443,11 +463,14 @@ export default function PasteScreen({
       : searchMode
       ? 'search'
       : parseUrl(sourceUrl).platform || 'instagram';
-    const built = selectedCandidates
-      .map((candidate) =>
-        buildPin({ ...candidate, category: saveCategory }, { sourceUrl, platform, memo })
-      )
-      .filter(Boolean);
+    // v2.33.4 — ✅ 가봤어요를 체크했으면 **이번에 저장하는 모든 핀**이 방문 완료로 저장됩니다.
+    const built = buildResultPins(selectedCandidates, {
+      category: saveCategory,
+      sourceUrl,
+      platform,
+      memo,
+      visited,
+    });
     if (!built.length) {
       setError('저장할 장소 정보가 비어 있어요. 후보를 다시 골라 주세요.');
       return;
@@ -858,8 +881,18 @@ export default function PasteScreen({
               </Text>
             )}
 
+            {/* v2.33.4 — ✅ 가봤어요. 이미 다녀온 곳이면 저장과 함께 방문 완료로 표시됩니다.
+                (링크·사진·가게명 찾기 결과 모두 이 카드 하나를 씁니다 · 저장하면 다시 풀립니다) */}
+            <VisitedToggleCard
+              visited={visited}
+              onToggle={() => setVisited((prev) => prev !== true)}
+              testID="paste-visited-toggle"
+              boxTestID="paste-visited-box"
+              labelTestID="paste-visited-label"
+            />
+
             {/* v2.2 — 저장 전에 분류를 직접 고르거나, 새 분류를 그 자리에서 만듭니다 */}
-            <View style={styles.categoryCard}>
+            <View style={[styles.categoryCard, styles.categoryCardAfterVisit]}>
               <CategoryPicker
                 value={saveCategory}
                 onChange={pickCategory}
@@ -1417,6 +1450,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginTop: 4,
     marginBottom: 4,
+  },
+  // v2.33.4 — ✅ 가봤어요 카드가 아래 여백 14px 를 이미 갖고 있으므로, 바로 아래 `저장할 분류`
+  //            카드의 위 여백(4px)은 0 으로 두어 카드 ↔ 분류 사이가 **정확히 14px** 이 되게 합니다.
+  categoryCardAfterVisit: {
+    marginTop: 0,
   },
   saveBtn: {
     flexDirection: 'row',

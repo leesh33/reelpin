@@ -828,12 +828,28 @@ export default function App() {
       const list = (Array.isArray(incoming) ? incoming : [incoming]).filter(Boolean);
       if (!list.length) return;
       const { fresh, duplicates } = planPinAddition(pins, list);
+      /**
+       * v2.33.4 — 저장 화면에서 ✅ 가봤어요를 체크해 저장할 때, **이미 지도에 있는 곳**은
+       *   새 핀을 만들지 않고 그 핀을 **미방문 → 방문 완료로만** 바꿉니다.
+       *   (꾹 눌러 등록 `handleSavedPlace` 와 같은 결 · 체크를 풀어 저장해도 기존 기록은 지우지 않음)
+       */
+      let markedVisited = 0;
+      duplicates.forEach((item) => {
+        const existing = item && item.existing;
+        if (!existing || !existing.id) return;
+        if (item.pin && item.pin.visited === true && existing.visited !== true) {
+          handleTogglePinVisited(existing.id, true);
+          markedVisited += 1;
+        }
+      });
       if (!fresh.length) {
         setTab('map');
         if (duplicates.length) {
           const first = duplicates[0].existing;
           if (first) setSelectedPinId(first.id);
-          showToast('이미 지도에 있는 장소예요 · ' + first.name);
+          const parts = ['이미 지도에 있는 장소예요 · ' + first.name];
+          if (markedVisited) parts.push('가봤어요로 표시했어요');
+          showToast(parts.join(' · '));
         }
         return;
       }
@@ -843,10 +859,11 @@ export default function App() {
       const parts = [];
       parts.push(fresh.length > 1 ? fresh.length + '곳을 지도에 꽂았어요' : '지도에 핀을 꽂았어요 · ' + fresh[0].name);
       if (duplicates.length) parts.push(duplicates.length + '곳은 이미 있어요');
+      if (markedVisited) parts.push(markedVisited + '곳은 가봤어요로 표시');
       showToast(parts.join(' · '), 'pro');
       pushPinsToCloud(fresh);
     },
-    [pins, pushPinsToCloud, showToast]
+    [pins, pushPinsToCloud, showToast, handleTogglePinVisited]
   );
 
   /** 공유받은 지도를 내 지도에 합칩니다. (중복은 건너뛰고, 주소창의 share 는 지움 — 개수 한도 없음) */
