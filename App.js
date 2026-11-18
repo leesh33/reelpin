@@ -13,7 +13,8 @@ import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import * as Clipboard from 'expo-clipboard';
 import MapScreen from './src/screens/MapScreen';
 import PasteScreen from './src/screens/PasteScreen';
-import CollectionsScreen from './src/screens/CollectionsScreen';
+// v2.32.1 — 컬렉션 탭의 기획전 피드를 숨기는 스위치(CollectionsScreen 과 같은 값)
+import CollectionsScreen, { SHOW_CURATED_FEED } from './src/screens/CollectionsScreen';
 import TabBar from './src/components/TabBar';
 // v2.28.0 — 상세 시트·레이어가 열려 있는 동안 하단 탭바를 숨깁니다(바닥 버튼을 가리지 않게).
 import { tabBarVisibility } from './src/utils/tabBarVisibility';
@@ -273,6 +274,9 @@ export default function App() {
 
   /** v2.31 — 운영자 배너·기획전 불러오기 (설정 전·오프라인이면 조용히 빈 목록) */
   const loadCuration = useCallback(async () => {
+    // v2.32.1 — 컬렉션 탭에서 피드를 숨긴 동안에는 **부르지 않습니다** (헛된 요청·로딩 없음).
+    //   다시 보이게 하려면 CollectionsScreen 의 SHOW_CURATED_FEED 를 true 로.
+    if (!SHOW_CURATED_FEED) return;
     // 웹은 Supabase 설정을 `/api/auth-config` 에서 늦게 받아옵니다 — 먼저 기다립니다.
     await loadSupabaseConfig();
     const [bannerResult, curatedResult] = await Promise.all([fetchPublicBanners(), fetchPublicCurated()]);

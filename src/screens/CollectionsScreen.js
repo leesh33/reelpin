@@ -52,6 +52,18 @@ import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 export const POSTER_WIDTH = 142;
 
 /**
+ * v2.32.1 — 컬렉션 탭의 **운영자 추천 · 기획전 피드** 노출 스위치.
+ * ─────────────────────────────────────────────────────────────
+ * 상훈 님 요청(2026-11-18): "컬렉션 탭에는 내 컬렉션만 보이게 해 줘"
+ *   → 사진형 포스터 카드 · ⚡ 빠른 테마 칩 · 📌 슬림 배너를 **그리지도, 불러오지도** 않습니다.
+ *
+ *   · 그대로 두는 것 : `/admin` 의 `📌 기획전·배너` 탭(등록·수정·켜기/끄기) · DB · API
+ *   · 그대로 두는 것 : `?col=<shareId>` 로 받은 **공유 컬렉션 미리보기**(CollectionPreviewSheet)
+ *   · 다시 보이게 하려면 이 값을 `true` 로 바꾸면 위 세 영역이 그대로 돌아옵니다.
+ */
+export const SHOW_CURATED_FEED = false;
+
+/**
  * 목록 위쪽 요약 — `3개 컬렉션`
  * v2.31.1 — 상훈 님 요청: "내 컬렉션에서는 2곳 담김 이라는건 빼줘"
  *   → `· N곳 담김` 을 빼고 컬렉션 개수만 남깁니다. (pins 는 옛 호출부 호환용)
@@ -128,6 +140,8 @@ export default function CollectionsScreen({
   onPreviewSheetChange,
   // 검사·딥링크용 — 열자마자 이 컬렉션의 상세를 보여 줍니다(기본 null)
   initialCollectionId = null,
+  // v2.32.1 — 내부 검사용: 기본은 `SHOW_CURATED_FEED`(false = 숨김). 화면에서는 넘기지 않습니다.
+  showCuratedFeed = SHOW_CURATED_FEED,
 }) {
   // 'list' — 컬렉션 카드 목록 / 'detail' — 한 컬렉션의 핀 담기·빼기
   const [mode, setMode] = useState(initialCollectionId ? 'detail' : 'list');
@@ -168,8 +182,14 @@ export default function CollectionsScreen({
 
   const list = Array.isArray(collections) ? collections : [];
   const detail = useMemo(() => list.find((c) => c.id === detailId) || null, [list, detailId]);
+  // v2.32.1 — 피드를 숨긴 동안에는 테마 칩도 만들지 않습니다(렌더·연산 모두 0).
+  //   `showCuratedFeed` 는 기본값이 위 상수이고, SSR 검사에서만 켜 볼 수 있는 통로입니다.
+  const curatedFeedOn = Boolean(showCuratedFeed);
   // v2.32 — 빠른 테마 칩: 운영자가 올린 기획전에서 만들어 최대 6개(두 줄)만 보여 줍니다.
-  const themeChips = useMemo(() => buildThemeChips(curated), [curated]);
+  const themeChips = useMemo(
+    () => (curatedFeedOn ? buildThemeChips(curated) : []),
+    [curated, curatedFeedOn]
+  );
 
   // 컬렉션이 사라지면(다른 곳에서 삭제) 목록으로 돌아갑니다.
   useEffect(() => {
@@ -370,8 +390,9 @@ export default function CollectionsScreen({
           showsVerticalScrollIndicator={false}
           testID="collections-list"
         >
-          {/* ── v2.32 🖼️ 운영자 추천 · 기획전 — 사진형 포스터 카드 (좌우로 넘겨 보기) ── */}
-          {curated.length ? (
+          {/* ── v2.32 🖼️ 운영자 추천 · 기획전 — 사진형 포스터 카드 (좌우로 넘겨 보기)
+              v2.32.1 — `SHOW_CURATED_FEED = false` 인 동안에는 그리지 않습니다. ── */}
+          {curatedFeedOn && curated.length ? (
             <View testID="collections-curated">
               {/* v2.31.1 — 제목은 `내 컬렉션`과 같은 스타일(styles.title) · 오른쪽 `1개` 개수는 뺐습니다 */}
               <View style={styles.sectionRow}>
@@ -434,8 +455,9 @@ export default function CollectionsScreen({
             </View>
           ) : null}
 
-          {/* ── v2.32 ⚡ 빠른 테마 칩 — 누르면 그 기획전의 장소가 바로 열립니다 (최대 두 줄) ── */}
-          {themeChips.length ? (
+          {/* ── v2.32 ⚡ 빠른 테마 칩 — 누르면 그 기획전의 장소가 바로 열립니다 (최대 두 줄)
+              v2.32.1 — 피드와 함께 숨김(`themeChips` 자체가 빈 배열) ── */}
+          {curatedFeedOn && themeChips.length ? (
             <View style={styles.chipGrid} testID="collections-theme-chips">
               {themeChips.map((chip, index) => (
                 <Pressable
@@ -455,8 +477,9 @@ export default function CollectionsScreen({
             </View>
           ) : null}
 
-          {/* ── v2.32 📌 슬림 배너 — 한 줄 스폰서·이벤트 안내 (켜 둔 배너가 없으면 그리지 않음) ── */}
-          {banners.length ? (
+          {/* ── v2.32 📌 슬림 배너 — 한 줄 스폰서·이벤트 안내 (켜 둔 배너가 없으면 그리지 않음)
+              v2.32.1 — `SHOW_CURATED_FEED = false` 인 동안에는 그리지 않습니다. ── */}
+          {curatedFeedOn && banners.length ? (
             <View style={styles.slimCard} testID="collections-banners">
               {banners.map((banner, index) => {
                 const hasLink = /^https?:\/\//i.test(String(banner.linkUrl || ''));
