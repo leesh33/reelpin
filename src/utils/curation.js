@@ -19,13 +19,16 @@
 import { buildPin, planPinAddition } from './pins';
 
 /** 배너·기획전 글자 수 상한 (DB check 제약과 같은 값) */
-export const BANNER_LIMITS = { title: 40, subtitle: 80, badge: 10, linkUrl: 300 };
+export const BANNER_LIMITS = { title: 40, subtitle: 80, badge: 10, linkUrl: 300, imageUrl: 500 };
 export const CURATED_LIMITS = {
   title: 40,
   description: 100,
   sponsor: 20,
   badge: 10,
   places: 50,
+  // v2.32 — 사진형 포스터 카드의 썸네일 주소 · 빠른 테마 칩 이름
+  imageUrl: 500,
+  chip: 10,
 };
 /** 공유 스냅샷에 담는 장소 수 상한 (DB check 와 같은 값) */
 export const SHARE_MAX_PLACES = 100;
@@ -60,6 +63,17 @@ function normalizeEmoji(value) {
 function normalizeColor(value) {
   const text = String(value == null ? '' : value).trim();
   return /^#[0-9a-fA-F]{6}$/.test(text) ? text : DEFAULT_CURATED_COLOR;
+}
+
+/**
+ * v2.32 — 썸네일 이미지 주소는 **http(s) 만** 통과시킵니다.
+ *   · 비어 있으면 '' → 화면은 색 + 이모지로 그린 기본 커버를 씁니다(이미지가 없어도 예쁘게).
+ *   · `javascript:`·`data:` 같은 주소는 화면에 넣지 않습니다.
+ */
+export function normalizeImageUrl(value) {
+  const text = String(value == null ? '' : value).trim().slice(0, CURATED_LIMITS.imageUrl);
+  if (!text) return '';
+  return /^https?:\/\/\S+$/i.test(text) ? text : '';
 }
 
 /** 좌표 — 숫자로 읽히고 범위 안일 때만 값, 아니면 null (지도에 못 꽂는 장소) */
@@ -140,6 +154,7 @@ export function normalizeBanner(raw) {
     subtitle: clampText(raw.subtitle, BANNER_LIMITS.subtitle),
     badge: clampText(raw.badge, BANNER_LIMITS.badge) || '기획전',
     linkUrl: /^https?:\/\//i.test(linkUrl) ? linkUrl : '',
+    imageUrl: normalizeImageUrl(raw.imageUrl || raw.image_url),
     sortOrder: Number.isFinite(Number(raw.sortOrder)) ? Number(raw.sortOrder) : 0,
     active: raw.active !== false,
     createdAt: String(raw.createdAt || ''),
@@ -164,6 +179,9 @@ export function normalizeCurated(raw) {
     badge: clampText(raw.badge, CURATED_LIMITS.badge) || '기획전',
     emoji: normalizeEmoji(raw.emoji),
     color: normalizeColor(raw.color),
+    // v2.32 — 사진형 포스터 카드: 썸네일 이미지 + 빠른 테마 칩 이름
+    imageUrl: normalizeImageUrl(raw.imageUrl || raw.image_url),
+    chip: clampText(raw.chip, CURATED_LIMITS.chip),
     places,
     placeCount: places.length,
     sortOrder: Number.isFinite(Number(raw.sortOrder)) ? Number(raw.sortOrder) : 0,
@@ -174,6 +192,55 @@ export function normalizeCurated(raw) {
 
 export function normalizeCuratedList(list) {
   return (Array.isArray(list) ? list : []).map(normalizeCurated).filter(Boolean);
+}
+
+/**
+ * v2.32 — 포스터 카드 아래 한 줄: `3곳 · 경복궁 외`
+ *   · 운영자가 따로 적지 않아도 장소 목록만으로 무엇을 모은 카드인지 보이게 합니다.
+ */
+export function curatedCoverLine(item, max = 26) {
+  const places = Array.isArray(item && item.places) ? item.places : [];
+  if (!places.length) return '장소 없음';
+  const first = clampText(places[0] && places[0].name, max);
+  const tail = places.length > 1 ? ' 외' : '';
+  return places.length + '곳' + (first ? ' · ' + first + tail : '');
+}
+
+/**
+ * v2.32 — 빠른 테마 칩의 짧은 이름.
+ *   · 운영자가 칩 이름(`chip`)을 적었으면 그것,
+ *   · 아니면 제목의 앞 두 낱말(예: `서울 도심 산책 코스` → `서울 도심`)로 줄입니다.
+ */
+export function curatedChipLabel(item, max = CURATED_LIMITS.chip) {
+  if (!item || typeof item !== 'object') return '';
+  const explicit = clampText(item.chip, max);
+  if (explicit) return explicit;
+  const title = clampText(item.title, CURATED_LIMITS.title);
+  if (!title) return '';
+  const head = (title.split(/[·|,()<>]/)[0] || title).trim() || title;
+  const words = head.split(/\s+/).filter(Boolean);
+  const two = words.slice(0, 2).join(' ');
+  const picked = Array.from(two).length <= max ? two : words[0] || two;
+  return Array.from(picked).slice(0, max).join('').trim();
+}
+
+/**
+ * v2.32 — 컬렉션 탭의 빠른 테마 칩 목록 (같은 이름은 한 번만 · 최대 6개 = 두 줄).
+ *   누르면 그 기획전의 장소 미리보기가 열립니다.
+ */
+export function buildThemeChips(curated, max = 6) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(curated) ? curated : []).forEach((item, index) => {
+    if (!item) return;
+    const label = curatedChipLabel(item);
+    if (!label) return;
+    const key = label.replace(/\s+/g, '').toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ key: (item.id || 'chip-' + index) + '-' + key, label, emoji: item.emoji || DEFAULT_CURATED_EMOJI, item });
+  });
+  return out.slice(0, Math.max(1, max));
 }
 
 /**

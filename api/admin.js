@@ -16,9 +16,9 @@
  *   POST /api/admin  { action:'delete-pin',  userId, pinId }
  *   POST /api/admin  { action:'update-feedback-status', id, status:'open'|'applied'|'fixed' }  … v2.23
  *   POST /api/admin  { action:'delete-feedback', id }                                          … v2.23
- *   POST /api/admin  { action:'save-banner', id?, title, subtitle, badge, linkUrl, active, sortOrder }   … v2.31
- *   POST /api/admin  { action:'delete-banner', id }                                                      … v2.31
- *   POST /api/admin  { action:'save-curated', id?, title, description, sponsor, badge, emoji, color, places, active, sortOrder }  … v2.31
+ *   POST /api/admin  { action:'save-banner', id?, title, subtitle, badge, linkUrl, imageUrl?, active, sortOrder }   … v2.31 · 이미지 v2.32
+ *   POST /api/admin  { action:'delete-banner', id }                                                       … v2.31
+ *   POST /api/admin  { action:'save-curated', id?, title, description, sponsor, badge, emoji, color, imageUrl?, chip?, places, active, sortOrder }  … v2.31 · 이미지·칩 v2.32
  *   POST /api/admin  { action:'delete-curated', id }                                                      … v2.31
  *
  * 보안 (이 파일이 지키는 선)
@@ -209,22 +209,26 @@ async function handlePost(req, res, ctx) {
     return sendJson(res, 200, { ok: true, data: result.data });
   }
 
-  // v2.31 — 📌 배너 저장 (새 배너 / 수정 / 켜고 끄기)
+  // v2.31 — 📌 배너 저장 (새 배너 / 수정 / 켜고 끄기) · v2.32 썸네일 이미지
   if (action === 'save-banner') {
     const id = clean(body.id, 64);
     const title = clean(body.title, 40);
     const subtitle = clean(body.subtitle, 80);
     const badge = clean(body.badge, 10) || '기획전';
     const linkUrl = clean(body.linkUrl, 300);
+    const imageUrl = clean(body.imageUrl, 500);
     const sortOrder = Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : 0;
     const active = body.active !== false;
     if (!title) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '배너 제목을 적어 주세요.' });
     if (linkUrl && !/^https?:\/\//i.test(linkUrl)) {
       return sendJson(res, 400, { ok: false, error: 'bad-request', message: '링크는 http:// 또는 https:// 로 시작해야 해요.' });
     }
-    const result = await adminDb.saveBanner({ id, title, subtitle, badge, linkUrl, active, sortOrder }, ctx.db);
+    if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
+      return sendJson(res, 400, { ok: false, error: 'bad-request', message: '썸네일 이미지 주소도 http:// 또는 https:// 로 시작해야 해요.' });
+    }
+    const result = await adminDb.saveBanner({ id, title, subtitle, badge, linkUrl, imageUrl, active, sortOrder }, ctx.db);
     if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
-    return sendJson(res, 200, { ok: true, data: result.data });
+    return sendJson(res, 200, { ok: true, data: result.data, extrasSkipped: Boolean(result.extrasSkipped) });
   }
 
   // v2.31 — 📌 배너 삭제
@@ -245,6 +249,8 @@ async function handlePost(req, res, ctx) {
     const badge = clean(body.badge, 10) || '기획전';
     const emoji = clean(body.emoji, 8) || '📂';
     const color = /^#[0-9a-fA-F]{6}$/.test(clean(body.color, 7)) ? clean(body.color, 7) : '#0D9488';
+    const imageUrl = clean(body.imageUrl, 500);
+    const chip = clean(body.chip, 10);
     const sortOrder = Number.isFinite(Number(body.sortOrder)) ? Math.trunc(Number(body.sortOrder)) : 0;
     const active = body.active !== false;
     const places = (Array.isArray(body.places) ? body.places : [])
@@ -259,13 +265,16 @@ async function handlePost(req, res, ctx) {
       }))
       .filter((p) => Boolean(p.name));
     if (!title) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '기획전 제목을 적어 주세요.' });
+    if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
+      return sendJson(res, 400, { ok: false, error: 'bad-request', message: '썸네일 이미지 주소는 http:// 또는 https:// 로 시작해야 해요.' });
+    }
     if (!places.length) return sendJson(res, 400, { ok: false, error: 'bad-request', message: '기획전에 담을 장소를 하나 이상 골라 주세요.' });
     const result = await adminDb.saveCurated(
-      { id, title, description, sponsor, badge, emoji, color, places, active, sortOrder },
+      { id, title, description, sponsor, badge, emoji, color, imageUrl, chip, places, active, sortOrder },
       ctx.db
     );
     if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
-    return sendJson(res, 200, { ok: true, data: result.data });
+    return sendJson(res, 200, { ok: true, data: result.data, extrasSkipped: Boolean(result.extrasSkipped) });
   }
 
   // v2.31 — 🗂️ 기획전 삭제

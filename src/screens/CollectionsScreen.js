@@ -16,6 +16,7 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -23,7 +24,6 @@ import {
   Text,
   TextInput,
   View,
-  useWindowDimensions,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,7 +31,7 @@ import AppHeader from '../components/AppHeader';
 // v2.31 — 기획전·공유 컬렉션 미리보기(다른 레이어 팝업과 같은 LayerSheet 틀)
 import CollectionPreviewSheet from '../components/CollectionPreviewSheet';
 import { shareCollectionSnapshot } from '../services/curation';
-import { importSummary } from '../utils/curation';
+import { buildThemeChips, curatedCoverLine, importSummary } from '../utils/curation';
 import {
   COLLECTION_COLORS,
   COLLECTION_EMOJIS,
@@ -43,6 +43,13 @@ import {
 } from '../utils/collections';
 import { buildShareUrl, canNativeShare, nativeShare } from '../utils/shareMap';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
+
+/**
+ * v2.32 — 사진형 포스터 카드 너비.
+ *   390px 화면(좌우 20 여백 → 350)에서 카드 2.3~2.5장이 보여 **옆으로 넘길 수 있다는 게** 바로 보입니다.
+ *   (`IMG_9129` 참고: 썸네일 위 · 제목 아래 매거진형 카드)
+ */
+export const POSTER_WIDTH = 142;
 
 /**
  * 목록 위쪽 요약 — `3개 컬렉션`
@@ -144,8 +151,6 @@ export default function CollectionsScreen({
   // v2.31 — 기획전 미리보기 + 담는 중
   const [curatedPreview, setCuratedPreview] = useState(null);
   const [importing, setImporting] = useState(false);
-  const { width: windowWidth } = useWindowDimensions();
-  const bannerWidth = Math.max(220, (Number(windowWidth) || 390) - 40);
 
   /** v2.28.0 — 새 컬렉션 시트가 화면 아래를 덮는 동안 하단 탭바는 숨깁니다. */
   useEffect(() => {
@@ -163,6 +168,8 @@ export default function CollectionsScreen({
 
   const list = Array.isArray(collections) ? collections : [];
   const detail = useMemo(() => list.find((c) => c.id === detailId) || null, [list, detailId]);
+  // v2.32 — 빠른 테마 칩: 운영자가 올린 기획전에서 만들어 최대 6개(두 줄)만 보여 줍니다.
+  const themeChips = useMemo(() => buildThemeChips(curated), [curated]);
 
   // 컬렉션이 사라지면(다른 곳에서 삭제) 목록으로 돌아갑니다.
   useEffect(() => {
@@ -363,119 +370,128 @@ export default function CollectionsScreen({
           showsVerticalScrollIndicator={false}
           testID="collections-list"
         >
-          {/* ── v2.31 📌 운영자·스폰서 배너 (켜 둔 배너가 없으면 아예 그리지 않음) ── */}
-          {banners.length ? (
-            <View style={styles.bannerSection} testID="collections-banners">
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                snapToInterval={bannerWidth + 10}
-                decelerationRate="fast"
-                contentContainerStyle={styles.bannerRow}
-              >
-                {banners.map((banner) => {
-                  const hasLink = /^https?:\/\//i.test(String(banner.linkUrl || ''));
-                  return (
-                    <Pressable
-                      key={banner.id}
-                      style={[styles.bannerCard, { width: bannerWidth }]}
-                      onPress={() => hasLink && openBannerLink(banner.linkUrl)}
-                      accessibilityRole={hasLink ? 'link' : 'image'}
-                      accessibilityLabel={banner.badge + ' · ' + banner.title}
-                      testID={'collections-banner-' + banner.id}
-                    >
-                      <View style={styles.bannerTop}>
-                        <View style={styles.bannerBadge}>
-                          <Text style={styles.bannerBadgeText}>{banner.badge || '기획전'}</Text>
-                        </View>
-                        {hasLink ? (
-                          <View style={styles.bannerLinkHint}>
-                            <Text style={styles.bannerLinkText}>열기</Text>
-                            <Ionicons name="open-outline" size={11} color={colors.charcoalSub} />
-                          </View>
-                        ) : null}
-                      </View>
-                      <Text style={styles.bannerTitle} numberOfLines={1}>
-                        {banner.title}
-                      </Text>
-                      {!!banner.subtitle && (
-                        <Text style={styles.bannerSub} numberOfLines={1}>
-                          {banner.subtitle}
-                        </Text>
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </ScrollView>
-            </View>
-          ) : null}
-
-          {/* ── v2.31 🗂️ 운영자 추천 · 기획전 — 누르면 장소 미리보기 + 한 번에 담기 ── */}
+          {/* ── v2.32 🖼️ 운영자 추천 · 기획전 — 사진형 포스터 카드 (좌우로 넘겨 보기) ── */}
           {curated.length ? (
             <View testID="collections-curated">
               {/* v2.31.1 — 제목은 `내 컬렉션`과 같은 스타일(styles.title) · 오른쪽 `1개` 개수는 뺐습니다 */}
               <View style={styles.sectionRow}>
                 <Text style={styles.title}>운영자 추천 · 기획전</Text>
               </View>
-              {/* v2.31.1 — 카드가 여러 개면 좌우로 밀어서 봅니다(가로 스크롤 · 스크롤바 숨김) */}
+              {/* v2.32 — 썸네일(사진) 위 · 제목 아래 매거진형 카드. 390px 에서 2.3~2.5장이 보여
+                  옆으로 넘길 수 있다는 게 바로 보이고, 카드를 누르면 장소 미리보기 + [한 번에 담기]. */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={styles.curatedScroll}
                 contentContainerStyle={styles.curatedRow}
+                snapToInterval={POSTER_WIDTH + 10}
+                decelerationRate="fast"
                 testID="collections-curated-row"
               >
                 {curated.map((item) => (
-                  <View key={item.id} style={styles.curatedCard} testID={'curated-card-' + item.id}>
-                    <Pressable
-                      style={styles.curatedMain}
-                      onPress={() => setCuratedPreview(item)}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.title + ' 장소 보기'}
-                      testID={'curated-open-' + item.id}
-                    >
-                      <View style={styles.curatedTop}>
-                        <View style={[styles.curatedEmoji, { backgroundColor: item.color + '1F' }]}>
-                          <Text style={styles.curatedEmojiText}>{item.emoji}</Text>
-                        </View>
-                        <View style={styles.curatedBadges}>
-                          <View style={styles.curatedBadge}>
-                            <Text style={styles.curatedBadgeText}>{item.badge || '기획전'}</Text>
+                  <Pressable
+                    key={item.id}
+                    style={styles.poster}
+                    onPress={() => setCuratedPreview(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel={item.title + ' 장소 보기'}
+                    testID={'curated-card-' + item.id}
+                  >
+                    <View style={styles.posterThumb} testID={'curated-thumb-' + item.id}>
+                      {item.imageUrl ? (
+                        <Image
+                          source={{ uri: item.imageUrl }}
+                          style={styles.posterImage}
+                          resizeMode="cover"
+                          accessibilityIgnoresInvertColors
+                          accessibilityLabel={item.title + ' 썸네일'}
+                        />
+                      ) : (
+                        // 이미지 주소가 없으면 색 + 이모지로 그린 기본 커버 (사진이 없어도 비지 않게)
+                        <View style={[styles.posterFallback, { backgroundColor: item.color + '2A' }]}>
+                          <View style={[styles.posterBlob, { backgroundColor: item.color + '33' }]} />
+                          <View style={[styles.posterBlobSmall, { backgroundColor: item.color + '26' }]} />
+                          <View style={styles.posterEmojiPlate}>
+                            <Text style={styles.posterEmoji}>{item.emoji}</Text>
                           </View>
-                          {!!item.sponsor && (
-                            <Text style={styles.curatedSponsor} numberOfLines={1}>
-                              {item.sponsor}
-                            </Text>
-                          )}
                         </View>
-                      </View>
-                      <Text style={styles.curatedTitle} numberOfLines={1}>
-                        {item.title}
-                      </Text>
-                      <Text style={styles.curatedDesc} numberOfLines={2}>
-                        {item.description || '장소 ' + item.places.length + '곳을 모았어요'}
-                      </Text>
-                      <View style={styles.curatedFoot}>
-                        <Text style={styles.curatedCount}>{item.places.length}곳</Text>
-                        <Text style={styles.curatedNames} numberOfLines={1}>
-                          {item.places.slice(0, 2).map((p) => p.name).join(' · ') || '장소 없음'}
+                      )}
+                      <View style={styles.posterBadge}>
+                        <Text style={styles.posterBadgeText} numberOfLines={1}>
+                          {item.badge || '기획전'}
                         </Text>
                       </View>
-                    </Pressable>
-                    <Pressable
-                      style={styles.curatedAddBtn}
-                      onPress={() => importCurated(item)}
-                      disabled={importing || !item.places.length}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.title + ' 내 지도에 담기'}
-                      testID={'curated-import-' + item.id}
-                    >
-                      <Ionicons name="add" size={13} color={colors.white} />
-                      <Text style={styles.curatedAddText}>담기</Text>
-                    </Pressable>
-                  </View>
+                    </View>
+                    <Text style={styles.posterTitle} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.posterSub} numberOfLines={1}>
+                      {curatedCoverLine(item)}
+                    </Text>
+                  </Pressable>
                 ))}
               </ScrollView>
+            </View>
+          ) : null}
+
+          {/* ── v2.32 ⚡ 빠른 테마 칩 — 누르면 그 기획전의 장소가 바로 열립니다 (최대 두 줄) ── */}
+          {themeChips.length ? (
+            <View style={styles.chipGrid} testID="collections-theme-chips">
+              {themeChips.map((chip, index) => (
+                <Pressable
+                  key={chip.key}
+                  style={styles.themeChip}
+                  onPress={() => setCuratedPreview(chip.item)}
+                  accessibilityRole="button"
+                  accessibilityLabel={chip.label + ' 테마 열기'}
+                  testID={'theme-chip-' + index}
+                >
+                  <Text style={styles.themeChipEmoji}>{chip.emoji}</Text>
+                  <Text style={styles.themeChipText} numberOfLines={1}>
+                    {chip.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          {/* ── v2.32 📌 슬림 배너 — 한 줄 스폰서·이벤트 안내 (켜 둔 배너가 없으면 그리지 않음) ── */}
+          {banners.length ? (
+            <View style={styles.slimCard} testID="collections-banners">
+              {banners.map((banner, index) => {
+                const hasLink = /^https?:\/\//i.test(String(banner.linkUrl || ''));
+                return (
+                  <Pressable
+                    key={banner.id}
+                    style={[styles.slimRow, index > 0 && styles.slimRowDivide]}
+                    onPress={() => hasLink && openBannerLink(banner.linkUrl)}
+                    accessibilityRole={hasLink ? 'link' : 'text'}
+                    accessibilityLabel={[banner.badge, banner.title, banner.subtitle].filter(Boolean).join(' · ')}
+                    testID={'collections-banner-' + banner.id}
+                  >
+                    {banner.imageUrl ? (
+                      <Image
+                        source={{ uri: banner.imageUrl }}
+                        style={styles.slimThumb}
+                        resizeMode="cover"
+                        accessibilityIgnoresInvertColors
+                        accessibilityLabel={banner.title + ' 배너 이미지'}
+                      />
+                    ) : (
+                      <View style={styles.slimBadge}>
+                        <Text style={styles.slimBadgeText} numberOfLines={1}>
+                          {banner.badge || '기획전'}
+                        </Text>
+                      </View>
+                    )}
+                    <Text style={styles.slimTitle} numberOfLines={1}>
+                      {banner.title}
+                      {banner.subtitle ? <Text style={styles.slimSub}>{'  ' + banner.subtitle}</Text> : null}
+                    </Text>
+                    {hasLink ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} /> : null}
+                  </Pressable>
+                );
+              })}
             </View>
           ) : null}
 
@@ -923,7 +939,6 @@ export default function CollectionsScreen({
         onClose={() => setCuratedPreview(null)}
         onImport={importCurated}
         busy={importing}
-        extraSub="운영자 추천"
         testID="curated-preview"
       />
     </View>
@@ -969,85 +984,103 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
-  // ── v2.31 📌 배너 · 🗂️ 기획전
-  bannerSection: { marginBottom: 2 },
-  bannerRow: { gap: 10, paddingRight: 4 },
-  bannerCard: {
-    paddingHorizontal: 16,
-    paddingTop: 13,
-    paddingBottom: 14,
-    borderRadius: radius.xl,
-    backgroundColor: colors.charcoal,
-    gap: 5,
-    ...cardShadow,
-  },
-  bannerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  bannerBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    backgroundColor: colors.brand,
-  },
-  bannerBadgeText: { color: colors.white, fontSize: 10, fontWeight: '800', letterSpacing: -0.1 },
-  bannerLinkHint: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  bannerLinkText: { color: colors.charcoalSub, fontSize: 10, fontWeight: '700' },
-  bannerTitle: { color: colors.white, fontSize: 16, fontWeight: '800', letterSpacing: -0.4, marginTop: 2 },
-  bannerSub: { color: colors.charcoalSub, fontSize: 11.5, fontWeight: '600' },
+  // ── v2.32 🖼️ 사진형 포스터 · ⚡ 테마 칩 · 📌 슬림 배너
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 8,
-    marginBottom: 8,
+    marginBottom: 10,
   },
   // v2.31.1 — 가로 카드 줄이 제 높이만 차지하게(flexGrow:0) 두고, 넘치는 카드는 잘리지 않고 옆으로 밀립니다.
   //   (웹에서는 `overflow-x:auto` 네이티브 가로 스크롤이 그대로 동작 — `touch-action:pan-x` 를 주면
   //    카드 위에서 세로로 밀 때 화면 스크롤이 막히므로 일부러 넣지 않았습니다)
   curatedScroll: { flexGrow: 0, flexShrink: 0 },
   curatedRow: { gap: 10, paddingRight: 4, paddingBottom: 2 },
-  curatedCard: {
-    width: 236,
-    borderRadius: radius.xl,
+  poster: { width: POSTER_WIDTH },
+  posterThumb: {
+    width: POSTER_WIDTH,
+    height: 156,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: colors.lineSoft,
+    borderWidth: 1,
+    borderColor: 'rgba(17,24,39,0.06)',
+  },
+  posterImage: { width: '100%', height: '100%' },
+  posterFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  // 은은한 원 두 개로 사진이 없어도 '표지'처럼 보이게 (색은 기획전 포인트 색)
+  posterBlob: { position: 'absolute', width: 150, height: 150, borderRadius: 75, top: -44, left: -34 },
+  posterBlobSmall: { position: 'absolute', width: 96, height: 96, borderRadius: 48, bottom: -30, right: -20 },
+  // 이모지를 흰 원판 위에 올려 '사진 없는 표지'로 보이게
+  posterEmojiPlate: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.86)',
+  },
+  posterEmoji: { fontSize: 42, lineHeight: 50 },
+  posterBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+  },
+  posterBadgeText: { fontSize: 9.5, fontWeight: '800', color: colors.charcoal, letterSpacing: -0.1 },
+  posterTitle: {
+    marginTop: 9,
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '800',
+    color: colors.text,
+    letterSpacing: -0.4,
+  },
+  posterSub: { marginTop: 3, fontSize: 11.5, fontWeight: '600', color: colors.textSub },
+  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  themeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    maxWidth: 172,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 999,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  themeChipEmoji: { fontSize: 14 },
+  themeChipText: { flexShrink: 1, fontSize: 12, fontWeight: '800', color: colors.text },
+  slimCard: {
+    borderRadius: 16,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.line,
     overflow: 'hidden',
-    ...cardShadow,
   },
-  curatedMain: { paddingHorizontal: 13, paddingTop: 12, paddingBottom: 8, gap: 4 },
-  curatedTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  curatedEmoji: {
-    width: 32,
-    height: 32,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  curatedEmojiText: { fontSize: 16 },
-  curatedBadges: { flex: 1, minWidth: 0, gap: 2 },
-  curatedBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 999,
-    backgroundColor: colors.brandSoft,
-  },
-  curatedBadgeText: { fontSize: 9.5, fontWeight: '800', color: colors.brandDark },
-  curatedSponsor: { fontSize: 9.5, fontWeight: '700', color: colors.textMuted },
-  curatedTitle: { ...typography.body, fontSize: 13.5, fontWeight: '800', marginTop: 4 },
-  curatedDesc: { ...typography.tiny, fontSize: 11, lineHeight: 16, minHeight: 32 },
-  curatedFoot: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
-  curatedCount: { fontSize: 10.5, fontWeight: '800', color: colors.brandDark },
-  curatedNames: { flex: 1, minWidth: 0, fontSize: 10.5, fontWeight: '600', color: colors.textMuted },
-  curatedAddBtn: {
+  slimRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingVertical: 8,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  slimRowDivide: { borderTopWidth: 1, borderTopColor: colors.lineSoft },
+  slimThumb: { width: 26, height: 26, borderRadius: 8, backgroundColor: colors.lineSoft },
+  slimBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
     backgroundColor: colors.charcoal,
   },
-  curatedAddText: { color: colors.white, fontSize: 11.5, fontWeight: '800' },
+  slimBadgeText: { color: colors.white, fontSize: 9.5, fontWeight: '800', letterSpacing: -0.1 },
+  slimTitle: { flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: '800', color: colors.text, letterSpacing: -0.2 },
+  slimSub: { fontSize: 11, fontWeight: '600', color: colors.textMuted },
   emptyCard: {
     alignItems: 'center',
     paddingHorizontal: 20,

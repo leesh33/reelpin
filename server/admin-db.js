@@ -173,22 +173,35 @@ function banners(options) {
   return rpcCall('reelpin_admin_banners', {}, options);
 }
 
+/**
+ * v2.32 — DB 에 새 열(image_url · chip)이 아직 없을 때를 대비한 **안전한 재시도**.
+ *   · 먼저 새 인자까지 붙여 부르고, 함수가 없다는 응답(PGRST202)이 오면
+ *     예전 인자만으로 한 번 더 부릅니다 → /admin 저장이 줄어들지 않습니다.
+ *   · 그때는 `extrasSkipped: true` 를 돌려주어 화면이 “사진은 DB 준비 후 저장” 이라고 알립니다.
+ *     (필요한 SQL 은 supabase/curation.sql 의 `alter table … add column if not exists`)
+ */
+async function saveWithFallback(name, full, legacy, options) {
+  const first = await rpcCall(name, full, options);
+  if (first.ok || first.error !== 'admin-schema-missing') return first;
+  const retry = await rpcCall(name, legacy, options);
+  if (!retry.ok) return retry;
+  return { ...retry, extrasSkipped: true };
+}
+
 /** 📌 배너 저장 (id 없으면 새로) */
 function saveBanner(target, options) {
   const t = target || {};
-  return rpcCall(
-    'reelpin_admin_save_banner',
-    {
-      p_id: t.id || null,
-      p_title: String(t.title || ''),
-      p_subtitle: String(t.subtitle || ''),
-      p_badge: String(t.badge || '기획전'),
-      p_link_url: String(t.linkUrl || ''),
-      p_active: t.active !== false,
-      p_sort_order: Number.isFinite(Number(t.sortOrder)) ? Number(t.sortOrder) : 0,
-    },
-    options
-  );
+  const base = {
+    p_id: t.id || null,
+    p_title: String(t.title || ''),
+    p_subtitle: String(t.subtitle || ''),
+    p_badge: String(t.badge || '기획전'),
+    p_link_url: String(t.linkUrl || ''),
+    p_active: t.active !== false,
+    p_sort_order: Number.isFinite(Number(t.sortOrder)) ? Number(t.sortOrder) : 0,
+  };
+  const full = { ...base, p_image_url: String(t.imageUrl || '') };
+  return saveWithFallback('reelpin_admin_save_banner', full, base, options);
 }
 
 /** 📌 배너 삭제 */
@@ -204,22 +217,20 @@ function curated(options) {
 /** 🗂️ 기획전 저장 (id 없으면 새로) */
 function saveCurated(target, options) {
   const t = target || {};
-  return rpcCall(
-    'reelpin_admin_save_curated',
-    {
-      p_id: t.id || null,
-      p_title: String(t.title || ''),
-      p_description: String(t.description || ''),
-      p_sponsor: String(t.sponsor || ''),
-      p_badge: String(t.badge || '기획전'),
-      p_emoji: String(t.emoji || '📂'),
-      p_color: String(t.color || '#0D9488'),
-      p_places: Array.isArray(t.places) ? t.places : [],
-      p_active: t.active !== false,
-      p_sort_order: Number.isFinite(Number(t.sortOrder)) ? Number(t.sortOrder) : 0,
-    },
-    options
-  );
+  const base = {
+    p_id: t.id || null,
+    p_title: String(t.title || ''),
+    p_description: String(t.description || ''),
+    p_sponsor: String(t.sponsor || ''),
+    p_badge: String(t.badge || '기획전'),
+    p_emoji: String(t.emoji || '📂'),
+    p_color: String(t.color || '#0D9488'),
+    p_places: Array.isArray(t.places) ? t.places : [],
+    p_active: t.active !== false,
+    p_sort_order: Number.isFinite(Number(t.sortOrder)) ? Number(t.sortOrder) : 0,
+  };
+  const full = { ...base, p_image_url: String(t.imageUrl || ''), p_chip: String(t.chip || '') };
+  return saveWithFallback('reelpin_admin_save_curated', full, base, options);
 }
 
 /** 🗂️ 기획전 삭제 */
@@ -230,6 +241,7 @@ function deleteCurated(id, options) {
 module.exports = {
   RPC_TIMEOUT_MS,
   rpcCall,
+  saveWithFallback,
   overview,
   members,
   pins,

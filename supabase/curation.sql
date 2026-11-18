@@ -6,7 +6,7 @@
 --
 --  · 앱(컬렉션 탭)은 **anon 키 + 아래 공개 함수**만 호출합니다.
 --      reelpin_public_banners()            … 켜 둔 배너 목록
---      reelpin_public_curated(id?)         … 켜 둔 기획전(추천 컬렉션)
+--      reelpin_public_curated(id?)         … 켜 둔 기획전(추천 컬렉션) — v2.32 부터 imageUrl · chip 포함
 --      reelpin_share_collection(...)       … 내 컬렉션을 링크로 공유(스냅샷 저장)
 --      reelpin_shared_collection(id)       … 공유 링크로 들어온 컬렉션 하나 읽기
 --  · 어드민(/admin)은 **관리자 본인 토큰**으로 `reelpin_admin_*` 함수만 호출하고,
@@ -122,6 +122,14 @@ create table if not exists public.reelpin_shared_collections (
 create index if not exists reelpin_shared_created_idx
   on public.reelpin_shared_collections (created_at desc);
 
+-- 1-4. v2.32 🖼️ 사진형 포스터 카드 · ⚡ 빠른 테마 칩 ─────────────────
+--   이미 테이블이 있는 DB 에도 안전하게 열을 더합니다(`add column if not exists` — 다시 실행해도 안전).
+--   · image_url : 컬렉션 탭 카드의 썸네일 사진 주소(비어 있으면 색 + 이모지 커버로 보입니다)
+--   · chip      : 빠른 테마 칩의 짧은 이름(비어 있으면 제목 앞 두 낱말로 만듭니다)
+alter table public.reelpin_curated_collections add column if not exists image_url text not null default '';
+alter table public.reelpin_curated_collections add column if not exists chip      text not null default '';
+alter table public.reelpin_banners             add column if not exists image_url text not null default '';
+
 -- 2. RLS — 정책 없이 켜기만 합니다(직접 접근 차단, 함수로만 접근) ──────────
 alter table public.reelpin_banners             enable row level security;
 alter table public.reelpin_curated_collections enable row level security;
@@ -148,6 +156,7 @@ as $$
                'subtitle',  b.subtitle,
                'badge',     b.badge,
                'linkUrl',   b.link_url,
+               'imageUrl',  b.image_url,
                'sortOrder', b.sort_order,
                'createdAt', b.created_at
              )
@@ -182,6 +191,8 @@ as $$
                'badge',       c.badge,
                'emoji',       c.emoji,
                'color',       c.color,
+               'imageUrl',    c.image_url,
+               'chip',        c.chip,
                'places',      c.places,
                'placeCount',  jsonb_array_length(c.places),
                'sortOrder',   c.sort_order,
@@ -314,6 +325,7 @@ begin
                'subtitle',  b.subtitle,
                'badge',     b.badge,
                'linkUrl',   b.link_url,
+               'imageUrl',  b.image_url,
                'sortOrder', b.sort_order,
                'active',    b.active,
                'createdAt', b.created_at,
@@ -336,13 +348,17 @@ revoke all on function public.reelpin_admin_banners() from public;
 revoke all on function public.reelpin_admin_banners() from anon;
 grant execute on function public.reelpin_admin_banners() to authenticated;
 
--- 4-2. 📌 배너 저장 (id 없으면 새로, 있으면 수정)
+-- 4-2. 📌 배너 저장 (id 없으면 새로, 있으면 수정) · v2.32 썸네일 이미지
+--   v2.32 — 인자가 하나(image_url) 늘어 예전 시그니처를 지우고 새로 만듭니다.
+--     (예전 함수를 남겨 두면 PostgREST 가 이름만 보고 둘 중 하나를 고르지 못해 호출이 실패합니다)
+drop function if exists public.reelpin_admin_save_banner(uuid, text, text, text, text, boolean, int);
 create or replace function public.reelpin_admin_save_banner(
   p_id uuid,
   p_title text,
   p_subtitle text default '',
   p_badge text default '기획전',
   p_link_url text default '',
+  p_image_url text default '',
   p_active boolean default true,
   p_sort_order int default 0
 )
@@ -354,6 +370,7 @@ as $$
 declare
   v_title text := left(btrim(coalesce(p_title, '')), 40);
   v_link  text := left(btrim(coalesce(p_link_url, '')), 300);
+  v_image text := left(btrim(coalesce(p_image_url, '')), 500);
   v_row   public.reelpin_banners;
 begin
   if not public.reelpin_is_admin() then
@@ -365,14 +382,18 @@ begin
   if v_link <> '' and v_link !~* '^https?://' then
     raise exception 'banner link must start with http' using errcode = '22023';
   end if;
+  if v_image <> '' and v_image !~* '^https?://' then
+    raise exception 'banner image must start with http' using errcode = '22023';
+  end if;
 
   if p_id is null then
-    insert into public.reelpin_banners (title, subtitle, badge, link_url, active, sort_order)
+    insert into public.reelpin_banners (title, subtitle, badge, link_url, image_url, active, sort_order)
     values (
       v_title,
       left(btrim(coalesce(p_subtitle, '')), 80),
       left(coalesce(nullif(btrim(coalesce(p_badge, '')), ''), '기획전'), 10),
       v_link,
+      v_image,
       coalesce(p_active, true),
       coalesce(p_sort_order, 0)
     )
@@ -383,6 +404,7 @@ begin
            subtitle   = left(btrim(coalesce(p_subtitle, '')), 80),
            badge      = left(coalesce(nullif(btrim(coalesce(p_badge, '')), ''), '기획전'), 10),
            link_url   = v_link,
+           image_url  = v_image,
            active     = coalesce(p_active, true),
            sort_order = coalesce(p_sort_order, 0),
            updated_at = now()
@@ -398,17 +420,18 @@ begin
     'ok', true,
     'banner', jsonb_build_object(
       'id', v_row.id, 'title', v_row.title, 'subtitle', v_row.subtitle, 'badge', v_row.badge,
-      'linkUrl', v_row.link_url, 'sortOrder', v_row.sort_order, 'active', v_row.active
+      'linkUrl', v_row.link_url, 'imageUrl', v_row.image_url,
+      'sortOrder', v_row.sort_order, 'active', v_row.active
     )
   );
 end;
 $$;
 
-comment on function public.reelpin_admin_save_banner(uuid, text, text, text, text, boolean, int) is 'v2.31 — 어드민: 배너 저장(새로/수정)';
+comment on function public.reelpin_admin_save_banner(uuid, text, text, text, text, text, boolean, int) is 'v2.32 — 어드민: 배너 저장(새로/수정 · 썸네일 이미지)';
 
-revoke all on function public.reelpin_admin_save_banner(uuid, text, text, text, text, boolean, int) from public;
-revoke all on function public.reelpin_admin_save_banner(uuid, text, text, text, text, boolean, int) from anon;
-grant execute on function public.reelpin_admin_save_banner(uuid, text, text, text, text, boolean, int) to authenticated;
+revoke all on function public.reelpin_admin_save_banner(uuid, text, text, text, text, text, boolean, int) from public;
+revoke all on function public.reelpin_admin_save_banner(uuid, text, text, text, text, text, boolean, int) from anon;
+grant execute on function public.reelpin_admin_save_banner(uuid, text, text, text, text, text, boolean, int) to authenticated;
 
 -- 4-3. 📌 배너 삭제
 create or replace function public.reelpin_admin_delete_banner(p_id uuid)
@@ -463,6 +486,8 @@ begin
                'badge',       c.badge,
                'emoji',       c.emoji,
                'color',       c.color,
+               'imageUrl',    c.image_url,
+               'chip',        c.chip,
                'places',      c.places,
                'placeCount',  jsonb_array_length(c.places),
                'sortOrder',   c.sort_order,
@@ -487,7 +512,9 @@ revoke all on function public.reelpin_admin_curated() from public;
 revoke all on function public.reelpin_admin_curated() from anon;
 grant execute on function public.reelpin_admin_curated() to authenticated;
 
--- 4-5. 🗂️ 기획전 저장 (id 없으면 새로, 있으면 수정)
+-- 4-5. 🗂️ 기획전 저장 (id 없으면 새로, 있으면 수정) · v2.32 썸네일 이미지 · 테마 칩
+--   v2.32 — 인자가 둘(image_url · chip) 늘어 예전 시그니처를 지우고 새로 만듭니다.
+drop function if exists public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, boolean, int);
 create or replace function public.reelpin_admin_save_curated(
   p_id uuid,
   p_title text,
@@ -497,6 +524,8 @@ create or replace function public.reelpin_admin_save_curated(
   p_emoji text default '📂',
   p_color text default '#0D9488',
   p_places jsonb default '[]'::jsonb,
+  p_image_url text default '',
+  p_chip text default '',
   p_active boolean default true,
   p_sort_order int default 0
 )
@@ -508,6 +537,7 @@ as $$
 declare
   v_title  text  := left(btrim(coalesce(p_title, '')), 40);
   v_places jsonb := public.reelpin_normalize_places(p_places, 50);
+  v_image  text  := left(btrim(coalesce(p_image_url, '')), 500);
   v_row    public.reelpin_curated_collections;
 begin
   if not public.reelpin_is_admin() then
@@ -519,10 +549,13 @@ begin
   if jsonb_array_length(v_places) = 0 then
     raise exception 'curated places required' using errcode = '22023';
   end if;
+  if v_image <> '' and v_image !~* '^https?://' then
+    raise exception 'curated image must start with http' using errcode = '22023';
+  end if;
 
   if p_id is null then
     insert into public.reelpin_curated_collections
-      (title, description, sponsor, badge, emoji, color, places, active, sort_order)
+      (title, description, sponsor, badge, emoji, color, places, image_url, chip, active, sort_order)
     values (
       v_title,
       left(btrim(coalesce(p_description, '')), 100),
@@ -531,6 +564,8 @@ begin
       left(coalesce(nullif(btrim(coalesce(p_emoji, '')), ''), '📂'), 8),
       case when coalesce(p_color, '') ~ '^#[0-9a-fA-F]{6}$' then p_color else '#0D9488' end,
       v_places,
+      v_image,
+      left(btrim(coalesce(p_chip, '')), 10),
       coalesce(p_active, true),
       coalesce(p_sort_order, 0)
     )
@@ -544,6 +579,8 @@ begin
            emoji       = left(coalesce(nullif(btrim(coalesce(p_emoji, '')), ''), '📂'), 8),
            color       = case when coalesce(p_color, '') ~ '^#[0-9a-fA-F]{6}$' then p_color else '#0D9488' end,
            places      = v_places,
+           image_url   = v_image,
+           chip        = left(btrim(coalesce(p_chip, '')), 10),
            active      = coalesce(p_active, true),
            sort_order  = coalesce(p_sort_order, 0),
            updated_at  = now()
@@ -560,17 +597,18 @@ begin
     'curated', jsonb_build_object(
       'id', v_row.id, 'title', v_row.title, 'description', v_row.description, 'sponsor', v_row.sponsor,
       'badge', v_row.badge, 'emoji', v_row.emoji, 'color', v_row.color, 'places', v_row.places,
+      'imageUrl', v_row.image_url, 'chip', v_row.chip,
       'placeCount', jsonb_array_length(v_row.places), 'sortOrder', v_row.sort_order, 'active', v_row.active
     )
   );
 end;
 $$;
 
-comment on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, boolean, int) is 'v2.31 — 어드민: 기획전 저장(새로/수정)';
+comment on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, text, text, boolean, int) is 'v2.32 — 어드민: 기획전 저장(새로/수정 · 썸네일 이미지 · 테마 칩)';
 
-revoke all on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, boolean, int) from public;
-revoke all on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, boolean, int) from anon;
-grant execute on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, boolean, int) to authenticated;
+revoke all on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, text, text, boolean, int) from public;
+revoke all on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, text, text, boolean, int) from anon;
+grant execute on function public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, text, text, boolean, int) to authenticated;
 
 -- 4-6. 🗂️ 기획전 삭제
 create or replace function public.reelpin_admin_delete_curated(p_id uuid)

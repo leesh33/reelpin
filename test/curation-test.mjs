@@ -11,11 +11,15 @@ import {
   BANNER_LIMITS,
   CURATED_LIMITS,
   buildCollectionShareUrl,
+  buildThemeChips,
   clearCollectionShareFromLocation,
   collectionShareBody,
+  curatedChipLabel,
+  curatedCoverLine,
   importSummary,
   normalizeBanner,
   normalizeCurated,
+  normalizeImageUrl,
   normalizePlace,
   normalizePlaces,
   parseCollectionShareParam,
@@ -33,6 +37,8 @@ import {
   sharedAsCurated,
 } from '../src/services/curation.js';
 import adminHandler from '../api/admin.js';
+// v2.32 — DB 열이 아직 없을 때의 안전한 재시도
+import adminDb from '../server/admin-db.js';
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -440,6 +446,168 @@ check(
   'DB: 관리자 함수는 매번 reelpin_is_admin() 확인',
   (curationSql.match(/if not public\.reelpin_is_admin\(\) then/g) || []).length === 6,
   String((curationSql.match(/if not public\.reelpin_is_admin\(\) then/g) || []).length)
+);
+
+
+// ─────────────────────────────────────────────────────────────
+// ④ v2.32 🖼️ 사진형 포스터 카드 · ⚡ 테마 칩 — 이미지 주소 · 칩 이름 · 저장 경로
+// ─────────────────────────────────────────────────────────────
+check('v2.32 utils: 이미지 주소는 http(s) 만', normalizeImageUrl('https://a.b/c.jpg') === 'https://a.b/c.jpg' && normalizeImageUrl('http://a.b/c.png') === 'http://a.b/c.png', normalizeImageUrl('https://a.b/c.jpg'));
+check('v2.32 utils: javascript: · data: 주소는 버림', normalizeImageUrl('javascript:alert(1)') === '' && normalizeImageUrl('data:image/png;base64,AAA') === '', '');
+check('v2.32 utils: 이미지 주소 길이 상한(500)', normalizeImageUrl('https://a.b/' + 'x'.repeat(600)).length === 500, String(normalizeImageUrl('https://a.b/' + 'x'.repeat(600)).length));
+
+const poster = normalizeCurated({
+  id: 'cu-9',
+  title: '서울 도심 산책 코스',
+  badge: '기획전',
+  emoji: '🏞️',
+  color: '#0D9488',
+  imageUrl: 'https://images.example.com/poster.jpg',
+  chip: '산책',
+  places: [{ name: '경복궁' }, { name: '광화문광장' }, { name: '청계광장' }],
+});
+check('v2.32 utils: 기획전에 썸네일 주소가 담김', poster && poster.imageUrl === 'https://images.example.com/poster.jpg', JSON.stringify(poster && poster.imageUrl));
+check('v2.32 utils: 기획전에 테마 칩 이름이 담김', poster && poster.chip === '산책', JSON.stringify(poster && poster.chip));
+check(
+  'v2.32 utils: DB snake_case(image_url)도 읽음',
+  normalizeCurated({ title: 'A', image_url: 'https://a.b/x.jpg' }).imageUrl === 'https://a.b/x.jpg',
+  ''
+);
+check(
+  'v2.32 utils: 이미지 주소가 없으면 빈 값(기본 커버)',
+  normalizeCurated({ title: 'B' }).imageUrl === '' && normalizeCurated({ title: 'B', imageUrl: 'ftp://a/b' }).imageUrl === '',
+  ''
+);
+check('v2.32 utils: 배너도 썸네일 주소를 가짐', normalizeBanner({ title: '배너', imageUrl: 'https://a.b/bn.jpg' }).imageUrl === 'https://a.b/bn.jpg', '');
+check('v2.32 utils: 한 줄 부제 — `3곳 · 경복궁 외`', curatedCoverLine(poster) === '3곳 · 경복궁 외', curatedCoverLine(poster));
+check('v2.32 utils: 한 줄 부제 — 한 곳이면 `1곳 · 이름`', curatedCoverLine({ places: [{ name: '베통' }] }) === '1곳 · 베통', '');
+check('v2.32 utils: 한 줄 부제 — 장소가 없으면 `장소 없음`', curatedCoverLine({ places: [] }) === '장소 없음', '');
+check('v2.32 utils: 칩 이름은 운영자 입력이 먼저', curatedChipLabel({ title: '영등포 직장인 점심 코스', chip: '점심' }) === '점심', '');
+check('v2.32 utils: 칩 이름이 없으면 제목 앞 두 낱말', curatedChipLabel({ title: '서울 도심 산책 코스' }) === '서울 도심', curatedChipLabel({ title: '서울 도심 산책 코스' }));
+check('v2.32 utils: 칩 이름은 10자 상한', Array.from(curatedChipLabel({ title: '아주아주아주아주아주 긴 제목입니다' })).length <= 10, curatedChipLabel({ title: '아주아주아주아주아주 긴 제목입니다' }));
+check(
+  'v2.32 utils: 테마 칩은 같은 이름 한 번 · 최대 6개(두 줄)',
+  (() => {
+    const chips = buildThemeChips([
+      { id: 'a', title: '데이트 코스' },
+      { id: 'b', title: '데이트 코스' },
+      { id: 'c', title: '혼밥 코스' },
+      { id: 'd', title: '가족 나들이' },
+      { id: 'e', title: '비 오는 날' },
+      { id: 'f', title: '야경 명소' },
+      { id: 'g', title: '주말 산책' },
+    ]);
+    return chips.length === 6 && chips.filter((c) => c.label === '데이트 코스').length === 1;
+  })(),
+  ''
+);
+
+// admin 라우트 — 이미지·칩 인자를 그대로 넘기고, 잘못된 주소는 400
+calls = [];
+rpcReply = { ok: true, body: { ok: true } };
+res2 = makeRes();
+await adminHandler(
+  adminReq('POST', {
+    body: {
+      action: 'save-curated',
+      title: '서울 도심 산책 코스',
+      emoji: '🏞️',
+      color: '#0D9488',
+      imageUrl: 'https://images.example.com/poster.jpg',
+      chip: '산책',
+      places: [{ name: '경복궁' }],
+    },
+  }),
+  res2
+);
+let posterArgs = {};
+(() => {
+  const call = calls.find((c) => c.url.indexOf('/rpc/reelpin_admin_save_curated') >= 0);
+  posterArgs = call ? JSON.parse(call.init.body) : {};
+})();
+check('v2.32 admin: 기획전 저장에 p_image_url · p_chip 을 넘김', posterArgs.p_image_url === 'https://images.example.com/poster.jpg' && posterArgs.p_chip === '산책', JSON.stringify(posterArgs));
+check('v2.32 admin: 저장 성공은 extrasSkipped=false', res2.statusCode === 200 && res2.jsonBody().extrasSkipped === false, res2.body);
+
+res2 = makeRes();
+await adminHandler(
+  adminReq('POST', {
+    body: { action: 'save-curated', title: '기획전', imageUrl: 'javascript:alert(1)', places: [{ name: 'A' }] },
+  }),
+  res2
+);
+check('v2.32 admin: javascript: 이미지 주소는 400', res2.statusCode === 400 && res2.jsonBody().ok === false, res2.body);
+
+calls = [];
+res2 = makeRes();
+await adminHandler(
+  adminReq('POST', {
+    body: { action: 'save-banner', title: '배너', subtitle: '부제', imageUrl: 'https://images.example.com/bn.jpg' },
+  }),
+  res2
+);
+const bannerImgArgs = (() => {
+  const call = calls.find((c) => c.url.indexOf('/rpc/reelpin_admin_save_banner') >= 0);
+  return call ? JSON.parse(call.init.body) : {};
+})();
+check('v2.32 admin: 배너 저장에도 p_image_url 을 넘김', bannerImgArgs.p_image_url === 'https://images.example.com/bn.jpg', JSON.stringify(bannerImgArgs));
+
+res2 = makeRes();
+await adminHandler(adminReq('POST', { body: { action: 'save-banner', title: '배너', imageUrl: 'ftp://a/b.jpg' } }), res2);
+check('v2.32 admin: ftp 이미지 주소는 400', res2.statusCode === 400, res2.body);
+
+// 서버 — DB 에 열이 아직 없으면(PGRST202) 예전 인자로 다시 저장
+const fallbackCalls = [];
+const fallbackFetch = async (url, init = {}) => {
+  const body = JSON.parse(init.body || '{}');
+  fallbackCalls.push({ name: String(url).split('/rpc/')[1], body });
+  if (Object.prototype.hasOwnProperty.call(body, 'p_image_url') || Object.prototype.hasOwnProperty.call(body, 'p_chip')) {
+    return {
+      ok: false,
+      status: 404,
+      json: async () => ({ code: 'PGRST202', message: 'Could not find the function public.reelpin_admin_save_curated' }),
+    };
+  }
+  return { ok: true, status: 200, json: async () => ({ ok: true, curated: { id: 'cu-9' } }) };
+};
+const fallbackOptions = {
+  cfg: { url: 'https://zdcdvjlssncsawpqsjwe.supabase.co', anonKey: 'sb_publishable_test' },
+  token: 'admin-token',
+  fetchImpl: fallbackFetch,
+};
+const fallbackSave = await adminDb.saveCurated(
+  { title: '서울 도심 산책 코스', places: [{ name: '경복궁' }], imageUrl: 'https://a.b/p.jpg', chip: '산책' },
+  fallbackOptions
+);
+check(
+  'v2.32 서버: 열이 없으면 예전 인자로 재시도해 저장은 성공',
+  fallbackSave.ok === true && fallbackSave.extrasSkipped === true && fallbackCalls.length === 2,
+  JSON.stringify({ ok: fallbackSave.ok, skipped: fallbackSave.extrasSkipped, calls: fallbackCalls.length })
+);
+check(
+  'v2.32 서버: 두 번째 호출에는 이미지·칩 인자가 없음',
+  fallbackCalls[1] && !('p_image_url' in fallbackCalls[1].body) && !('p_chip' in fallbackCalls[1].body),
+  JSON.stringify(fallbackCalls[1] && fallbackCalls[1].body)
+);
+const bannerFallback = await adminDb.saveBanner({ title: '배너', imageUrl: 'https://a.b/b.jpg' }, fallbackOptions);
+check(
+  'v2.32 서버: 배너도 같은 방식으로 재시도',
+  bannerFallback.ok === true && bannerFallback.extrasSkipped === true,
+  JSON.stringify(bannerFallback)
+);
+
+// DB 스크립트 — 열 추가 · 함수 시그니처 교체
+check(
+  'v2.32 DB: image_url · chip 열을 안전하게 더함',
+  curationSql.indexOf("alter table public.reelpin_curated_collections add column if not exists image_url") > 0 &&
+    curationSql.indexOf("add column if not exists chip") > 0 &&
+    curationSql.indexOf("alter table public.reelpin_banners             add column if not exists image_url") > 0,
+  ''
+);
+check(
+  'v2.32 DB: 예전 저장 함수 시그니처를 지우고 새로 만듦(고르기 실패 방지)',
+  curationSql.indexOf('drop function if exists public.reelpin_admin_save_curated(uuid, text, text, text, text, text, text, jsonb, boolean, int)') > 0 &&
+    curationSql.indexOf('drop function if exists public.reelpin_admin_save_banner(uuid, text, text, text, text, boolean, int)') > 0,
+  ''
 );
 
 console.log(fails ? '\nCURATION_TEST_FAILED (' + fails + ')' : '\nCURATION_TESTS_OK');

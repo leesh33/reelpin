@@ -18,6 +18,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -29,6 +30,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
+// v2.32 — 기획전 편집 모달의 포스터 미리보기 (앱과 같은 규칙으로 그립니다)
+import { curatedChipLabel, curatedCoverLine } from '../utils/curation';
 import { getSession, signInWithOAuth, signOut as signOutCloud } from '../services/cloudSync';
 import { loadSupabaseConfig, isSupabaseConfigured } from '../services/supabase';
 
@@ -115,8 +118,8 @@ const PREVIEW_DATA = {
   ],
   // v2.31 — 📌 기획전·배너 탭 미리보기 (실제 데이터가 아닙니다)
   banners: [
-    { id: 'b-1', title: '이번 주 릴스핀 인기 맛집', subtitle: '릴스에서 본 그 가게, 지금 담아 두세요', badge: '기획전', linkUrl: '', sortOrder: 0, active: true, createdAt: '2026-11-18T07:00:00+09:00' },
-    { id: 'b-2', title: '연말 모임 장소, 미리 잡아 두세요', subtitle: '스폰서 · ○○예약', badge: '스폰서', linkUrl: 'https://example.com', sortOrder: 1, active: false, createdAt: '2026-11-17T18:00:00+09:00' },
+    { id: 'b-1', title: '이번 주 릴스핀 인기 맛집', subtitle: '릴스에서 본 그 가게, 지금 담아 두세요', badge: '기획전', linkUrl: '', imageUrl: '', sortOrder: 0, active: true, createdAt: '2026-11-18T07:00:00+09:00' },
+    { id: 'b-2', title: '연말 모임 장소, 미리 잡아 두세요', subtitle: '스폰서 · ○○예약', badge: '스폰서', linkUrl: 'https://example.com', imageUrl: '', sortOrder: 1, active: false, createdAt: '2026-11-17T18:00:00+09:00' },
   ],
   curated: [
     {
@@ -127,6 +130,8 @@ const PREVIEW_DATA = {
       badge: '기획전',
       emoji: '🍜',
       color: '#0D9488',
+      imageUrl: '',
+      chip: '점심',
       places: [
         { name: '베통 성수', category: '베이커리', area: '성수동', address: '서울 성동구 연무장길 18', lat: 37.5445, lng: 127.0557 },
         { name: '디오디아', category: '카페', area: '연남동', address: '서울 마포구 동교로 00', lat: 37.5628, lng: 126.9252 },
@@ -231,7 +236,7 @@ async function callAdmin({ view, query, method = 'GET', body, token }) {
       message: (data && data.message) || '요청을 처리하지 못했어요.',
     };
   }
-  return { ok: true, status: res.status, data: (data && data.data) != null ? data.data : data, email: data && data.email };
+  return { ok: true, status: res.status, data: (data && data.data) != null ? data.data : data, email: data && data.email, extrasSkipped: Boolean(data && data.extrasSkipped) };
 }
 
 // ── 작은 조각들 ─────────────────────────────────────────────
@@ -407,6 +412,7 @@ function BannerEditModal({ target, onCancel, onSave, busy }) {
   const [subtitle, setSubtitle] = useState('');
   const [badge, setBadge] = useState('기획전');
   const [linkUrl, setLinkUrl] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [active, setActive] = useState(true);
 
@@ -416,9 +422,12 @@ function BannerEditModal({ target, onCancel, onSave, busy }) {
     setSubtitle(target.subtitle || '');
     setBadge(target.badge || '기획전');
     setLinkUrl(target.linkUrl || '');
+    setImageUrl(target.imageUrl || '');
     setSortOrder(String(target.sortOrder != null ? target.sortOrder : 0));
     setActive(target.active !== false);
   }, [target]);
+  const thumb = /^https?:\/\//i.test(imageUrl.trim()) ? imageUrl.trim() : '';
+  const hasLink = /^https?:\/\//i.test(linkUrl.trim());
 
   if (!target) return null;
   return (
@@ -426,7 +435,7 @@ function BannerEditModal({ target, onCancel, onSave, busy }) {
       <View style={styles.modalDim}>
         <ScrollView style={styles.modalCardTall} contentContainerStyle={styles.modalCardTallInner}>
           <Text style={styles.modalTitle}>{target.id ? '배너 수정' : '새 배너'}</Text>
-          <Text style={styles.modalMessage}>컬렉션 탭 맨 위에 보이는 카드입니다 · 390px 화면 기준 한 줄에 하나</Text>
+          <Text style={styles.modalMessage}>컬렉션 탭에서 테마 칩 아래에 보이는 한 줄 배너입니다 · 켜 둔 것만 순서대로 보입니다</Text>
 
           <Text style={styles.fieldLabel}>제목</Text>
           <TextInput
@@ -482,6 +491,40 @@ function BannerEditModal({ target, onCancel, onSave, busy }) {
             accessibilityLabel="배너 링크"
           />
 
+          {/* v2.32 — 한 줄 배너 왼쪽에 들어갈 작은 사진 (없으면 배지가 그 자리에) */}
+          <Text style={styles.fieldLabel}>썸네일 이미지 URL (선택 · http/https)</Text>
+          <TextInput
+            value={imageUrl}
+            onChangeText={setImageUrl}
+            style={styles.fieldInput}
+            placeholder="https://…/banner.jpg"
+            placeholderTextColor={colors.textMuted}
+            maxLength={500}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel="배너 썸네일 이미지 URL"
+            testID="banner-image-url"
+          />
+          <View style={styles.previewBox} testID="banner-preview">
+            <View style={styles.slimPreviewRow}>
+              {thumb ? (
+                <Image source={{ uri: thumb }} style={styles.slimPreviewThumb} resizeMode="cover" />
+              ) : (
+                <View style={styles.slimPreviewBadge}>
+                  <Text style={styles.slimPreviewBadgeText} numberOfLines={1}>
+                    {badge.trim() || '기획전'}
+                  </Text>
+                </View>
+              )}
+              <Text style={styles.slimPreviewTitle} numberOfLines={1}>
+                {title.trim() || '배너 제목'}
+                {subtitle.trim() ? <Text style={styles.slimPreviewSub}>{'  ' + subtitle.trim()}</Text> : null}
+              </Text>
+              {hasLink ? <Ionicons name="chevron-forward" size={13} color={colors.textMuted} /> : null}
+            </View>
+            <Text style={styles.previewHint}>컬렉션 탭의 한 줄 배너 미리보기</Text>
+          </View>
+
           <View style={styles.modalSplitRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.fieldLabel}>순서 (작을수록 앞)</Text>
@@ -513,6 +556,7 @@ function BannerEditModal({ target, onCancel, onSave, busy }) {
                   subtitle: subtitle.trim(),
                   badge: badge.trim() || '기획전',
                   linkUrl: linkUrl.trim(),
+                  imageUrl: thumb,
                   sortOrder: Number(sortOrder) || 0,
                   active,
                 })
@@ -560,6 +604,8 @@ function CuratedEditModal({ target, onCancel, onSave, busy, pins, onLoadPins }) 
   const [badge, setBadge] = useState('기획전');
   const [emoji, setEmoji] = useState('📂');
   const [color, setColor] = useState('#0D9488');
+  const [imageUrl, setImageUrl] = useState('');
+  const [chip, setChip] = useState('');
   const [sortOrder, setSortOrder] = useState('0');
   const [active, setActive] = useState(true);
   const [places, setPlaces] = useState([]);
@@ -578,6 +624,8 @@ function CuratedEditModal({ target, onCancel, onSave, busy, pins, onLoadPins }) 
     setBadge(target.badge || '기획전');
     setEmoji(target.emoji || '📂');
     setColor(target.color || '#0D9488');
+    setImageUrl(target.imageUrl || '');
+    setChip(target.chip || '');
     setSortOrder(String(target.sortOrder != null ? target.sortOrder : 0));
     setActive(target.active !== false);
     setPlaces(Array.isArray(target.places) ? target.places.slice() : []);
@@ -594,6 +642,9 @@ function CuratedEditModal({ target, onCancel, onSave, busy, pins, onLoadPins }) 
   }, [target, onLoadPins]);
 
   if (!target) return null;
+
+  const posterImage = /^https?:\/\//i.test(imageUrl.trim()) ? imageUrl.trim() : '';
+  const previewChip = curatedChipLabel({ chip: chip.trim(), title: title.trim() });
 
   const chosen = new Set(places.map((p) => String(p.name || '').trim().toLowerCase()));
   const keyword = query.trim().toLowerCase();
@@ -703,6 +754,72 @@ function CuratedEditModal({ target, onCancel, onSave, busy, pins, onLoadPins }) 
               />
             ))}
             <ToggleChip on={active} label="기획전 노출" onPress={() => setActive((v) => !v)} />
+          </View>
+
+          {/* v2.32 — 컬렉션 탭 카드에 들어갈 사진 · 빠른 테마 칩 */}
+          <Text style={styles.fieldLabel}>썸네일 이미지 URL (선택 · http/https)</Text>
+          <TextInput
+            value={imageUrl}
+            onChangeText={setImageUrl}
+            style={styles.fieldInput}
+            placeholder="https://…/poster.jpg · 비우면 색 + 이모지 커버"
+            placeholderTextColor={colors.textMuted}
+            maxLength={500}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel="기획전 썸네일 이미지 URL"
+            testID="curated-image-url"
+          />
+          <Text style={styles.fieldLabel}>빠른 테마 칩 이름 (선택 · 10자)</Text>
+          <TextInput
+            value={chip}
+            onChangeText={setChip}
+            style={styles.fieldInput}
+            placeholder="예: 데이트 · 비우면 제목 앞 두 낱말"
+            placeholderTextColor={colors.textMuted}
+            maxLength={10}
+            autoCapitalize="none"
+            accessibilityLabel="기획전 빠른 테마 칩 이름"
+            testID="curated-chip-input"
+          />
+
+          {/* 앱과 같은 규칙으로 그리는 포스터 카드 · 테마 칩 미리보기 */}
+          <View style={styles.posterPreviewBox} testID="curated-poster-preview">
+            <View style={styles.posterPreviewRow}>
+              <View style={styles.posterPreviewCard}>
+                <View style={styles.posterPreviewThumb}>
+                  {posterImage ? (
+                    <Image source={{ uri: posterImage }} style={styles.posterPreviewImage} resizeMode="cover" />
+                  ) : (
+                    <View style={[styles.posterPreviewFallback, { backgroundColor: color + '24' }]}>
+                      <Text style={{ fontSize: 30 }}>{emoji}</Text>
+                    </View>
+                  )}
+                  <View style={styles.posterPreviewBadge}>
+                    <Text style={styles.posterPreviewBadgeText} numberOfLines={1}>
+                      {badge.trim() || '기획전'}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.posterPreviewTitle} numberOfLines={2}>
+                  {title.trim() || '기획전 제목'}
+                </Text>
+                <Text style={styles.posterPreviewSub} numberOfLines={1}>
+                  {curatedCoverLine({ places })}
+                </Text>
+              </View>
+              <View style={{ flex: 1, minWidth: 0, gap: 5 }}>
+                <Text style={styles.previewHintLabel}>포스터 카드</Text>
+                <Text style={styles.previewSubHint}>컬렉션 탭에서 좌우로 넘겨 보는 카드</Text>
+                <Text style={[styles.previewHintLabel, { marginTop: 6 }]}>빠른 테마 칩</Text>
+                <View style={styles.previewChipPill}>
+                  <Text style={{ fontSize: 13 }}>{emoji}</Text>
+                  <Text style={styles.previewChipPillText} numberOfLines={1}>
+                    {previewChip || '테마 칩'}
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
 
           <Text style={styles.fieldLabel}>담긴 장소 {places.length}곳 (최대 50)</Text>
@@ -861,6 +978,8 @@ function CuratedEditModal({ target, onCancel, onSave, busy, pins, onLoadPins }) 
                   badge: badge.trim() || '기획전',
                   emoji,
                   color,
+                  imageUrl: posterImage,
+                  chip: chip.trim(),
                   sortOrder: Number(sortOrder) || 0,
                   active,
                   places,
@@ -1268,7 +1387,13 @@ export default function AdminScreen({ preview = false }) {
         return;
       }
       setBannerEditing(null);
-      showToast(values.id ? '배너를 고쳤어요' : '배너를 올렸어요 · 컬렉션 탭 맨 위에 보입니다');
+      showToast(
+        res.extrasSkipped
+          ? '배너를 저장했어요 · 사진은 DB 준비 후 저장됩니다'
+          : values.id
+            ? '배너를 고쳤어요'
+            : '배너를 올렸어요 · 컬렉션 탭 맨 위에 보입니다'
+      );
       loadTab('curation');
     },
     [preview, currentToken, showToast, loadTab]
@@ -1294,6 +1419,7 @@ export default function AdminScreen({ preview = false }) {
           subtitle: item.subtitle,
           badge: item.badge,
           linkUrl: item.linkUrl,
+          imageUrl: item.imageUrl || '',
           sortOrder: item.sortOrder,
           active: !item.active,
         },
@@ -1348,7 +1474,13 @@ export default function AdminScreen({ preview = false }) {
         return;
       }
       setCuratedEditing(null);
-      showToast(values.id ? '기획전을 고쳤어요' : '기획전을 올렸어요 · 컬렉션 탭에 보입니다');
+      showToast(
+        res.extrasSkipped
+          ? '기획전을 저장했어요 · 사진·테마 칩은 DB 준비 후 저장됩니다'
+          : values.id
+            ? '기획전을 고쳤어요'
+            : '기획전을 올렸어요 · 컬렉션 탭에 보입니다'
+      );
       loadTab('curation');
     },
     [preview, currentToken, showToast, loadTab]
@@ -1376,6 +1508,8 @@ export default function AdminScreen({ preview = false }) {
           badge: item.badge,
           emoji: item.emoji,
           color: item.color,
+          imageUrl: item.imageUrl || '',
+          chip: item.chip || '',
           places: item.places,
           sortOrder: item.sortOrder,
           active: !item.active,
@@ -1828,7 +1962,7 @@ export default function AdminScreen({ preview = false }) {
       <View style={styles.sectionHead}>
         <View>
           <Text style={styles.sectionTitle}>📌 배너 {banners.length}개</Text>
-          <Text style={styles.sectionHint}>컬렉션 탭 맨 위 · 켜 둔 것만 보입</Text>
+          <Text style={styles.sectionHint}>컬렉션 탭 테마 칩 아래 한 줄 · 켜 둔 것만 보입</Text>
         </View>
         <Pressable
           style={styles.newCurationBtn}
@@ -1856,6 +1990,7 @@ export default function AdminScreen({ preview = false }) {
                 <View style={styles.pinTitleRow}>
                   <Pill text={item.badge || '기획전'} tone="brand" />
                   <Pill text={item.active ? '켜짐' : '꺼짐'} tone={item.active ? 'visit' : 'muted'} />
+                  {item.imageUrl ? <Pill text="사진" tone="muted" /> : null}
                   <Text style={styles.curationOrder}>순서 {item.sortOrder != null ? item.sortOrder : 0}</Text>
                 </View>
                 <Text style={styles.curationTitle} numberOfLines={1}>
@@ -1914,7 +2049,7 @@ export default function AdminScreen({ preview = false }) {
       <View style={styles.sectionHead}>
         <View>
           <Text style={styles.sectionTitle}>🗂️ 기획전 {curated.length}개</Text>
-          <Text style={styles.sectionHint}>운영자 추천 · 스폰서 묶음 · [담기] 로 내 지도에 들어감</Text>
+          <Text style={styles.sectionHint}>사진형 포스터 카드 · [내 지도에 한 번에 담기]</Text>
         </View>
         <Pressable
           style={styles.newCurationBtn}
@@ -1940,13 +2075,18 @@ export default function AdminScreen({ preview = false }) {
                 style={[styles.curationRow, i === curated.length - 1 && styles.rowLast]}
                 testID={'admin-curated-' + item.id}
               >
-                <View style={[styles.curationEmoji, { backgroundColor: (item.color || '#0D9488') + '1F' }]}>
-                  <Text style={{ fontSize: 17 }}>{item.emoji || '📂'}</Text>
+                <View style={[styles.curationEmoji, { backgroundColor: (item.color || '#0D9488') + '1F', overflow: 'hidden' }]}>
+                  {item.imageUrl ? (
+                    <Image source={{ uri: item.imageUrl }} style={styles.curationThumb} resizeMode="cover" />
+                  ) : (
+                    <Text style={{ fontSize: 17 }}>{item.emoji || '📂'}</Text>
+                  )}
                 </View>
                 <View style={styles.curationBody}>
                   <View style={styles.pinTitleRow}>
                     <Pill text={item.badge || '기획전'} tone="brand" />
                     <Pill text={item.active ? '켜짐' : '꺼짐'} tone={item.active ? 'visit' : 'muted'} />
+                    {item.chip ? <Pill text={item.chip} tone="muted" /> : null}
                     <Text style={styles.curationOrder}>
                       {places.length}곳 · 순서 {item.sortOrder != null ? item.sortOrder : 0}
                     </Text>
@@ -2544,6 +2684,86 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  curationThumb: { width: 36, height: 36, borderRadius: 12 },
+  // ── v2.32 🖼️ 편집 모달의 미리보기 (한 줄 배너 · 포스터 카드 · 테마 칩) ────
+  previewBox: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    gap: 6,
+  },
+  slimPreviewRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  slimPreviewThumb: { width: 26, height: 26, borderRadius: 8, backgroundColor: colors.lineSoft },
+  slimPreviewBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: colors.charcoal,
+  },
+  slimPreviewBadgeText: { color: colors.white, fontSize: 9.5, fontWeight: '800' },
+  slimPreviewTitle: { flex: 1, minWidth: 0, fontSize: 12, fontWeight: '800', color: colors.text },
+  slimPreviewSub: { fontSize: 10.5, fontWeight: '600', color: colors.textMuted },
+  previewHint: { fontSize: 9.5, fontWeight: '700', color: colors.textMuted },
+  posterPreviewBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  posterPreviewRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  posterPreviewCard: { width: 116 },
+  posterPreviewThumb: {
+    width: 116,
+    height: 118,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: colors.lineSoft,
+  },
+  posterPreviewImage: { width: '100%', height: '100%' },
+  posterPreviewFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  posterPreviewBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+  },
+  posterPreviewBadgeText: { fontSize: 8.5, fontWeight: '800', color: colors.charcoal },
+  posterPreviewTitle: { marginTop: 6, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: colors.text },
+  posterPreviewSub: { marginTop: 2, fontSize: 10, fontWeight: '600', color: colors.textSub },
+  previewHintLabel: { fontSize: 10, fontWeight: '800', color: colors.textSub },
+  previewSubHint: { fontSize: 9.5, color: colors.textMuted, lineHeight: 14 },
+  previewChipPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    alignSelf: 'flex-start',
+    maxWidth: 150,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 999,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  previewChipPillText: { flexShrink: 1, fontSize: 11, fontWeight: '800', color: colors.text },
   curationBody: { flex: 1, minWidth: 0, gap: 2 },
   curationOrder: { fontSize: 10.5, fontWeight: '700', color: colors.textMuted },
   curationTitle: { fontSize: 13.5, fontWeight: '800', color: colors.text, marginTop: 2 },
