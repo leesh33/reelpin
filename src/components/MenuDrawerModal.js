@@ -9,7 +9,8 @@
  * v2.19.1 부터는 시트 틀을 `LayerSheet` 한 컴포넌트로 씁니다 — 돋보기·알림모음·목록보기도
  * 같은 틀이라 **높이(86%)·딤·모서리·헤더·바깥 탭 닫기**가 모두 같습니다.
  *
- *   · 머리  : 다크 차콜 바 — ☰ 아이콘 + `내 정보` / `계정 · 동기화 · 설정` + ✕
+ *   · 머리  : 다크 차콜 바 — ☰ 아이콘 + `내 정보` + ✕
+ *             (v2.32.2 — 상훈 님 "레이어 팝업에 있는 그런 텍스트들은 다 빼자" → 보조줄 없음)
  *             서브 페이지에 들어가면 같은 자리가 `‹ 뒤로` + 서브 제목으로 바뀝니다
  *   · 본문  : ProfileScreen(panel)
  *             ① 통합 계정·클라우드 동기화 카드
@@ -34,18 +35,10 @@ import { colors } from '../theme';
 import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.32.1';
+export const APP_VERSION_LABEL = '릴스핀 v2.32.2';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
-
-/** 서브 페이지 헤더의 보조줄 */
-const SUB_SUB = {
-  categories: '분류 만들기 · 이름 바꾸기 · 지우기',
-  radius: '저장한 곳에 가까워지면 알려드려요',
-  alerts: '반경 안에 들어오면 알려드릴까요',
-  about: '버전 · 번들 ID · 데이터 저장',
-};
 
 export default function MenuDrawerModal({
   visible,
@@ -210,11 +203,6 @@ export default function MenuDrawerModal({
       onClose={onClose}
       icon="menu"
       title={subPage ? subPage.title : '내 정보'}
-      sub={
-        subPage
-          ? '☰ 메뉴 · ' + (SUB_SUB[sub] || '')
-          : '계정 · 동기화 · 설정'
-      }
       onBack={subPage ? () => setSub(null) : null}
       closeLabel="메뉴 닫기"
       overlayTestID="menu-drawer-overlay"

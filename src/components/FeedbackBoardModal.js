@@ -8,7 +8,7 @@
  *
  * 생김새 — 다른 레이어 팝업(내 정보 · 돋보기 · 알림 모음 · 목록 보기)과 **같은 틀**입니다.
  *   · `LayerSheet`(높이 86% · 딤 · 둥근 위 모서리 · 다크 차콜 헤더 · 바깥 탭 닫기)
- *   · 머리 : 💬 제안 · 버그 제보 / 기능 아이디어 · 버그 신고 · 공감
+ *   · 머리 : 💬 제안 · 버그 제보 (v2.32.2 — 보조줄 없음, 제목 + ✕ 만)
  *            글쓰기로 들어가면 같은 자리가 `‹` + `글쓰기` 로 바뀝니다
  *   · 본문 : 💡 기능 제안 | 🐛 버그 제보 2탭 · `최신순 | 공감순` · ✍️ 글쓰기
  *            카드마다 상태 배지(접수됨/반영됨/수정됨) · 작성자 · 상대 시각 · 앱 버전 · 👍 공감
@@ -500,7 +500,6 @@ export default function FeedbackBoardModal({
       onClose={onClose}
       icon="chatbubble-ellipses"
       title={composing ? '글쓰기' : '제안 · 버그 제보'}
-      sub={composing ? current.emoji + ' ' + current.label + ' 작성' : '기능 아이디어 · 버그 신고 · 공감'}
       onBack={composing ? closeCompose : null}
       closeLabel="제보 게시판 닫기"
       overlayTestID="feedback-overlay"

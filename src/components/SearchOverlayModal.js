@@ -12,6 +12,8 @@
  *   · v2.19.1 부터 **내 정보·알림 모음·목록 보기와 같은 `LayerSheet` 틀**을 씁니다 —
  *     높이 86% · 같은 딤 · 같은 둥근 모서리 · 다크 차콜 헤더(딥 틸 원 아이콘 + `내 장소 검색` + ✕) ·
  *     바깥을 누르면 닫힘
+ *   · v2.32.2 — 상훈 님 요청: "레이어 팝업에 있는 그런 텍스트들은 다 빼자"
+ *     → 헤더 아래 `내 핀 N곳에서 찾기 · …` 보조줄을 지우고 **제목 + ✕** 만 남깁니다.
  *   · v2.20.2 — 상훈 님 요청: "돋보기 버튼의 타이틀은 내장소 검색 으로 해줘" → 헤더 타이틀 `내 장소 검색`
  *   · ① 검색 인풋 … 내 핀(가게명·지역·주소·분류·메뉴·한줄 메모) 실시간 검색 + ✕ 지우기
  *   · ② 추천 장소 … 내 위치 기준 **가까운 저장 장소**, 위치를 모르면 **아직 안 가본(!visited)** 곳
@@ -67,10 +69,6 @@ export default function SearchOverlayModal({
     if (visible) setQuery('');
   }, [visible]);
 
-  const savedCount = useMemo(
-    () => (Array.isArray(pins) ? pins.filter((pin) => pin && pin.id).length : 0),
-    [pins]
-  );
   const results = useMemo(() => overlaySearchResults(pins, query), [pins, query]);
   const recommend = useMemo(() => recommendPlaces(pins, myCoords), [pins, myCoords]);
   const popular = useMemo(() => popularPlaceRows(pins, POPULAR_PLACES), [pins]);
@@ -99,11 +97,6 @@ export default function SearchOverlayModal({
       onClose={onClose}
       icon="search"
       title="내 장소 검색"
-      sub={
-        savedCount
-          ? '내 핀 ' + savedCount + '곳에서 찾기 · ' + SEARCH_PLACEHOLDER
-          : '아직 저장한 핀이 없어요'
-      }
       closeLabel={closeLabel}
       overlayTestID="search-overlay"
       testID="search-overlay-sheet"

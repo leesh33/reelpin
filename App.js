@@ -274,12 +274,14 @@ export default function App() {
 
   /** v2.31 — 운영자 배너·기획전 불러오기 (설정 전·오프라인이면 조용히 빈 목록) */
   const loadCuration = useCallback(async () => {
-    // v2.32.1 — 컬렉션 탭에서 피드를 숨긴 동안에는 **부르지 않습니다** (헛된 요청·로딩 없음).
-    //   다시 보이게 하려면 CollectionsScreen 의 SHOW_CURATED_FEED 를 true 로.
-    if (!SHOW_CURATED_FEED) return;
+    // v2.32.2 — 배너는 `내 컬렉션` 위 **광고 슬롯**에 쓰므로 피드 숨김과 무관하게 **항상** 부릅니다.
+    //   기획전(curated)만 피드가 숨겨진 동안(SHOW_CURATED_FEED = false)에는 부르지 않습니다.
     // 웹은 Supabase 설정을 `/api/auth-config` 에서 늦게 받아옵니다 — 먼저 기다립니다.
     await loadSupabaseConfig();
-    const [bannerResult, curatedResult] = await Promise.all([fetchPublicBanners(), fetchPublicCurated()]);
+    const [bannerResult, curatedResult] = await Promise.all([
+      fetchPublicBanners(),
+      SHOW_CURATED_FEED ? fetchPublicCurated() : Promise.resolve({ ok: false, items: [] }),
+    ]);
     if (bannerResult.ok) setBanners(bannerResult.items);
     if (curatedResult.ok) setCurated(curatedResult.items);
   }, []);

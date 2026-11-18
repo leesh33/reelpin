@@ -21,13 +21,10 @@ export default function CollectionPreviewSheet({
   onImport,
   importLabel = '내 지도에 한 번에 담기',
   busy = false,
-  extraSub = '',
   testID = 'collection-preview',
 }) {
   if (!visible || !item) return null;
   const places = Array.isArray(item.places) ? item.places : [];
-  const meta = [item.badge, item.sponsor, places.length + '곳'].filter(Boolean).join(' · ');
-  const sub = [meta, extraSub].filter(Boolean).join(' · ');
 
   return (
     <LayerSheet
@@ -35,7 +32,6 @@ export default function CollectionPreviewSheet({
       onClose={onClose}
       icon="albums"
       title={(item.emoji ? item.emoji + ' ' : '') + (item.title || '컬렉션')}
-      sub={sub}
       testID={testID}
       overlayTestID={testID + '-overlay'}
       titleTestID={testID + '-title'}

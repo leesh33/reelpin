@@ -24,7 +24,7 @@ import {
 import GeofenceToast, { GEOFENCE_TOAST_MS, nearbyToastMessage } from '../components/GeofenceToast';
 import PinDetailSheet from '../components/PinDetailSheet';
 // v2.20 — 매장 상세 조회(영업시간·추천 메뉴)
-// v2.28.0 — 지도 위 영업 상태 뱃지(bannerOpeningBadge)는 배너와 함께 걷어냈습니다(3초 토스트엔 넣지 않음).
+// v2.28.0 — 지도 위 영업 상태 뱃지(bannerOpeningBadge)는 배너와 함께 걷어냈습니다(한 줄 토스트엔 넣지 않음).
 import { fetchPlaceInfo, needsPlaceInfo, pinHoursPatch } from '../services/placeInfo';
 import {
   NEARBY_RADIUS_M,
@@ -322,7 +322,7 @@ export default function MapScreen({
         writeLocationGrantedFlag(true);
         if (announce) {
           const near = findNearbyPins(pinsRef.current, position, NEARBY_RADIUS_M);
-          // v2.28.0 — 반경 안에 저장한 곳이 있으면 **3초짜리 한 줄 토스트**(nearKey 효과)가 알립니다.
+          // v2.28.0 — 반경 안에 저장한 곳이 있으면 **한 줄 토스트**(nearKey 효과)가 알립니다. (v2.32.2 — 6초)
           //   예전처럼 `주변 500m` 패널을 저절로 열어 지도를 가리지 않습니다.
           if (!near.length) {
             const close = nearestPin(pinsRef.current, position);
@@ -607,13 +607,13 @@ export default function MapScreen({
     };
   }, [alertsOn, applyPosition, showToast, onToggleAlerts]);
 
-  // ── v2.28.0 반경 500m 알림 = **3초짜리 한 줄 토스트** ─────────────────────
+  // ── v2.28.0 반경 500m 알림 = **한 줄 토스트** (v2.32.2 — 6초로 연장) ─────────
   //   상훈 님 결정(2026-11-18): "지도 위에 큰 카드로 떠 있는 배너는 지도를 가린다.
-  //   반경 500m 안에 저장한 곳이 있으면 작은 한 줄 토스트로 3초만 알려 주고,
+  //   반경 500m 안에 저장한 곳이 있으면 작은 한 줄 토스트로 몇 초만 알려 주고,
   //   계속 남는 표시는 헤더 🔔 뱃지 하나로 충분하다."
   //
   //   · 예전 GeofenceBanner(큰 카드 · 스와이프 닫기 · 영업 상태 뱃지)는 지도에서 걷어냈습니다.
-  //   · 토스트는 **반경 안(near)일 때만**, 한 번 뜨고 GEOFENCE_TOAST_MS(3.2초) 뒤 스스로 사라집니다.
+  //   · 토스트는 **반경 안(near)일 때만**, 한 번 뜨고 GEOFENCE_TOAST_MS(6초) 뒤 스스로 사라집니다.
   //   · 같은 가게 묶음(nearKey)은 세션에서 한 번만 — [내 위치]를 새로 누르면 다시 보입니다.
   //   · 지도는 가리지 않습니다: 상단 분류 칩 아래 한 줄, 좌우 🎛·`내 위치` 버튼과 멀리 떨어진 자리.
   const nearKey = useMemo(() => {
@@ -640,7 +640,7 @@ export default function MapScreen({
       setNearbyToast(null);
     }, GEOFENCE_TOAST_MS);
     // 정리(cleanup)에서 타이머를 끄지 않습니다 — 위치 갱신으로 nearby 가 새 배열이 되어도
-    // 3초 타이머는 그대로 흘러 스스로 사라져야 하기 때문입니다(아래 unmount 정리만).
+    // GEOFENCE_TOAST_MS(6초) 타이머는 그대로 흘러 스스로 사라져야 하기 때문입니다(아래 unmount 정리만).
     return undefined;
   }, [nearKey, nearKeyNonce, nearby.length]);
 
@@ -1090,7 +1090,6 @@ export default function MapScreen({
           onClose={toggleView}
           icon="list"
           title="목록 보기"
-          sub={'저장한 곳 ' + filtered.length + '곳 · 눌러서 지도에서 바로 보기'}
           closeLabel="목록 닫기"
           overlayTestID="pin-list-overlay"
           testID="pin-list-sheet"

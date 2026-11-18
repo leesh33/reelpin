@@ -64,6 +64,19 @@ export const POSTER_WIDTH = 142;
 export const SHOW_CURATED_FEED = false;
 
 /**
+ * v2.32.2 — `내 컬렉션` 위 **광고(스폰서) 배너 슬롯** 노출 스위치.
+ * ─────────────────────────────────────────────────────────────
+ * 상훈 님 요청(2026-11-18): "내 컬렉션 상단에 광고 배너 영역 하나 만들어놓자"
+ *   → 운영자 추천 · 기획전(`SHOW_CURATED_FEED = false`)은 그대로 숨긴 채,
+ *     **배너 자리만** 내 컬렉션 위에 다시 둡니다.
+ *
+ *   · `/admin` `📌 기획전·배너` 에서 **켜 둔 배너가 있으면** 그 배너가 그대로 뜹니다(누르면 링크).
+ *   · **켜 둔 배너가 0개면** 빈 자리가 생기지 않도록 `AD · 스폰서 배너 영역` 안내 슬롯을 그립니다
+ *     (자리 확인용 — 배너를 켜는 순간 그 배너로 바뀝니다).
+ */
+export const SHOW_AD_BANNER = true;
+
+/**
  * 목록 위쪽 요약 — `3개 컬렉션`
  * v2.31.1 — 상훈 님 요청: "내 컬렉션에서는 2곳 담김 이라는건 빼줘"
  *   → `· N곳 담김` 을 빼고 컬렉션 개수만 남깁니다. (pins 는 옛 호출부 호환용)
@@ -142,6 +155,8 @@ export default function CollectionsScreen({
   initialCollectionId = null,
   // v2.32.1 — 내부 검사용: 기본은 `SHOW_CURATED_FEED`(false = 숨김). 화면에서는 넘기지 않습니다.
   showCuratedFeed = SHOW_CURATED_FEED,
+  // v2.32.2 — 내부 검사용: 기본은 `SHOW_AD_BANNER`(true = 광고 슬롯 노출). 화면에서는 넘기지 않습니다.
+  showAdBanner = SHOW_AD_BANNER,
 }) {
   // 'list' — 컬렉션 카드 목록 / 'detail' — 한 컬렉션의 핀 담기·빼기
   const [mode, setMode] = useState(initialCollectionId ? 'detail' : 'list');
@@ -477,45 +492,63 @@ export default function CollectionsScreen({
             </View>
           ) : null}
 
-          {/* ── v2.32 📌 슬림 배너 — 한 줄 스폰서·이벤트 안내 (켜 둔 배너가 없으면 그리지 않음)
-              v2.32.1 — `SHOW_CURATED_FEED = false` 인 동안에는 그리지 않습니다. ── */}
-          {curatedFeedOn && banners.length ? (
-            <View style={styles.slimCard} testID="collections-banners">
-              {banners.map((banner, index) => {
-                const hasLink = /^https?:\/\//i.test(String(banner.linkUrl || ''));
-                return (
-                  <Pressable
-                    key={banner.id}
-                    style={[styles.slimRow, index > 0 && styles.slimRowDivide]}
-                    onPress={() => hasLink && openBannerLink(banner.linkUrl)}
-                    accessibilityRole={hasLink ? 'link' : 'text'}
-                    accessibilityLabel={[banner.badge, banner.title, banner.subtitle].filter(Boolean).join(' · ')}
-                    testID={'collections-banner-' + banner.id}
-                  >
-                    {banner.imageUrl ? (
-                      <Image
-                        source={{ uri: banner.imageUrl }}
-                        style={styles.slimThumb}
-                        resizeMode="cover"
-                        accessibilityIgnoresInvertColors
-                        accessibilityLabel={banner.title + ' 배너 이미지'}
-                      />
-                    ) : (
-                      <View style={styles.slimBadge}>
-                        <Text style={styles.slimBadgeText} numberOfLines={1}>
-                          {banner.badge || '기획전'}
+          {/* ── v2.32.2 📢 광고(스폰서) 배너 슬롯 — `내 컬렉션` 바로 위
+              · 켜 둔 배너가 있으면 그 배너(최대 그대로 목록)를 한 줄 카드로 보여 줍니다.
+              · 0개면 `AD · 스폰서 배너 영역` 안내 슬롯 — 배너를 켜면 바로 그 배너로 바뀝니다.
+              v2.32.1 의 `운영자 추천 · 기획전`·테마 칩 숨김과는 별개입니다(`SHOW_AD_BANNER`). ── */}
+          {SHOW_AD_BANNER && showAdBanner ? (
+            banners.length ? (
+              <View style={styles.slimCard} testID="collections-banners">
+                  {banners.map((banner, index) => {
+                    const hasLink = /^https?:\/\//i.test(String(banner.linkUrl || ''));
+                    return (
+                      <Pressable
+                        key={banner.id}
+                        style={[styles.slimRow, index > 0 && styles.slimRowDivide]}
+                        onPress={() => hasLink && openBannerLink(banner.linkUrl)}
+                        accessibilityRole={hasLink ? 'link' : 'text'}
+                        accessibilityLabel={[banner.badge, banner.title, banner.subtitle].filter(Boolean).join(' · ')}
+                        testID={'collections-banner-' + banner.id}
+                      >
+                        {banner.imageUrl ? (
+                          <Image
+                            source={{ uri: banner.imageUrl }}
+                            style={styles.slimThumb}
+                            resizeMode="cover"
+                            accessibilityIgnoresInvertColors
+                            accessibilityLabel={banner.title + ' 배너 이미지'}
+                          />
+                        ) : (
+                          <View style={styles.slimBadge}>
+                            <Text style={styles.slimBadgeText} numberOfLines={1}>
+                              {banner.badge || '기획전'}
+                            </Text>
+                          </View>
+                        )}
+                        <Text style={styles.slimTitle} numberOfLines={1}>
+                          {banner.title}
+                          {banner.subtitle ? <Text style={styles.slimSub}>{'  ' + banner.subtitle}</Text> : null}
                         </Text>
-                      </View>
-                    )}
-                    <Text style={styles.slimTitle} numberOfLines={1}>
-                      {banner.title}
-                      {banner.subtitle ? <Text style={styles.slimSub}>{'  ' + banner.subtitle}</Text> : null}
-                    </Text>
-                    {hasLink ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} /> : null}
-                  </Pressable>
-                );
-              })}
-            </View>
+                        {hasLink ? <Ionicons name="chevron-forward" size={14} color={colors.textMuted} /> : null}
+                      </Pressable>
+                    );
+                  })}
+                </View>
+            ) : (
+              <View style={styles.adSlot} testID="collections-ad-slot">
+                <View style={styles.adSlotTag}>
+                  <Text style={styles.adSlotTagText}>AD</Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.adSlotTitle} numberOfLines={1}>
+                    스폰서 배너 영역
+                  </Text>
+                  <Text style={styles.adSlotSub} numberOfLines={1}>
+                    관리자 기획전·배너에서 켠 배너가 이 자리에 보여요
+                  </Text>
+                </View>
+              </View>
+            )
           ) : null}
 
           <View style={styles.headRow}>
@@ -1104,6 +1137,28 @@ const styles = StyleSheet.create({
   slimBadgeText: { color: colors.white, fontSize: 9.5, fontWeight: '800', letterSpacing: -0.1 },
   slimTitle: { flex: 1, minWidth: 0, fontSize: 12.5, fontWeight: '800', color: colors.text, letterSpacing: -0.2 },
   slimSub: { fontSize: 11, fontWeight: '600', color: colors.textMuted },
+  // v2.32.2 — 켜 둔 배너가 0개일 때의 빈 광고 자리(점선 · AD 태그)
+  adSlot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 16,
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderStyle: 'dashed',
+  },
+  adSlotTag: {
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: colors.lineSoft,
+  },
+  adSlotTagText: { fontSize: 9.5, fontWeight: '800', color: colors.textMuted, letterSpacing: 0.4 },
+  adSlotTitle: { fontSize: 12.5, fontWeight: '800', color: colors.text, letterSpacing: -0.2 },
+  adSlotSub: { fontSize: 11, fontWeight: '600', color: colors.textMuted, marginTop: 1 },
   emptyCard: {
     alignItems: 'center',
     paddingHorizontal: 20,

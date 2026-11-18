@@ -469,11 +469,6 @@ export default function PasteScreen({
       <OverlayHeader
         icon="add"
         title="저장"
-        sub={
-          canUsePhoto
-            ? '릴스·쇼츠 링크 · 사진 · 가게명으로 찾아 내 지도에 꽂기'
-            : '릴스·쇼츠 링크 · 가게명으로 찾아 내 지도에 꽂기'
-        }
         onClose={onClose}
         closeLabel="닫기"
         testID="paste-header"

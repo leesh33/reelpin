@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────
  * 상훈 님 결정(2026-11-18):
  *   "지도 위에 큰 카드(배너)가 떠 있으면 지도가 가려진다. 반경 500m 안에 저장한 곳이 있으면
- *    `● 반경 500m 안에 N곳 있어요` 한 줄만 3초쯤 떠 있고, 계속 남는 표시는 헤더 🔔 뱃지 하나로
+ *    `● 반경 500m 안에 N곳 있어요` 한 줄만 몇 초만 떠 있고, 계속 남는 표시는 헤더 🔔 뱃지 하나로
  *    충분하다. [보기]를 누르면 알림 모음이 열리면 된다."
  *
  * 이 컴포넌트가 하는 일 / 안 하는 일
@@ -19,8 +19,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { NEARBY_RADIUS_M } from '../services/location';
 import { colors } from '../theme';
 
-/** 떠 있는 시간 — 3.2초(요청: 3~3.5초). */
-export const GEOFENCE_TOAST_MS = 3200;
+/** 떠 있는 시간 — 6초(상훈 님 요청 2026-11-18: 3.2초는 너무 빨리 사라져서 5~6초로). */
+export const GEOFENCE_TOAST_MS = 6000;
 /** 검사·딥링크용 이름 */
 export const GEOFENCE_TOAST_TESTID = 'geofence-toast';
 /** `보기` 버튼 이름 */

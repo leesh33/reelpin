@@ -59,9 +59,6 @@ export default function InAppPlaceModal({ pin, onClose, onToast }) {
                 <Text style={styles.title} numberOfLines={1}>
                   {pin.name}
                 </Text>
-                <Text style={styles.subtitle} numberOfLines={1}>
-                  {[pin.area, '네이버 플레이스'].filter(Boolean).join(' · ')}
-                </Text>
               </View>
               <Pressable
                 style={styles.externalBtn}
@@ -165,12 +162,6 @@ const styles = StyleSheet.create({
     ...typography.h2,
     fontSize: 17,
     color: colors.white,
-  },
-  subtitle: {
-    ...typography.tiny,
-    fontSize: 10.5,
-    marginTop: 2,
-    color: colors.charcoalSub,
   },
   externalBtn: {
     flexDirection: 'row',

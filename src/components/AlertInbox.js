@@ -40,21 +40,12 @@ export default function AlertInbox({
   const feed = buildAlertFeed(pins, myCoords, { radiusMeters });
   const distanceText = Math.round(feed.radiusMeters);
 
-  const summary = !feed.hasLocation
-    ? '위치를 켜면 지금 가까운 저장 장소를 모아 보여드려요'
-    : feed.inRadiusCount > 0
-    ? '내 위치 반경 ' + distanceText + 'm 안 ' + feed.inRadiusCount + '곳'
-    : feed.items.length > 0
-    ? '반경 ' + distanceText + 'm 안 0곳 · 가까운 곳부터 보여드려요'
-    : '반경 ' + distanceText + 'm 안에는 저장한 곳이 없어요';
-
   return (
     <LayerSheet
       visible={visible}
       onClose={onClose}
       icon="notifications"
       title="알림 모음"
-      sub={summary}
       closeLabel="알림 모음 닫기"
       overlayTestID="alert-inbox-overlay"
       testID="alert-inbox"

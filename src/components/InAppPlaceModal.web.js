@@ -186,9 +186,6 @@ export default function InAppPlaceModal({ pin, onClose }) {
             <Text style={styles.title} numberOfLines={1}>
               {pin.name}
             </Text>
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {[pin.area, '네이버 플레이스'].filter(Boolean).join(' · ')}
-            </Text>
           </View>
           <ExternalLink href={placeUrl} label="새 창으로 열기" style={styles.externalBtn}>
             <Ionicons name="open-outline" size={13} color={colors.white} />
@@ -311,12 +308,6 @@ const styles = StyleSheet.create({
     ...typography.h3,
     fontSize: 15,
     color: colors.white,
-  },
-  subtitle: {
-    ...typography.tiny,
-    fontSize: 10.5,
-    marginTop: 1,
-    color: colors.charcoalSub,
   },
   externalBtn: {
     flexDirection: 'row',

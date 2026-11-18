@@ -320,7 +320,7 @@ for (const [label, ok] of fakeBannerChecks) {
 const v228RuleChecks = [
   ['v2.28 토스트: 반경 안에 0곳이면 안 띄움', shouldToastNearby(0) === false && nearbyToastMessage(0) === ''],
   ['v2.28 토스트: 반경 안 N곳 → 한 줄 문구', nearbyToastMessage(2) === '반경 500m 안에 2곳 있어요'],
-  ['v2.28 토스트: 3초 뒤 스스로 사라짐(3~3.5초)', GEOFENCE_TOAST_MS >= 3000 && GEOFENCE_TOAST_MS <= 3500, String(GEOFENCE_TOAST_MS)],
+  ['v2.32.2 토스트: 6초 뒤 스스로 사라짐(5~6초)', GEOFENCE_TOAST_MS === 6000, String(GEOFENCE_TOAST_MS)],
   ['v2.28 토스트: 문구가 비면 아무것도 안 그림', renderToString(<GeofenceToast message="" onPress={noop} />) === ''],
 ];
 for (const [label, ok, extra] of v228RuleChecks) {
@@ -413,7 +413,7 @@ const placeChecks = [
   ['테마: 모달 헤더 다크 차콜 #1C1C1E', colors.charcoal === '#1C1C1E', colors.charcoal],
   ['테마: 헤더 보조 텍스트 #A1A1AA · 반투명 필', colors.charcoalSub === '#A1A1AA' && colors.charcoalPill === 'rgba(255,255,255,0.14)', colors.charcoalSub + ' / ' + colors.charcoalPill],
   ['웹 모달: 헤더 배경 charcoal + 차콜 구분선', webModalSource.indexOf('backgroundColor: colors.charcoal,') > 0 && webModalSource.indexOf('borderBottomColor: colors.charcoalLine') > 0],
-  ['웹 모달: 가게명 흰색 · 동네 연회색', /title: \{\s*\.\.\.typography\.h3,[\s\S]{0,60}?color: colors\.white/.test(webModalSource) && webModalSource.indexOf('color: colors.charcoalSub') > 0],
+  ['웹 모달: 가게명 흰색 · 헤더 부텍스트 없음', /title: \{\s*\.\.\.typography\.h3,[\s\S]{0,60}?color: colors\.white/.test(webModalSource) && webModalSource.indexOf('styles.subtitle') < 0],
   ['웹 모달: [새 창] 반투명 필 · 닫기 흰 ✕', webModalSource.indexOf('backgroundColor: colors.charcoalPill') > 0 && /name="close"[^>]*color=\{colors\.white\}/.test(webModalSource)],
   ['네이티브 모달: 헤더 블록 다크 차콜 + 흰 ✕', nativeModalSource.indexOf('backgroundColor: colors.charcoal,') > 0 && nativeModalSource.indexOf('backgroundColor: colors.charcoalPill') > 0 && /name="close"[^>]*color=\{colors\.white\}/.test(nativeModalSource)],
 ];
@@ -665,8 +665,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.20.1', pkg.version === '2.32.1', pkg.version],
-  ['버전: app.json 2.20.1', expoConfig.version === '2.32.1', expoConfig.version],
+  ['버전: package.json 2.20.1', pkg.version === '2.32.2', pkg.version],
+  ['버전: app.json 2.20.1', expoConfig.version === '2.32.2', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -1025,7 +1025,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.32.1") > 0],
+  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.32.2") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1196,7 +1196,7 @@ const v2141Checks = [
   // ① v2.28.0 — 반경 500m 알림은 세션에 한 번, 3초만
   ['알림 토스트: 반경 안 개수로 한 줄 문구(geofence-toast 렌더)', geofenceToastHtml.indexOf('geofence-toast') > 0 && geofenceToastHtml.indexOf('반경 500m 안에 2곳 있어요') > 0],
   ['지도: 같은 가게 묶음은 세션에 한 번만(shownNearKeyRef)', mapSource2141.indexOf('shownNearKeyRef') > 0 && mapSource2141.indexOf('if (shownNearKeyRef.current === nearKey) return undefined;') > 0],
-  ['지도: 3.2초 뒤 스스로 사라짐(GEOFENCE_TOAST_MS)', mapSource2141.indexOf('}, GEOFENCE_TOAST_MS);') > 0 && mapSource2141.indexOf('setNearbyToast(null)') > 0],
+  ['지도: 6초 뒤 스스로 사라짐(GEOFENCE_TOAST_MS)', mapSource2141.indexOf('}, GEOFENCE_TOAST_MS);') > 0 && mapSource2141.indexOf('setNearbyToast(null)') > 0],
   ['지도: [보기]는 🔔 알림 모음을 엽니다', /openNearbyFromToast = useCallback\(\(\) => \{[\s\S]{0,220}?header\.onPressAlerts\(\)/.test(mapSource2141)],
   ['지도: [내 위치]를 새로 누르면 다시 한 번 보여 줌', /const locateFromUser = useCallback\([\s\S]{0,220}?shownNearKeyRef\.current = ''/.test(mapSource2141)],
   ['지도: 예전 큰 배너(GeofenceBanner)는 지도에서 완전히 빠짐', mapSource2141.indexOf('<GeofenceBanner') < 0 && mapSource2141.indexOf('{bannerVisible && (') < 0 && mapSource2141.indexOf('onDismiss={dismissBanner}') < 0],
@@ -1321,7 +1321,7 @@ const v215Checks = [
   ['🔔: 지도 탭이 잡은 위치를 헤더와 공유', mapSource215.indexOf('onMyCoordsRef.current(position)') > 0 && appSource215.indexOf('onMyCoords={handleMyCoords}') > 0],
   ['v2.19: 내 정보 탭 제거 + 계정 카드는 ☰ 시트 안', appSource215.indexOf("setTab('profile')") < 0 && appSource215.indexOf("tab !== 'collections'") > 0 && profileSource215.indexOf('profile-account-card') > 0],
   // ⑤ 알림 모음 모달
-  ['알림 모음: 반경 500m 안 장소를 가까운 순으로', inboxOpenHtml.indexOf('영등포아바이순대국') > 0 && inboxOpenHtml.indexOf('문래동 소금빵') > 0 && inboxOpenHtml.indexOf('내 위치 반경 500m 안 3곳') > 0],
+  ['알림 모음: 반경 500m 안 장소를 가까운 순으로', inboxOpenHtml.indexOf('영등포아바이순대국') > 0 && inboxOpenHtml.indexOf('문래동 소금빵') > 0 && inboxOpenHtml.indexOf('내 위치 반경 500m 안') < 0],
   ['알림 모음: 위치를 모르면 [내 위치 켜기]', inboxNoLocationHtml.indexOf('내위치켜기') > 0 && inboxNoLocationHtml.indexOf('알림모음') > 0],
   ['알림 모음: 저장한 곳이 없으면 안내', inboxEmptyHtml.indexOf('아직 저장한 장소가 없어요') > 0],
   ['알림 모음: 닫힌 상태에서는 아무 것도 안 그림', renderToString(<AlertInbox visible={false} pins={ALERT_PINS} myCoords={ALERT_ORIGIN} onClose={noop} />) === ''],
@@ -1472,7 +1472,7 @@ const v216Checks = [
   // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
   ['메뉴(v2.19): 분류 관리 → 시트 안 서브 페이지', appSource215.indexOf('setCategoriesFocus(') < 0 && profileSource215.indexOf("openSub('categories')") > 0 && menuSource216.indexOf('onOpenSub={setSub}') > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
   ['메뉴(v2.19): 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && profileSource215.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.25.0 표기', menuHtml216.indexOf('릴스핀 v2.32.1') > 0 && APP_VERSION_LABEL === '릴스핀 v2.32.1', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.25.0 표기', menuHtml216.indexOf('릴스핀 v2.32.2') > 0 && APP_VERSION_LABEL === '릴스핀 v2.32.2', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
   ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
@@ -1586,7 +1586,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.32.1' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.32.1") > 0],
+  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.32.2' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.32.2") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1667,7 +1667,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.32.1'],
+  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.32.2'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1725,7 +1725,7 @@ const v218Checks = [
   ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
   ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
   ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
-  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.32.1') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.32.2') > 0],
   ['v2.19: ☰ 시트가 분류 관리 서브 페이지를 직접 연다', profileSource218.indexOf("openSub('categories')") > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
 ];
 for (const [label, ok, extra] of v218Checks) {
@@ -1841,12 +1841,12 @@ const v219Checks = [
   ['v2.19 탭바: 접근성 이름 지도 · 저장 · 컬렉션', ['지도', '저장', '컬렉션'].every((t) => tabBarSource219.indexOf("label: '" + t + "'") > 0)],
   ['v2.19 지도: 왼쪽/오른쪽 컨트롤은 새 탭바 높이(66/76)만큼 위로', mapControls.floatLift === 66 && tabBar.controlsBottom === 76 && themeSource219.indexOf('const width = 190') > 0],
   // ② ☰ = 내 정보 머지
-  ['v2.19 ☰: 제목 `내 정보` + 계정·동기화·설정 부제', menuHtml219.indexOf('menu-title') > 0 && menuHtml219.indexOf('내 정보') > 0 && menuSource219.indexOf('계정 · 동기화 · 설정') > 0],
+  ['v2.19 ☰: 제목 `내 정보` (v2.32.2 — 헤더 부제 없음)', menuHtml219.indexOf('menu-title') > 0 && menuHtml219.indexOf('내 정보') > 0 && menuHtml219.indexOf('계정 · 동기화 · 설정') < 0],
   ['v2.19 ☰: 통합 계정 카드 + 설정 3행이 시트 안에', menuHtml219.indexOf('profile-account-card') > 0 && ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => menuHtml219.indexOf(id) > 0)],
   ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
-  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.32.1') > 0],
+  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.32.2') > 0],
   ['v2.19 앱: 내 정보 탭 제거 · ☰ 시트가 ProfileScreen(panel) 사용', appSource219.indexOf("tab !== 'profile'") < 0 && appSource219.indexOf('<MenuDrawerModal') > 0 && appSource219.indexOf('panel') < 0 && menuSource219.indexOf('panel') > 0],
   // ③ 📂 컬렉션 탭
   // v2.32.0 — 상훈 님 요청: `2곳 담김` 은 빼고 `2개 컬렉션` 만
@@ -1862,7 +1862,7 @@ const v219Checks = [
   ['v2.19 저장: 컬렉션은 기기에 저장(reelpin.collections.v1)', storageSource219.indexOf("'reelpin.collections.v1'") > 0 && appSource219.indexOf('saveCollections(collections)') > 0],
   ['v2.19 저장: 핀을 지우면 컬렉션에서도 정리(prune)', appSource219.indexOf('pruneCollections(prev, pins)') > 0],
   ['v2.19: 하단바 탭은 App 이 collections 를 그림', appSource219.indexOf('<CollectionsScreen') > 0 && appSource219.indexOf("tab !== 'collections'") > 0],
-  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.32.1' && profileSource219.indexOf("'릴스핀 v2.32.1'") > 0 && pkg.version === '2.32.1'],
+  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.32.2' && profileSource219.indexOf("'릴스핀 v2.32.2'") > 0 && pkg.version === '2.32.2'],
 ];
 for (const [label, ok, extra] of v219Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1987,7 +1987,7 @@ const v2191Checks = [
   ['팝업 통일: 바깥(딤) 탭 + ✕ 둘 다 닫힘', layerSheetSource191.indexOf('style={styles.backdrop}') > 0 && layerSheetSource191.indexOf("testID={testID + '-backdrop'}") > 0 && layerSheetSource191.indexOf('onPress={onClose}') > 0],
   ['팝업 통일: 같은 다크 차콜 헤더(딥 틸 원 아이콘 · ✕)', layerSheetSource191.indexOf('backgroundColor: colors.charcoal') > 0 && layerSheetSource191.indexOf('backgroundColor: colors.brand') > 0 && layerSheetSource191.indexOf('colors.charcoalPill') > 0],
   ['돋보기: 내 정보와 같은 시트(제목·부제·✕ 그대로)', searchOverlaySource191.indexOf('title="내 장소 검색"') > 0 && searchOverlaySource191.indexOf('overlayTestID="search-overlay"') > 0 && searchOverlaySource191.indexOf('closeTestID="search-overlay-close"') > 0],
-  ['알림 모음: 내 정보와 같은 시트(요약 부제·지도에서 보기 발끝)', alertInboxSource191.indexOf('sub={summary}') > 0 && alertInboxSource191.indexOf('footer={') > 0 && alertInboxHtml191.indexOf('alert-inbox') > 0],
+  ['알림 모음: 내 정보와 같은 시트(부텍스트 없음 · 지도에서 보기 발끝)', alertInboxSource191.indexOf('sub=') < 0 && alertInboxSource191.indexOf('footer={') > 0 && alertInboxHtml191.indexOf('alert-inbox') > 0],
   ['목록 보기: 전체 화면 대신 레이어 팝업으로 열림', /view === 'list' && \(\s*\n\s*<LayerSheet/.test(mapSource191) && mapSource191.indexOf('headerTestID="pin-list-sheet-header"') > 0],
   ['목록 보기: ✕·바깥 탭 = 지도로 복귀(toggleView)', /<LayerSheet\s+visible\s+onClose={toggleView}/.test(mapSource191) && mapSource191.indexOf('closeLabel="목록 닫기"') > 0],
   ['목록 보기: 시트 안에서는 embedded(전체 화면 absoluteFill 아님)', listViewSource191.indexOf('embedded = false') > 0 && listViewSource191.indexOf('rootEmbedded') > 0 && listEmbeddedHtml191.indexOf('pin-row-ap-1') > 0],
@@ -2019,7 +2019,7 @@ const v2191Checks = [
   ['시군구동: 검색 팝업 추천 카드에 그대로 보임', areaOverlayHtml191.indexOf('인천 서구 당하동') > 0 && areaOverlayHtml191.indexOf('서울 강남구 역삼동') > 0 && areaOverlayHtml191.indexOf('경기 고양시 일산서구 일산동') < 0],
   ['시군구동: `분류 · 지역` 한 줄 표기', placeMetaLabel(AREA_PINS_191[0]) === '맛집 · 인천 서구 당하동' && placeMetaLabel({ name: 'x' }) === '내 지도'],
   // ⑥ 버전
-  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.32.1' && APP_INFO_VERSION === '릴스핀 v2.32.1' && pkg.version === '2.32.1' && expoConfig.version === '2.32.1'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.32.2' && APP_INFO_VERSION === '릴스핀 v2.32.2' && pkg.version === '2.32.2' && expoConfig.version === '2.32.2'],
 ];
 for (const [label, ok, extra] of v2191Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2167,7 +2167,7 @@ const v2192Checks = [
     mapControls.rightInset === 12 && mapSource2192.indexOf('right: mapControls.rightInset') > 0 && webMapSource2192.indexOf('right: mapControls.rightInset') > 0,
   ],
   // ④ 버전
-  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.32.1' && APP_INFO_VERSION === '릴스핀 v2.32.1' && pkg.version === '2.32.1' && expoConfig.version === '2.32.1'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.32.2' && APP_INFO_VERSION === '릴스핀 v2.32.2' && pkg.version === '2.32.2' && expoConfig.version === '2.32.2'],
 ];
 for (const [label, ok, extra] of v2192Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2473,7 +2473,7 @@ const v2202Checks = [
   // ⑤ 버전
   [
     'v2.21.0 버전: 메뉴 · 앱 정보 · package · app.json',
-    APP_VERSION_LABEL === '릴스핀 v2.32.1' && APP_INFO_VERSION === '릴스핀 v2.32.1' && pkg.version === '2.32.1' && expoConfig.version === '2.32.1',
+    APP_VERSION_LABEL === '릴스핀 v2.32.2' && APP_INFO_VERSION === '릴스핀 v2.32.2' && pkg.version === '2.32.2' && expoConfig.version === '2.32.2',
   ],
 ];
 for (const [label, ok, extra] of v2202Checks) {
@@ -2541,7 +2541,7 @@ const v223Checks = [
   ['v2.23 ☰ 시트: 게시판 열기를 넘김', fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8').indexOf('onOpenFeedback={onOpenFeedback}') > 0],
   ['v2.23 App: 게시판 모달을 그리고 로그인 정보를 넘김', appSource221.indexOf('<FeedbackBoardModal') > 0 && appSource221.indexOf('userEmail={cloudUser && cloudUser.email ? cloudUser.email : \'\'}') > 0],
   // ② 게시판 모달 — 2탭 · 정렬 · 글쓰기 · 상태 배지 · 공감
-  ['v2.23 게시판: 제목은 `제안 · 버그 제보`', feedbackModalHtml223.indexOf('제안 · 버그 제보') > 0 && feedbackModalHtml223.indexOf('기능 아이디어 · 버그 신고') > 0, feedbackModalHtml223.slice(0, 120)],
+  ['v2.23 게시판: 제목은 `제안 · 버그 제보` (헤더 부텍스트 없음)', feedbackModalHtml223.indexOf('제안 · 버그 제보') > 0 && feedbackModalHtml223.indexOf('기능 아이디어 · 버그 신고') < 0, feedbackModalHtml223.slice(0, 120)],
   ['v2.23 게시판: 💡 기능 제안 · 🐛 버그 제보 2탭', feedbackModalHtml223.indexOf('기능 제안') > 0 && feedbackModalHtml223.indexOf('버그 제보') > 0 && feedbackModalHtml223.indexOf('💡') > 0 && feedbackModalHtml223.indexOf('🐛') > 0],
   ['v2.23 게시판: 최신순 · 공감순 · ✍ 글쓰기', feedbackModalHtml223.indexOf('최신순') > 0 && feedbackModalHtml223.indexOf('공감순') > 0 && feedbackModalHtml223.indexOf('글쓰기') > 0],
   ['v2.23 게시판: 빈 게시판 안내(첫 글 남기기)', feedbackModalHtml223.indexOf('feedback-empty') > 0 && feedbackModalHtml223.indexOf('첫 글 남기기') > 0],
@@ -2555,7 +2555,7 @@ const v223Checks = [
   // ④ DB
   ['v2.23 DB: feedback.sql — 테이블·RLS·공감·어드민 RPC', feedbackSql223.indexOf('create table if not exists public.reelpin_feedback') > 0 && feedbackSql223.indexOf('increment_reelpin_feedback_like') > 0 && feedbackSql223.indexOf('reelpin_admin_feedback') > 0],
   // ⑤ 버전
-  ['v2.23 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.32.1' && APP_INFO_VERSION === '릴스핀 v2.32.1' && pkg.version === '2.32.1' && expoConfig.version === '2.32.1' && FEEDBACK_APP_VERSION === '2.32.1'],
+  ['v2.23 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.32.2' && APP_INFO_VERSION === '릴스핀 v2.32.2' && pkg.version === '2.32.2' && expoConfig.version === '2.32.2' && FEEDBACK_APP_VERSION === '2.32.2'],
 ];
 for (const [label, ok, extra] of v223Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2640,7 +2640,7 @@ const v225Checks = [
   ['v2.25 App: 레이어 닫기 콜백이 네 레이어를 모두 닫음', ['setSearchOpen(false)', 'setAlertOpen(false)', 'setMenuOpen(false)', 'setFeedbackOpen(false)', "setTab('map')"].every((t) => dismissOverlaysBody225.indexOf(t) > 0), dismissOverlaysBody225.slice(0, 160)],
   ['v2.25 App: 지도 화면에 onDismissOverlays 를 넘김', appSource225.indexOf('onDismissOverlays={dismissOverlaysForMap}') > 0],
   // ④ 버전
-  ['v2.25 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.32.1' && APP_INFO_VERSION === '릴스핀 v2.32.1' && pkg.version === '2.32.1' && expoConfig.version === '2.32.1' && FEEDBACK_APP_VERSION === '2.32.1'],
+  ['v2.25 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.32.2' && APP_INFO_VERSION === '릴스핀 v2.32.2' && pkg.version === '2.32.2' && expoConfig.version === '2.32.2' && FEEDBACK_APP_VERSION === '2.32.2'],
 ];
 for (const [label, ok, extra] of v225Checks) {
   if (ok) console.log('OK   ' + label);
@@ -3120,7 +3120,20 @@ for (const [label, ok, extra] of v232Checks) {
 // 상훈 님 요청(2026-11-18): "컬렉션 탭에는 내 컬렉션만 보이게, 운영자 추천·기획전은 숨겨 줘"
 //   · 숨기는 것 : 사진형 포스터 카드 · 빠른 테마 칩 · 슬림 배너 (그리고 그 불러오기까지)
 //   · 그대로인 것 : `/admin` 의 `📌 기획전·배너` 탭 · API · DB · `?col=` 공유 컬렉션 미리보기
-import { SHOW_CURATED_FEED as SHOW_CURATED_FEED_2321 } from '../src/screens/CollectionsScreen';
+import {
+  SHOW_CURATED_FEED as SHOW_CURATED_FEED_2321,
+  SHOW_AD_BANNER as SHOW_AD_BANNER_2322,
+} from '../src/screens/CollectionsScreen';
+
+/** v2.32.2 — 배너가 있는 컬렉션 탭 / 배너가 0개인 컬렉션 탭 */
+const adBannerHtml2322 = stripSpaces(
+  renderToString(
+    <CollectionsScreen pins={COL_PINS_219} collections={COL_219} banners={BANNERS_232} onToast={noop} />
+  )
+);
+const emptyBannerHtml2322 = stripSpaces(
+  renderToString(<CollectionsScreen pins={COL_PINS_219} collections={COL_219} banners={[]} onToast={noop} />)
+);
 
 const collectionsSource2321 = fs.readFileSync(path.join(process.cwd(), 'src/screens/CollectionsScreen.js'), 'utf8');
 const appSource2321 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
@@ -3157,27 +3170,33 @@ const v2321Checks = [
     hiddenFeedHtml2321.indexOf('collections-theme-chips') < 0 &&
       hiddenFeedHtml2321.indexOf('theme-chip-0') < 0 &&
       hiddenFeedHtml2321.indexOf('서울도심') < 0],
-  ['v2.32.1 컬렉션: 슬림 배너도 그리지 않음',
-    hiddenFeedHtml2321.indexOf('collections-banners') < 0 &&
-      hiddenFeedHtml2321.indexOf('이번주릴스핀인기맛집') < 0],
+  // v2.32.2 — 배너는 `내 컬렉션` 위 광고 슬롯으로 되살아났습니다(기획전 피드만 숨김).
+  ['v2.32.2 광고: 켜 둔 배너는 내 컬렉션 위 광고 슬롯에 그대로 노출',
+    hiddenFeedHtml2321.indexOf('collections-banners') > 0 &&
+      hiddenFeedHtml2321.indexOf('이번주릴스핀인기맛집') > 0 &&
+      hiddenFeedHtml2321.indexOf('collections-curated') < 0],
   ['v2.32.1 컬렉션: `내 컬렉션`과 내 컬렉션 카드만 남음',
     hiddenFeedHtml2321.indexOf('내컬렉션') > 0 &&
       hiddenFeedHtml2321.indexOf('collection-card-') > 0 &&
       hiddenFeedHtml2321.indexOf('2개컬렉션') > 0 &&
       hiddenFeedHtml2321.indexOf('collection-new') > 0],
   // ③ 숨김은 "지우기"가 아니라 "끄기" — 다시 켜면 그대로 돌아옵니다
-  ['v2.32.1 컬렉션: 세 영역은 스위치로만 감싸 두고 코드는 그대로 남김(다시 켜면 복구)',
+  ['v2.32.1 컬렉션: 기획전·테마 칩은 스위치로만 감싸 두고 코드는 그대로 남김(다시 켜면 복구)',
     collectionsSource2321.indexOf('{curatedFeedOn && curated.length ? (') > 0 &&
       collectionsSource2321.indexOf('{curatedFeedOn && themeChips.length ? (') > 0 &&
-      collectionsSource2321.indexOf('{curatedFeedOn && banners.length ? (') > 0],
+      collectionsSource2321.indexOf('buildThemeChips(curated)') > 0],
+  ['v2.32.2 광고: 배너 슬롯은 광고 스위치(`SHOW_AD_BANNER`)로 따로 감쌈',
+    collectionsSource2321.indexOf('{SHOW_AD_BANNER && showAdBanner ? (') > 0 &&
+      collectionsSource2321.indexOf('banners.length ? (') > 0],
   ['v2.32.1 컬렉션: 숨김 동안 테마 칩 계산도 하지 않음',
     /curatedFeedOn \? buildThemeChips\(curated\) : \[\]/.test(collectionsSource2321) &&
       collectionsSource2321.indexOf('showCuratedFeed = SHOW_CURATED_FEED') > 0],
   // ④ App — 숨김 동안에는 배너·기획전을 불러오지 않음(헛된 요청 없음)
-  ['v2.32.1 App: 숨김 동안 배너·기획전 요청을 보내지 않음',
+  ['v2.32.2 App: 배너는 항상 조회 · 기획전은 숨김 동안 부르지 않음',
     appSource2321.indexOf("import CollectionsScreen, { SHOW_CURATED_FEED }") > 0 &&
-      /if \(!SHOW_CURATED_FEED\) return;/.test(appSource2321) &&
-      appSource2321.indexOf('fetchPublicBanners') > 0 && appSource2321.indexOf('fetchPublicCurated') > 0],
+      appSource2321.indexOf('fetchPublicBanners()') > 0 &&
+      appSource2321.indexOf('SHOW_CURATED_FEED ? fetchPublicCurated()') > 0 &&
+      /if \(!SHOW_CURATED_FEED\) return;/.test(appSource2321) === false],
   // ⑤ 공유(`?col=`) 미리보기는 그대로 — 숨김과 무관하게 열립니다
   ['v2.32.1 공유: `?col=` 공유 컬렉션 미리보기는 그대로 동작',
     appSource2321.indexOf('readCollectionShareFromLocation') > 0 &&
@@ -3201,6 +3220,70 @@ const v2321Checks = [
       adminApiSource2321.indexOf('SHOW_CURATED_FEED') < 0],
 ];
 for (const [label, ok, extra] of v2321Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined ? '  -> ' + extra : ''));
+  }
+}
+
+
+// ── v2.32.2 🧹 레이어 팝업 헤더 부텍스트 제거 (제목 + ✕ 만) ────────────────────────
+// 상훈 님 요청(2026-11-18): "레이어 팝업에 있는 그런 텍스트들은 다 빼자"
+//   · 헤더 아래 보조줄(sub)을 컴포넌트에서 **아예 없앱니다** — 다시 생길 수 없게.
+//   · 장소 상세 시트(PinDetailSheet)의 본문 정보(분류·주소·영업시간 등)는 그대로 둡니다.
+const layerSheetSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/LayerSheet.js'), 'utf8');
+const overlayHeaderSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/OverlayHeader.js'), 'utf8');
+const searchSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/SearchOverlayModal.js'), 'utf8');
+const alertSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/AlertInbox.js'), 'utf8');
+const menuSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8');
+const feedbackSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/FeedbackBoardModal.js'), 'utf8');
+const previewSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/CollectionPreviewSheet.js'), 'utf8');
+const pasteSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const mapSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const webModalSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/InAppPlaceModal.web.js'), 'utf8');
+const nativeModalSource2322 = fs.readFileSync(path.join(process.cwd(), 'src/components/InAppPlaceModal.js'), 'utf8');
+
+/** src 전체에서 레이어 팝업에 `sub=` 를 넘기는 곳이 하나도 없어야 합니다. */
+const layerSubCallers2322 = (() => {
+  const hits = [];
+  const walk = (dir) => {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full);
+      else if (/\.jsx?$/.test(name)) {
+        const src = fs.readFileSync(full, 'utf8');
+        if (/<LayerSheet[\s\S]{0,600}?\bsub=/.test(src) || /<OverlayHeader[\s\S]{0,600}?\bsub=/.test(src)) hits.push(name);
+      }
+    }
+  };
+  walk(path.join(process.cwd(), 'src'));
+  return hits;
+})();
+
+const v2322Checks = [
+  ['v2.32.2 팝업: LayerSheet 에 sub 슬롯 자체가 없음(헤더 = 제목 + ✕)', layerSheetSource2322.indexOf('sub =') < 0 && layerSheetSource2322.indexOf('{!!sub &&') < 0 && layerSheetSource2322.indexOf('styles.sub') < 0],
+  ['v2.32.2 팝업: OverlayHeader 에도 sub 슬롯이 없음', overlayHeaderSource2322.indexOf('sub =') < 0 && overlayHeaderSource2322.indexOf('{!!sub &&') < 0 && overlayHeaderSource2322.indexOf('styles.sub') < 0],
+  ['v2.32.2 팝업: sub 를 넘기는 화면이 src 전체에 하나도 없음(전수 검사)', layerSubCallers2322.length === 0, layerSubCallers2322.join(',')],
+  ['v2.32.2 검색: `내 핀 N곳에서 찾기` 헤더 부제 없음(제목 `내 장소 검색` 만)', overlayHtml216.indexOf('곳에서 찾기') < 0 && overlayHtml216.indexOf('내 장소 검색') > 0 && searchSource2322.indexOf('savedCount') < 0],
+  ['v2.32.2 알림: 반경 안내 부제 없음(목록은 그대로)', alertSource2322.indexOf('sub={summary}') < 0 && inboxOpenHtml.indexOf('내 위치 반경') < 0 && inboxOpenHtml.indexOf('영등포아바이순대국') > 0],
+  ['v2.32.2 목록: `저장한 곳 N곳 · 눌러서…` 부제 없음', mapSource2322.indexOf('눌러서 지도에서 바로 보기') < 0 && /title="목록 보기"/.test(mapSource2322)],
+  ['v2.32.2 내 정보: `계정 · 동기화 · 설정` · 서브 페이지 안내 부제 없음', menuSource2322.indexOf('SUB_SUB') < 0 && menuSource2322.indexOf('sub={') < 0 && menuHtml216.indexOf('계정 · 동기화 · 설정') < 0],
+  ['v2.32.2 제보: `기능 아이디어 · 버그 신고 · 공감` 부제 없음(2탭은 그대로)', feedbackSource2322.indexOf('sub={') < 0 && feedbackModalHtml223.indexOf('기능 아이디어 · 버그 신고') < 0 && feedbackModalHtml223.indexOf('기능 제안') > 0],
+  ['v2.32.2 컬렉션 미리보기: 배지·N곳 부제 없음(장소 목록은 그대로)', previewSource2322.indexOf('sub={sub}') < 0 && previewSource2322.indexOf('testID={testID + \'-places\'}') > 0],
+  ['v2.32.2 저장: `릴스·쇼츠 링크 · 가게명으로…` 헤더 부제 없음', pasteSource2322.indexOf('릴스·쇼츠 링크 · 가게명으로 찾아') < 0 && pasteSource2322.indexOf('<OverlayHeader') > 0],
+  ['v2.32.2 인앱 매장 정보: 헤더 `동네 · 네이버 플레이스` 부제 없음', webModalSource2322.indexOf('styles.subtitle') < 0 && nativeModalSource2322.indexOf('styles.subtitle') < 0],
+  ['v2.32.2 상세 시트: 분류·주소 등 본문 정보는 그대로(지우지 않음)', pinDetailSource.indexOf('pin-category-badge') > 0 && pinDetailSource.indexOf('testID="pin-sheet-header"') > 0 && pinDetailSource.indexOf('hasAddress ? address') > 0 && pinDetailSource.indexOf('styles.infoValue') > 0],
+  ['v2.32.2 광고: `SHOW_AD_BANNER` 기본 true · 기획전 피드 스위치는 false 그대로', SHOW_AD_BANNER_2322 === true && SHOW_CURATED_FEED_2321 === false],
+  ['v2.32.2 광고: 켜 둔 배너가 있으면 그 배너가 슬롯에(링크·이미지·배지 그대로)', adBannerHtml2322.indexOf('collections-banners') > 0 && adBannerHtml2322.indexOf('collections-banner-bn-1') > 0 && adBannerHtml2322.indexOf('collections-ad-slot') < 0],
+  ['v2.32.2 광고: 배너가 0개면 `AD · 스폰서 배너 영역` 슬롯이 보임', emptyBannerHtml2322.indexOf('collections-ad-slot') > 0 && emptyBannerHtml2322.indexOf('스폰서배너영역') > 0],
+  ['v2.32.2 광고: 슬롯은 `내 컬렉션` 제목보다 위', emptyBannerHtml2322.indexOf('collections-ad-slot') < emptyBannerHtml2322.indexOf('내컬렉션') && emptyBannerHtml2322.indexOf('collections-ad-slot') > 0],
+  ['v2.32.2 광고: 슬롯은 기획전 스위치와 무관(숨김 상태에서도 보임)', emptyBannerHtml2322.indexOf('collections-ad-slot') > 0 && emptyBannerHtml2322.indexOf('collections-curated') < 0 && emptyBannerHtml2322.indexOf('collections-theme-chips') < 0],
+  ['v2.32.2 광고: 배너 링크는 http(s)만 열기(그대로)', collectionsSource2321.indexOf('const hasLink = /^https?:\\/\\//i.test(String(banner.linkUrl') > 0],
+  ['v2.32.2 토스트: 반경 500m 알림이 화면에 6초 머묾', GEOFENCE_TOAST_MS === 6000 && geofenceToastHtml.indexOf('반경 500m 안에 2곳 있어요') > 0],
+  ['v2.32.2 버전: 2.32.2 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)', APP_VERSION_LABEL === '릴스핀 v2.32.2' && APP_INFO_VERSION === '릴스핀 v2.32.2' && pkg.version === '2.32.2' && expoConfig.version === '2.32.2' && FEEDBACK_APP_VERSION === '2.32.2'],
+];
+for (const [label, ok, extra] of v2322Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -3262,6 +3345,8 @@ const total =
   v232Checks.length +
   // v2.32.1 — 🙈 컬렉션 탭 추천 기획전 숨김(내 컬렉션만) · /admin·공유는 그대로
   v2321Checks.length +
+  // v2.32.2 — 🧹 레이어 팝업 헤더 부텍스트 제거 · 🔔 토스트 6초
+  v2322Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);
