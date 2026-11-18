@@ -1,5 +1,5 @@
 /**
- * src/components/LongPressPlaceSheet.js — v2.33.2
+ * src/components/LongPressPlaceSheet.js — v2.33.3
  * ─────────────────────────────────────────────────────────────
  * 지도에서 **꾹 누른 자리**에 장소를 등록하는 레이어 팝업.
  *
@@ -7,6 +7,7 @@
  *   "혹시 지도상에서 꾹 누르면 해당 위치의 장소를 등록 하는 기능은 못 만들까?"
  *   "꾹 누르면 해당장소의 장소명칭 나오면서 등록가능하게 부탁할게"
  *   v2.33.2 — "등록할 때 '가봤어요' 체크도 같이" → ✅ 가봤어요 토글(기본 미체크) 추가
+ *   v2.33.3 — 가봤어요 카드와 `분류` 라벨 사이에 다른 구역과 같은 14px 아래 여백
  *
  *   · 위 … 꾹 누른 자리의 **도로명 주소 · 건물명**(카카오 coord2address)
  *   · 가운데 … 반경 60m 안의 **가까운 장소 이름들**(음식점·카페·관광명소·문화시설 · 거리 `12m`)
@@ -562,11 +563,14 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
   },
   // v2.33.2 — ✅ 가봤어요 토글 (PinDetailSheet 의 같은 카드와 같은 결)
+  // v2.33.3 — 카드 아래 `분류` 라벨이 바짝 붙던 문제: 다른 구역(`한줄 메모`·`컬렉션`)과 같은 14px 간격을
+  //           아래에도 둡니다(CategoryPicker compact 는 marginTop 0 이라 아래 여백이 여기밖에 없습니다).
   visitBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
     marginTop: 14,
+    marginBottom: 14,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: radius.md,
