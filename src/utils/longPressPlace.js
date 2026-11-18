@@ -44,6 +44,39 @@ export function offsetPoint(rect, clientX, clientY) {
   return { x, y };
 }
 
+/**
+ * v2.33.1 — 꾹 누른 **화면 픽셀** → 지도 API 의 **offset 좌표계** 좌표.
+ *
+ * 왜 한 번 더 계산하나 (신고: "지도를 이동해서 꾹 누르면 그 장소 인식을 못해")
+ *   · 네이버 지도 v3 의 `projection.fromOffsetToCoord(p)` 는 지도 컨테이너의 픽셀이 아니라
+ *     `offset = 컨테이너 픽셀 − containerTopLeft` 인 **offset 좌표계**를 받습니다.
+ *     (SDK: `fromOffsetToPoint(p) = scaleDown(p + containerTopLeft) + projectionTopLeft`)
+ *   · `containerTopLeft` 는 지도를 끌 때마다 `panBy` 가 쌓아 두는 값이라, 옮긴 뒤에
+ *     컨테이너 픽셀을 그대로 넣으면 **옮기기 전 화면 자리**의 좌표가 나옵니다.
+ *     → 내 위치 근처에서만 주소가 맞고, 멀리 옮기면 엉뚱한 동네가 나옵니다.
+ *
+ *   · 화면 한가운데 픽셀의 offset 은 `fromCoordToOffset(지도 중심)` 이고,
+ *     화면에서의 변위는 offset 에서의 변위와 같습니다(같은 픽셀 배율).
+ *     ⇒ 중심 offset + (누른 픽셀 − 화면 한가운데) = 누른 자리의 offset (이동·확대와 무관)
+ *
+ * @param {{x:number,y:number}|null} centerOffset 화면 한가운데의 offset — fromCoordToOffset(지도 중심)
+ * @param {{w:number,h:number}|{width:number,height:number}|null} size 지도 화면 크기(px)
+ * @param {{x:number,y:number}} press 꾹 누른 픽셀(컨테이너 안 offset — Rect 기준)
+ * @returns {{x:number,y:number}|null}
+ */
+export function pressOffsetPoint(centerOffset, size, press) {
+  if (!centerOffset || !size || !press) return null;
+  const cx = Number(centerOffset.x);
+  const cy = Number(centerOffset.y);
+  const w = Number(size.w != null ? size.w : size.width);
+  const h = Number(size.h != null ? size.h : size.height);
+  const px = Number(press.x);
+  const py = Number(press.y);
+  if (![cx, cy, w, h, px, py].every(Number.isFinite)) return null;
+  if (!(w > 0 && h > 0)) return null;
+  return { x: cx + (px - w / 2), y: cy + (py - h / 2) };
+}
+
 /** 처음 누른 자리에서 tolerance(px) 보다 더 움직였는가 (지도 끌기 판정) */
 export function movedBeyondTolerance(start, current, tolerance = LONG_PRESS_MOVE_TOLERANCE_PX) {
   if (!start || !current) return false;

@@ -24,7 +24,7 @@ import {
   isValidPoint,
   REVERSE_PLACE_ENDPOINT,
 } from '../src/services/reversePlace.js';
-import { leafletAnchorCenter, naverAnchorCenter, normalizeAnchorY } from '../src/components/RealMapView.web.js';
+import { leafletAnchorCenter, naverAnchorCenter, naverCoordAtPress, normalizeAnchorY } from '../src/components/RealMapView.web.js';
 import {
   LONG_PRESS_DEDUPE_METERS,
   LONG_PRESS_DEDUPE_MS,
@@ -40,6 +40,7 @@ import {
   nearbyPlaceRows,
   offsetPoint,
   placeDistanceLabel,
+  pressOffsetPoint,
   suggestedCategoryOf,
   suggestedNameOf,
 } from '../src/utils/longPressPlace.js';
@@ -281,6 +282,178 @@ check(
   '지도 이동: anchorY 기본값은 가운데(0.5), 범위를 벗어나면 0.5',
   normalizeAnchorY(0.15) === 0.15 && normalizeAnchorY(0) === 0.5 && normalizeAnchorY(2) === 0.5 && normalizeAnchorY('x') === 0.5
 );
+
+// ═══════════════════════════════════════════════════════════
+// 2-b) v2.33.1 — 지도를 **옮긴 뒤** 꾹 누른 픽셀 → 좌표 (회귀)
+//   네이버 지도 v3 SDK 의 offset 좌표계를 그대로 흉내 냅니다:
+//     · fromPointToOffset(p) = (p − projectionTopLeft) × 2^zoom − containerTopLeft
+//     · fromOffsetToPoint(o) = (o + containerTopLeft) ÷ 2^zoom + projectionTopLeft
+//     · panBy(d) … containerTopLeft −= d, 중심점 += d ÷ 2^zoom
+//     · 컨테이너 픽셀 → 좌표 (SDK 포인터 이벤트) = fromOffsetToCoord(픽셀 − containerTopLeft)
+//   즉 containerTopLeft 는 "지도를 끈 만큼 쌓이는 어긋남"입니다.
+{
+  const SIZE = { w: 390, h: 844 };
+  const ZOOM = 16;
+  const scale = Math.pow(2, ZOOM);
+  const coordOfPoint = (p) => new FakeLatLng(-p.y / 1000, p.x / 1000);
+  const pointOfCoord = (c) => ({ x: c.lng() * 1000, y: -c.lat() * 1000 });
+
+  const makeMap = (centerCoord) => {
+    const state = {
+      centerPoint: pointOfCoord(centerCoord),
+      zoom: ZOOM,
+      ct: { x: 0, y: 0 },
+    };
+    const topLeft = () => ({
+      x: state.centerPoint.x - SIZE.w / 2 / scale,
+      y: state.centerPoint.y - SIZE.h / 2 / scale,
+    });
+    const projection = {
+      fromCoordToPoint: (coord) => pointOfCoord(coord),
+      fromPointToCoord: (point) => coordOfPoint(point),
+      fromPointToOffset: (point) => {
+        const tl = topLeft();
+        return {
+          x: (point.x - tl.x) * scale - state.ct.x,
+          y: (point.y - tl.y) * scale - state.ct.y,
+        };
+      },
+      fromOffsetToPoint: (offset) => {
+        const tl = topLeft();
+        return {
+          x: (offset.x + state.ct.x) / scale + tl.x,
+          y: (offset.y + state.ct.y) / scale + tl.y,
+        };
+      },
+      fromCoordToOffset: (coord) => projection.fromPointToOffset(pointOfCoord(coord)),
+      fromOffsetToCoord: (offset) => coordOfPoint(projection.fromOffsetToPoint(offset)),
+    };
+    const map = {
+      getProjection: () => projection,
+      getCenter: () => coordOfPoint(state.centerPoint),
+      getSize: () => ({ width: SIZE.w, height: SIZE.h }),
+      // 지도 끌기 — SDK 의 panBy 와 같은 누적
+      panBy: (dx, dy) => {
+        state.ct = { x: state.ct.x - dx, y: state.ct.y - dy };
+        state.centerPoint = { x: state.centerPoint.x + dx / scale, y: state.centerPoint.y + dy / scale };
+      },
+      // 화면을 그대로 다시 그린 기준(크기 변화) — offset 어긋남이 0 으로 돌아감
+      resetOffset: () => {
+        state.ct = { x: 0, y: 0 };
+      },
+    };
+    return { map, projection, state };
+  };
+
+  /** 지금 화면에서 그 픽셀에 실제로 보이는 좌표 (SDK 포인터 이벤트와 같은 계산) */
+  const trueCoordAt = (projection, state, pixel) =>
+    projection.fromOffsetToCoord({ x: pixel.x - state.ct.x, y: pixel.y - state.ct.y });
+  const pixelOf = (coord, projection, state) => {
+    const offset = projection.fromCoordToOffset(coord);
+    return { x: offset.x + state.ct.x, y: offset.y + state.ct.y };
+  };
+  const near = (a, b) =>
+    Boolean(a) && Boolean(b) && Math.abs(a.lat() - b.lat()) < 0.000001 && Math.abs(a.lng() - b.lng()) < 0.000001;
+
+  const START = new FakeLatLng(37.5563, 126.9236);
+  const PRESS_PX = { x: 195, y: 300 };
+
+  // ① 옮기지 않은 지도 — 예전 방식도 맞습니다 (신고: "내 위치 주변은 맞음")
+  {
+    const { map, projection, state } = makeMap(START);
+    const viaFix = naverCoordAtPress(fakeNv, map, PRESS_PX);
+    const truth = trueCoordAt(projection, state, PRESS_PX);
+    const viaOld = projection.fromOffsetToCoord(new fakeNv.Point(PRESS_PX.x, PRESS_PX.y));
+    check('지도 이동: 옮기지 않았으면 누른 픽셀 그대로', near(viaFix, truth) && near(viaOld, truth));
+  }
+
+  // ② 옮긴 지도 — 예전 방식은 엉뚱한 자리, 고친 방식은 누른 그 자리
+  {
+    const { map, projection, state } = makeMap(START);
+    map.panBy(600, 420); // 오른쪽·아래로 600·420px 끌기
+    const viaFix = naverCoordAtPress(fakeNv, map, PRESS_PX);
+    const truth = trueCoordAt(projection, state, PRESS_PX);
+    const viaOld = projection.fromOffsetToCoord(new fakeNv.Point(PRESS_PX.x, PRESS_PX.y));
+    const oldPixel = pixelOf(viaOld, projection, state);
+    const oldDistance = Math.hypot(oldPixel.x - PRESS_PX.x, oldPixel.y - PRESS_PX.y);
+    check(
+      '[핵심] 옮긴 지도: 고친 방식 = 누른 자리 좌표',
+      near(viaFix, truth),
+      JSON.stringify({ got: [viaFix.lat(), viaFix.lng()], want: [truth.lat(), truth.lng()] })
+    );
+    check(
+      '[핵심] 옮긴 지도: 예전 방식은 누른 자리에서 600·420px 밖(신고된 버그)',
+      oldDistance > 700,
+      'distance=' + oldDistance.toFixed(1) + 'px'
+    );
+  }
+
+  // ③ 여러 번 옮기고 크기 기준이 다시 잡혀도 그대로
+  {
+    const { map, projection, state } = makeMap(START);
+    map.panBy(-250, 100);
+    map.panBy(180, -320);
+    map.panBy(90, 45);
+    const viaFix = naverCoordAtPress(fakeNv, map, { x: 40, y: 780 });
+    const truth = trueCoordAt(projection, state, { x: 40, y: 780 });
+    check('옮긴 지도: 여러 번 옮긴 뒤 화면 가장자리를 눌러도 그 자리', near(viaFix, truth));
+    map.resetOffset();
+    const again = naverCoordAtPress(fakeNv, map, { x: 40, y: 780 });
+    const truthAgain = trueCoordAt(projection, state, { x: 40, y: 780 });
+    check('옮긴 지도: offset 기준이 리셋된 뒤에도 그 자리', near(again, truthAgain));
+  }
+
+  // ④ 화면 한가운데를 누르면 지도 중심
+  {
+    const { map } = makeMap(START);
+    map.panBy(300, 200);
+    const viaFix = naverCoordAtPress(fakeNv, map, { x: SIZE.w / 2, y: SIZE.h / 2 });
+    const center = map.getCenter();
+    check(
+      '옮긴 지도: 한가운데를 누르면 지도 중심 좌표',
+      Math.abs(viaFix.lat() - center.lat()) < 0.000001 && Math.abs(viaFix.lng() - center.lng()) < 0.000001,
+      JSON.stringify([viaFix.lat(), viaFix.lng(), center.lat(), center.lng()])
+    );
+  }
+
+  // ⑤ 좌표 계산 단위 규칙
+  check(
+    '픽셀→offset: 중심 offset + (누른 픽셀 − 화면 한가운데)',
+    JSON.stringify(pressOffsetPoint({ x: 100, y: 200 }, { w: 390, h: 844 }, { x: 195, y: 300 })) ===
+      JSON.stringify({ x: 100, y: 200 + (300 - 422) }),
+    JSON.stringify(pressOffsetPoint({ x: 100, y: 200 }, { w: 390, h: 844 }, { x: 195, y: 300 }))
+  );
+  check(
+    '픽셀→offset: 크기를 {width,height} 로 줘도 같다',
+    JSON.stringify(pressOffsetPoint({ x: 0, y: 0 }, { width: 390, height: 844 }, { x: 195, y: 422 })) ===
+      JSON.stringify({ x: 0, y: 0 })
+  );
+  check(
+    '픽셀→offset: 값이 없거나 0 크기면 null',
+    pressOffsetPoint(null, { w: 390, h: 844 }, PRESS_PX) === null &&
+      pressOffsetPoint({ x: 0, y: 0 }, { w: 0, h: 0 }, PRESS_PX) === null &&
+      pressOffsetPoint({ x: 0, y: 0 }, { w: 390, h: 844 }, { x: NaN, y: 1 }) === null
+  );
+  check(
+    '픽셀→offset: 지도·투영이 없으면 좌표를 만들지 않는다(던지지 않음)',
+    naverCoordAtPress(null, null, PRESS_PX) === null &&
+      naverCoordAtPress(fakeNv, { getProjection: () => null }, PRESS_PX) === null &&
+      naverCoordAtPress(fakeNv, { getProjection: () => ({}) }, PRESS_PX) === null
+  );
+  // SDK 가 중심·크기를 못 알려 줘도 예전 방식으로라도 좌표를 낸다
+  {
+    const { map, projection, state } = makeMap(START);
+    const blind = { getProjection: () => projection };
+    const coord = naverCoordAtPress(fakeNv, blind, PRESS_PX);
+    const truth = trueCoordAt(projection, state, PRESS_PX);
+    check(
+      '옛 SDK(중심·크기 없음): 예전 방식으로 좌표를 낸다 · 옮기지 않았을 때는 정확',
+      Boolean(coord) &&
+        Math.abs(coord.lat() - truth.lat()) < 0.000001 &&
+        Math.abs(coord.lng() - truth.lng()) < 0.000001
+    );
+  }
+}
 
 // ═════════════════════════════════════════════════════════════
 // 3. /api/reverse-place

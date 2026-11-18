@@ -1,6 +1,12 @@
 /**
  * src/components/RealMapView.web.js
  * ─────────────────────────────────────────────────────────────
+ * v2.33.1 — 🎯 **지도를 옮긴 뒤 꾹 누르기 좌표**
+ *   · 증상: 지도를 멀리 옮기고 꾹 누르면 그 자리 장소를 못 찾고, 내 위치 근처(처음 화면) 주소가 나옴
+ *   · 원인: `projection.fromOffsetToCoord(p)` 는 컨테이너 픽셀이 아니라 **offset 좌표계**를 받는데
+ *     그 좌표계가 `containerTopLeft`(= 지도 끌기 누적) 만큼 어긋나 있음
+ *   · 고침: 화면 한가운데 offset + (누른 픽셀 − 화면 크기/2) → `fromOffsetToCoord` (naverCoordAtPress)
+ *
  * v2.5 — 📍 **줌 겹침 방지(클러스터링)**
  *   · 지도가 `idle` / `zoom_changed` 될 때마다 화면 픽셀 좌표로 핀 사이 거리를 재서,
  *     46px 안에 2곳 이상 겹치면 **숫자 배지 클러스터**(예: `3`)로 묶습니다.
@@ -42,6 +48,7 @@ import { getCategoryColor, hexToRgba } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
 import { SEARCH_FOCUS_ZOOM, SEARCH_RESULT_PADDING } from '../utils/searchNav';
 import { bindLongPress } from './longPressGesture';
+import { pressOffsetPoint } from '../utils/longPressPlace';
 import {
   CLUSTER_THRESHOLD_PX,
   clusterColor,
@@ -717,7 +724,7 @@ function NaverMap({
         mapRef.current = map;
 
         // v2.33.0 — 꾹 누르기: 손가락이 멈춘 화면 픽셀을 지도 좌표로 바꿔 화면에 알립니다.
-        //   · `fromOffsetToCoord` 는 지도 컨테이너 기준 offset → 위경도 (v3 MapSystemProjection)
+        //   v2.33.1 — 옮긴 지도에서도 누른 자리가 그대로 나오게 (naverCoordAtPress)
         //   · 지도를 끌거나 두 손가락으로 확대하면 bindLongPress 쪽에서 취소됩니다
         ensureDroppedPinStyles();
         detachLongPress = bindLongPress(node, {
@@ -725,13 +732,8 @@ function NaverMap({
             const current = mapRef.current;
             const api = nvRef.current;
             if (!current || !api || typeof onLongPressRef.current !== 'function') return;
-            let coord = null;
-            try {
-              coord = current.getProjection().fromOffsetToCoord(new api.Point(press.x, press.y));
-            } catch (e) {
-              coord = null;
-            }
-            if (!coord || typeof coord.lat !== 'function') return;
+            const coord = naverCoordAtPress(api, current, press);
+            if (!coord) return;
             onLongPressRef.current({ lat: coord.lat(), lng: coord.lng() });
           },
         });
@@ -1099,6 +1101,69 @@ function NaverMap({
   }, [fitPoints, fitKey, ready]);
 
   return <View ref={hostRef} style={styles.mapHost} accessibilityLabel="네이버 지도" />;
+}
+
+/**
+ * v2.33.1 — 꾹 누른 **화면 픽셀** → 그 자리의 위경도 (네이버 지도).
+ *
+ * `projection.fromOffsetToCoord` 는 컨테이너 픽셀이 아니라 **offset 좌표계**를 받고, 그 좌표계는
+ * 지도를 끌 때마다 `containerTopLeft` 만큼 어긋납니다. 그래서 지도를 옮긴 뒤 컨테이너 픽셀을
+ * 그대로 넣으면 **옮기기 전 화면 자리**의 좌표가 나왔습니다(내 위치 근처에서만 주소가 맞던 이유).
+ *   → 화면 한가운데 offset(fromCoordToOffset(지도 중심)) 을 기준으로 누른 픽셀만큼만 옮겨 넣습니다.
+ *     (같은 픽셀 배율이라 변위는 그대로 — 지도를 얼마나 옮겼든 누른 자리가 그대로 나옵니다)
+ * SDK 가 예전 모양이거나 중심·크기를 못 읽으면 마지막 수단으로 예전 방식(컨테이너 픽셀)을 씁니다.
+ */
+export function naverPressOffset(projection, map, press) {
+  if (!projection || !map || !press) return null;
+  let centerOffset = null;
+  let size = null;
+  try {
+    if (typeof projection.fromCoordToOffset === 'function' && typeof map.getCenter === 'function') {
+      centerOffset = projection.fromCoordToOffset(map.getCenter());
+    }
+  } catch (e) {
+    centerOffset = null;
+  }
+  try {
+    if (typeof map.getSize === 'function') {
+      const raw = map.getSize();
+      if (raw) size = { w: raw.width, h: raw.height };
+    }
+  } catch (e) {
+    size = null;
+  }
+  return pressOffsetPoint(centerOffset, size, press);
+}
+
+/** 위 계산 → 위경도. 실패하면 null. */
+export function naverCoordAtPress(nv, map, press) {
+  if (!nv || !map || !press) return null;
+  let projection = null;
+  try {
+    projection = map.getProjection();
+  } catch (e) {
+    projection = null;
+  }
+  if (!projection || typeof projection.fromOffsetToCoord !== 'function') return null;
+  const isValid = (coord) =>
+    Boolean(coord) && typeof coord.lat === 'function' && typeof coord.lng === 'function' &&
+    Number.isFinite(coord.lat()) && Number.isFinite(coord.lng());
+
+  const target = naverPressOffset(projection, map, press);
+  if (target) {
+    try {
+      const coord = projection.fromOffsetToCoord(new nv.Point(target.x, target.y));
+      if (isValid(coord)) return coord;
+    } catch (e) {
+      /* 아래 예전 방식으로 */
+    }
+  }
+  try {
+    const coord = projection.fromOffsetToCoord(new nv.Point(Number(press.x), Number(press.y)));
+    return isValid(coord) ? coord : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /**
