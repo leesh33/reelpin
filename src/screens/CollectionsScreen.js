@@ -44,11 +44,14 @@ import {
 import { buildShareUrl, canNativeShare, nativeShare } from '../utils/shareMap';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 
-/** 목록 위쪽 요약 — `3개 컬렉션 · 12곳 담김` */
+/**
+ * 목록 위쪽 요약 — `3개 컬렉션`
+ * v2.31.1 — 상훈 님 요청: "내 컬렉션에서는 2곳 담김 이라는건 빼줘"
+ *   → `· N곳 담김` 을 빼고 컬렉션 개수만 남깁니다. (pins 는 옛 호출부 호환용)
+ */
 export function collectionsHeadline(collections, pins) {
   const list = Array.isArray(collections) ? collections : [];
-  const total = list.reduce((sum, c) => sum + pinsOfCollection(c, pins).length, 0);
-  return list.length + '개 컬렉션 · ' + total + '곳 담김';
+  return list.length + '개 컬렉션';
 }
 
 /** 이모지 + 색 고르는 줄 (새 컬렉션·수정에서 같이 씀) */
@@ -410,14 +413,17 @@ export default function CollectionsScreen({
           {/* ── v2.31 🗂️ 운영자 추천 · 기획전 — 누르면 장소 미리보기 + 한 번에 담기 ── */}
           {curated.length ? (
             <View testID="collections-curated">
+              {/* v2.31.1 — 제목은 `내 컬렉션`과 같은 스타일(styles.title) · 오른쪽 `1개` 개수는 뺐습니다 */}
               <View style={styles.sectionRow}>
-                <Text style={styles.sectionTitle}>운영자 추천 · 기획전</Text>
-                <Text style={styles.sectionCount}>{curated.length}개</Text>
+                <Text style={styles.title}>운영자 추천 · 기획전</Text>
               </View>
+              {/* v2.31.1 — 카드가 여러 개면 좌우로 밀어서 봅니다(가로 스크롤 · 스크롤바 숨김) */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
+                style={styles.curatedScroll}
                 contentContainerStyle={styles.curatedRow}
+                testID="collections-curated-row"
               >
                 {curated.map((item) => (
                   <View key={item.id} style={styles.curatedCard} testID={'curated-card-' + item.id}>
@@ -994,8 +1000,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 8,
   },
-  sectionTitle: { ...typography.body, fontSize: 13.5, fontWeight: '800' },
-  sectionCount: { ...typography.tiny, fontSize: 11 },
+  // v2.31.1 — 가로 카드 줄이 제 높이만 차지하게(flexGrow:0) 두고, 넘치는 카드는 잘리지 않고 옆으로 밀립니다.
+  //   (웹에서는 `overflow-x:auto` 네이티브 가로 스크롤이 그대로 동작 — `touch-action:pan-x` 를 주면
+  //    카드 위에서 세로로 밀 때 화면 스크롤이 막히므로 일부러 넣지 않았습니다)
+  curatedScroll: { flexGrow: 0, flexShrink: 0 },
   curatedRow: { gap: 10, paddingRight: 4, paddingBottom: 2 },
   curatedCard: {
     width: 236,
