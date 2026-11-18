@@ -1123,7 +1123,13 @@ export function naverAnchorCenter(nv, map, coord, zoom, size, anchorY) {
     const scale = Math.pow(2, Number(zoom) || 0);
     const world = projection.fromCoordToPoint(coord);
     if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y)) return coord;
-    const nextWorld = new nv.Point(world.x - width / 2 / scale, world.y - (height * ratio) / scale);
+    // 지도 중심의 화면 offset 은 (W/2, H/2) 이고, 임의의 점은
+    //   offset = (W/2, H/2) + (world − centerWorld) × 2^zoom
+    // 이므로, 그 점을 (W/2, H×ratio) 에 두려면 중심을 **그 차이만큼만** 옮깁니다.
+    // (target offset 을 그대로 빼면 x 가 W/2·y 가 H/2 만큼 더 밀려 점이 화면 밖으로 갑니다 — 실측으로 확인)
+    // 좌우는 늘 가운데(W/2)라 x 는 그대로, 세로만 H×(ratio−0.5) 만큼 옮깁니다.
+    const dy = height * ratio - height / 2;
+    const nextWorld = new nv.Point(world.x, world.y - dy / scale);
     const center = projection.fromPointToCoord(nextWorld);
     if (!center || typeof center.lat !== 'function') return coord;
     return new nv.LatLng(center.lat(), center.lng());

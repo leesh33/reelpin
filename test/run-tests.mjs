@@ -215,7 +215,8 @@ if (!only || only === 'longpress') {
     entry: 'longpress-test.mjs',
     out: 'longpress-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native-web.js', ...STUBS },
+    // 지도 컴포넌트(RealMapView.web.js)의 계산 함수까지 함께 검사하므로 실제 react-native-web 으로 묶습니다.
+    alias: { 'react-native': 'react-native-web', ...STUBS },
   });
 }
 

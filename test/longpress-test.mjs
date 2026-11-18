@@ -24,6 +24,7 @@ import {
   isValidPoint,
   REVERSE_PLACE_ENDPOINT,
 } from '../src/services/reversePlace.js';
+import { leafletAnchorCenter, naverAnchorCenter, normalizeAnchorY } from '../src/components/RealMapView.web.js';
 import {
   LONG_PRESS_DEDUPE_METERS,
   LONG_PRESS_DEDUPE_MS,
@@ -214,6 +215,72 @@ check('핀: 주변에 없어도 이름·좌표로 저장된다', personal && per
 check('핀: 개인 장소는 출처(카카오) 없음', personal && personal.providers.length === 0 && personal.placeUrl === '', JSON.stringify(personal && personal.providers));
 check('핀: 이름이 비면 만들지 않음', buildLongPressPin({ name: '   ', point: POINT }) === null);
 check('핀: 좌표가 없으면 만들지 않음', buildLongPressPin({ name: '어딘가', point: { lat: 'x' } }) === null);
+
+// ── 시트가 열린 만큼 그 자리를 화면 위쪽에 두는 계산 ────────────
+//   네이버: 지도 중심의 offset 은 (W/2, H/2) → 점을 (W/2, H×ratio) 에 두려면 그 차이만큼만 옮깁니다.
+//   (처음엔 target offset 을 통째로 빼서 점이 화면 오른쪽 밖으로 밀렸습니다 — 실측으로 잡은 회귀)
+const FakeLatLng = function (lat, lng) {
+  this._lat = lat;
+  this._lng = lng;
+  this.lat = () => lat;
+  this.lng = () => lng;
+};
+const fakeNv = { Point: function (x, y) { this.x = x; this.y = y; }, LatLng: FakeLatLng };
+const linearProjection = {
+  fromCoordToPoint: (coord) => ({ x: coord.lng() * 1000, y: -coord.lat() * 1000 }),
+  fromPointToCoord: (point) => new FakeLatLng(-point.y / 1000, point.x / 1000),
+};
+const fakeNaverMap = (centerCoord) => ({ getProjection: () => linearProjection, getCenter: () => centerCoord });
+/** 어떤 좌표가 지도에서 몇 px 에 보이는가 (offset = 중심offset + world차 × 2^zoom) */
+const offsetOfNaver = (coord, centerCoord, zoom, size) => {
+  const w = linearProjection.fromCoordToPoint(coord);
+  const c = linearProjection.fromCoordToPoint(centerCoord);
+  const scale = Math.pow(2, zoom);
+  return { x: size.w / 2 + (w.x - c.x) * scale, y: size.h / 2 + (w.y - c.y) * scale };
+};
+const SHEET_SIZE = { w: 390, h: 786 };
+const PRESS = new FakeLatLng(37.5563, 126.9236);
+const anchored = naverAnchorCenter(fakeNv, fakeNaverMap(PRESS), PRESS, 16, SHEET_SIZE, 0.15);
+const anchoredOffset = offsetOfNaver(PRESS, anchored, 16, SHEET_SIZE);
+check(
+  '지도 이동(네이버): 꾹 누른 자리가 화면 가로 가운데 · 세로 15% 에 온다',
+  Math.abs(anchoredOffset.x - 195) < 0.001 && Math.abs(anchoredOffset.y - SHEET_SIZE.h * 0.15) < 0.001,
+  JSON.stringify(anchoredOffset)
+);
+check(
+  '지도 이동(네이버): anchorY 0.5 면 지도 중심 그대로',
+  naverAnchorCenter(fakeNv, fakeNaverMap(PRESS), PRESS, 16, SHEET_SIZE, 0.5) === PRESS
+);
+check(
+  '지도 이동(네이버): 지도·투영이 없으면 좌표를 그대로',
+  naverAnchorCenter(null, null, PRESS, 16, SHEET_SIZE, 0.15) === PRESS
+);
+
+const linearLeaflet = {
+  project: (latlng, zoom) => {
+    const scale = Math.pow(2, zoom) * 256;
+    const x = (latlng[1] * scale) / 360;
+    const y = (-latlng[0] * scale) / 360;
+    return { x, y, subtract: (p) => ({ x: x - p[0], y: y - p[1] }) };
+  },
+  unproject: (point, zoom) => {
+    const scale = Math.pow(2, zoom) * 256;
+    return { lat: (-point.y * 360) / scale, lng: (point.x * 360) / scale };
+  },
+};
+const leafletCenter = leafletAnchorCenter(linearLeaflet, PRESS._lat, PRESS._lng, 16, SHEET_SIZE, 0.15);
+const lc = linearLeaflet.project([leafletCenter[0], leafletCenter[1]], 16);
+const lp = linearLeaflet.project([PRESS._lat, PRESS._lng], 16);
+const leafletOffset = { x: SHEET_SIZE.w / 2 + (lp.x - lc.x), y: SHEET_SIZE.h / 2 + (lp.y - lc.y) };
+check(
+  '지도 이동(Leaflet): 같은 규칙(가운데 · 세로 15%)',
+  Math.abs(leafletOffset.x - 195) < 0.001 && Math.abs(leafletOffset.y - SHEET_SIZE.h * 0.15) < 0.001,
+  JSON.stringify(leafletOffset)
+);
+check(
+  '지도 이동: anchorY 기본값은 가운데(0.5), 범위를 벗어나면 0.5',
+  normalizeAnchorY(0.15) === 0.15 && normalizeAnchorY(0) === 0.5 && normalizeAnchorY(2) === 0.5 && normalizeAnchorY('x') === 0.5
+);
 
 // ═════════════════════════════════════════════════════════════
 // 3. /api/reverse-place
