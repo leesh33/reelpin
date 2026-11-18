@@ -23,6 +23,9 @@ import {
 } from '../utils/categories';
 import GeofenceToast, { GEOFENCE_TOAST_MS, nearbyToastMessage } from '../components/GeofenceToast';
 import PinDetailSheet from '../components/PinDetailSheet';
+// v2.33.0 — 지도 꾹 누르기 → 그 자리 주소·주변 장소 → 내 지도에 등록
+import LongPressPlaceSheet, { PLACE_LOOKUP_FAILED } from '../components/LongPressPlaceSheet';
+import { fetchReversePlace } from '../services/reversePlace';
 // v2.20 — 매장 상세 조회(영업시간·추천 메뉴)
 // v2.28.0 — 지도 위 영업 상태 뱃지(bannerOpeningBadge)는 배너와 함께 걷어냈습니다(한 줄 토스트엔 넣지 않음).
 import { fetchPlaceInfo, needsPlaceInfo, pinHoursPatch } from '../services/placeInfo';
@@ -98,6 +101,11 @@ export default function MapScreen({
   onDismissOverlays,
   // v2.28.0 — `목록 보기` 레이어가 열렸는지 App 에게 알려 줍니다(하단 탭바를 숨기기 위해).
   onListSheetChange,
+  // v2.33.0 — 꾹 눌러 등록: 저장은 App 의 기존 저장 흐름(중복 판정·클라우드)에 그대로 맡깁니다.
+  //   collections … 컬렉션 칩 목록 · onPlaceSheetChange … 시트가 열린 동안 하단 탭바 숨김
+  onSavePlace,
+  onPlaceSheetChange,
+  collections = [],
 }) {
   /**
    * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
@@ -115,6 +123,74 @@ export default function MapScreen({
   // v2.17 — 왼쪽 하단 지도 도구(가본 곳만 보기 · 지도 공유하기) 펌찌기
   const [toolsOpen, setToolsOpen] = useState(false);
   const visitedOnly = visitFilter === VISIT_DONE;
+
+  // ── v2.33.0 지도 꾹 누르기 → 장소 등록 ─────────────────────────
+  //   placePoint … 꾹 누른 자리(떨어진 핀) · null 이면 시트가 닫힌 상태
+  //   placeLookup … { loading, result:{address,places}, error } — /api/reverse-place 답
+  //   lookupSeq … 자리를 연달아 꾹 누르면 **마지막 요청의 답만** 반영합니다.
+  const [placePoint, setPlacePoint] = useState(null);
+  const [placeLookup, setPlaceLookup] = useState({ loading: false, result: null, error: '' });
+  const lookupSeq = useRef(0);
+
+  const lookupPlace = useCallback((point) => {
+    if (!point) return;
+    lookupSeq.current += 1;
+    const seq = lookupSeq.current;
+    setPlaceLookup({ loading: true, result: null, error: '' });
+    Promise.resolve(fetchReversePlace(point))
+      .then((res) => {
+        if (seq !== lookupSeq.current) return;
+        if (res && res.ok) {
+          setPlaceLookup({ loading: false, result: { address: res.address || null, places: res.places || [] }, error: '' });
+        } else {
+          setPlaceLookup({ loading: false, result: null, error: PLACE_LOOKUP_FAILED });
+        }
+      })
+      .catch(() => {
+        if (seq !== lookupSeq.current) return;
+        setPlaceLookup({ loading: false, result: null, error: PLACE_LOOKUP_FAILED });
+      });
+  }, []);
+
+  /** 꾹 누른 자리 — 떨어진 핀을 꽂고, 지도를 그 자리(시트 위쪽)로 옮기고, 주소를 조회합니다. */
+  const handleMapLongPress = useCallback(
+    (coords) => {
+      if (!coords) return;
+      const lat = Number(coords.lat);
+      const lng = Number(coords.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      setToolsOpen(false);
+      setNearbyOpen(false);
+      setPlacePoint({ lat, lng });
+      setFocus({ lat, lng });
+      setFocusKey((k) => k + 1);
+      lookupPlace({ lat, lng });
+    },
+    [lookupPlace]
+  );
+
+  /** 시트를 닫으면 떨어진 핀·조회 결과를 함께 지웁니다. (늦게 오는 답도 무시) */
+  const closePlaceSheet = useCallback(() => {
+    lookupSeq.current += 1;
+    setPlacePoint(null);
+    setPlaceLookup({ loading: false, result: null, error: '' });
+  }, []);
+
+  const saveLongPressPlace = useCallback(
+    (pin, options) => {
+      if (!pin) return;
+      if (typeof onSavePlace === 'function') onSavePlace(pin, options);
+      closePlaceSheet();
+    },
+    [onSavePlace, closePlaceSheet]
+  );
+
+  // 꾹 눌러 등록 시트가 열린 동안 App 은 하단 탭바를 숨깁니다(바닥 저장 버튼을 가리지 않게).
+  useEffect(() => {
+    if (typeof onPlaceSheetChange !== 'function') return undefined;
+    onPlaceSheetChange(Boolean(placePoint));
+    return () => onPlaceSheetChange(false);
+  }, [placePoint, onPlaceSheetChange]);
 
   // ── v2.5 검색어 · 지도/목록 전환 ──────────────────────────────
   //   query … 내 핀 검색어 (가게명·지역·주소·분류·메뉴태그)
@@ -806,6 +882,9 @@ export default function MapScreen({
           radiusMeters={NEARBY_RADIUS_M}
           categories={categories}
           hideNotice={toolsOpen}
+          onLongPress={handleMapLongPress}
+          droppedPoint={placePoint}
+          focusAnchorY={placePoint ? 0.15 : 0.5}
         />
 
         {/* 상단 오버레이(지도 보기): 분류 필터 칩 → (공유받은 지도 · 위치 오류) */}
@@ -1126,6 +1205,21 @@ export default function MapScreen({
           배너까지** 한꺼번에 어둑해집니다(☰ 메뉴 시트와 같은 결).
         · 바깥 어두운 곳을 탭하면 닫힙니다. 시트 본체(주황 헤더·maxHeight 86%·✕)는 그대로.
       */}
+      {/* v2.33.0 — 꾹 눌러 장소 등록: 지도 위에 떨어진 핀을 두고 66% 시트로 이름·분류를 고릅니다. */}
+      {placePoint && (
+        <LongPressPlaceSheet
+          point={placePoint}
+          loading={placeLookup.loading}
+          result={placeLookup.result}
+          error={placeLookup.error}
+          categories={categories}
+          collections={collections}
+          onClose={closePlaceSheet}
+          onSave={saveLongPressPlace}
+          onRetry={() => lookupPlace(placePoint)}
+        />
+      )}
+
       {selectedPin && (
         <View style={styles.detailLayer} testID="pin-detail-layer">
           <Pressable

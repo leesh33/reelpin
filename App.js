@@ -156,6 +156,8 @@ export default function App() {
   //   mapListSheet    … 지도 `목록 보기` 레이어 (MapScreen 이 알려 줌)
   //   collectionSheet … 컬렉션 `새 컬렉션` 시트 (CollectionsScreen 이 알려 줌)
   const [mapListSheet, setMapListSheet] = useState(false);
+  // v2.33.0 — 지도 꾹 눌러 장소 등록 시트가 열렸는지 (MapScreen 이 알려 줍니다)
+  const [mapPlaceSheet, setMapPlaceSheet] = useState(false);
   const [collectionSheet, setCollectionSheet] = useState(false);
   // v2.31.0 — 컬렉션 탭의 기획전 미리보기 시트가 열렸는지(CollectionsScreen 이 알려 줍니다).
   //   시트가 열린 동안 하단 탭바가 [내 지도에 한 번에 담기] 버튼을 덮지 않도록 숨깁니다.
@@ -767,6 +769,49 @@ export default function App() {
   );
 
   /**
+   * v2.33.0 — 지도에서 **꾹 눌러 등록**한 장소를 내 지도에 꽂습니다.
+   *   · 이미 있는 곳(이름+동네·placeId·매장 URL)이면 새 핀을 만들지 않고 그 핀을 열어 줍니다.
+   *   · 컬렉션을 골랐으면 그 핀을 컬렉션에도 담습니다.
+   *   · 클라우드 동기화·토스트는 기존 저장 흐름과 같습니다.
+   */
+  const handleSavedPlace = useCallback(
+    (pin, options = {}) => {
+      if (!pin) return null;
+      const list = pinsRef.current || pins || [];
+      const existing = findExistingPin(list, pin);
+      const target = existing || pin;
+      if (!existing) {
+        const next = [pin, ...list];
+        pinsRef.current = next;
+        setPins(next);
+        pushPinsToCloud([pin]);
+      }
+      const collectionId = String((options && options.collectionId) || '');
+      let collectionName = '';
+      if (collectionId) {
+        const current = collectionsRef.current || [];
+        const targetCollection = current.find((c) => c && String(c.id) === collectionId);
+        if (targetCollection) {
+          const result = addPinsToCollection(current, collectionId, [target.id]);
+          collectionsRef.current = result.collections;
+          setCollections(result.collections);
+          collectionName = String(targetCollection.name || '');
+        }
+      }
+      setSelectedPinId(target.id);
+      setTab('map');
+      const parts = [];
+      parts.push(
+        existing ? '이미 지도에 있는 장소예요 · ' + existing.name : '지도에 핀을 꽂았어요 · ' + pin.name
+      );
+      if (collectionName) parts.push(collectionName + ' 컬렉션에 담았어요');
+      showToast(parts.join(' · '), existing ? 'dark' : 'pro');
+      return target;
+    },
+    [pins, pushPinsToCloud, showToast]
+  );
+
+  /**
    * v2.0 — 여러 곳 한 번에 저장.
    *   · 이미 저장한 핀과 이름+좌표(200m)·placeId·매장 URL 이 겹치면 건너뜁니다.
    *   · v2.10 — 무료 플랜 10개 한도를 없앴습니다. 몇 개든 저장됩니다 (중복만 걸러 냄).
@@ -1210,6 +1255,7 @@ export default function App() {
         tab,
         pinDetail: Boolean(selectedPinId),
         listSheet: mapListSheet,
+        placeSheet: mapPlaceSheet,
         collection: collectionSheet || Boolean(sharedCollection),
         curated: curatedPreviewOpen,
         search: searchOpen,
@@ -1217,7 +1263,7 @@ export default function App() {
         menu: menuOpen,
         feedback: feedbackOpen,
       }),
-    [tab, selectedPinId, mapListSheet, collectionSheet, sharedCollection, curatedPreviewOpen, searchOpen, alertOpen, menuOpen, feedbackOpen]
+    [tab, selectedPinId, mapListSheet, mapPlaceSheet, collectionSheet, sharedCollection, curatedPreviewOpen, searchOpen, alertOpen, menuOpen, feedbackOpen]
   );
 
   // v2.21 🛡️ `/admin` — 앱 화면 대신 어드민 화면을 그립니다. (권한은 /api/admin 이 최종 확인)
@@ -1278,6 +1324,9 @@ export default function App() {
               onToggleAlerts={handleToggleAlerts}
               onDismissOverlays={dismissOverlaysForMap}
               onListSheetChange={setMapListSheet}
+              onPlaceSheetChange={setMapPlaceSheet}
+              collections={collections}
+              onSavePlace={handleSavedPlace}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>

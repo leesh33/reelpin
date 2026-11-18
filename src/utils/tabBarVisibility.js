@@ -14,6 +14,7 @@
  * 숨기는 레이어 (`hiddenBy` 로 어떤 레이어 때문인지 돌려줍니다)
  *   pinDetail   … 장소 상세 시트 (PinDetailSheet) — 지도 탭에서 핀을 열었을 때
  *   listSheet   … 지도 목록 보기 레이어 (LayerSheet)
+ *   placeSheet  … 지도 꾹 눌러 장소 등록 시트 (LongPressPlaceSheet · v2.33.0)
  *   collection  … 컬렉션 새로 만들기 시트 (CollectionsScreen)
  *   curated     … 기획전·공유받은 컬렉션 미리보기 시트 (CollectionPreviewSheet)
  *   search      … 🔍 검색 레이어 팝업
@@ -29,6 +30,7 @@
 export const TAB_BAR_LAYERS = {
   pinDetail: '장소 상세 시트',
   listSheet: '목록 보기',
+  placeSheet: '장소 등록 시트',
   collection: '새 컬렉션 시트',
   curated: '기획전 미리보기',
   search: '검색',
@@ -43,6 +45,7 @@ export const TAB_BAR_LAYERS = {
  * @param {string} [state.tab]  지금 탭 ('map' | 'paste' | 'collections')
  * @param {boolean} [state.pinDetail]  장소 상세 시트가 열려 있는가
  * @param {boolean} [state.listSheet]  지도 목록 보기 레이어가 열려 있는가
+ * @param {boolean} [state.placeSheet] 지도 꾹 눌러 장소 등록 시트가 열려 있는가
  * @param {boolean} [state.collection] 새 컬렉션 시트가 열려 있는가
  * @param {boolean} [state.curated] 기획전·공유받은 컬렉션 미리보기 시트가 열려 있는가
  * @param {boolean} [state.search]  🔍 검색 레이어
@@ -57,6 +60,7 @@ export function tabBarVisibility(state = {}) {
   const open = [
     ['pinDetail', onMap && Boolean(state.pinDetail)],
     ['listSheet', onMap && Boolean(state.listSheet)],
+    ['placeSheet', onMap && Boolean(state.placeSheet)],
     ['collection', Boolean(state.collection)],
     ['curated', Boolean(state.curated)],
     ['search', Boolean(state.search)],

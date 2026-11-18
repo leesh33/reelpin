@@ -41,6 +41,7 @@ import { colors, mapControls, radius, tabBar, typography } from '../theme';
 import { getCategoryColor, hexToRgba } from '../utils/categories';
 import { normalizeCoords } from '../services/location';
 import { SEARCH_FOCUS_ZOOM, SEARCH_RESULT_PADDING } from '../utils/searchNav';
+import { bindLongPress } from './longPressGesture';
 import {
   CLUSTER_THRESHOLD_PX,
   clusterColor,
@@ -127,6 +128,51 @@ export function pinSize(selected) {
  */
 export function pinAnchor(selected) {
   return { x: 0, y: pinSize(selected) / 2 };
+}
+
+// ── 꾹 누른 자리 표시 (v2.33.0) ────────────────────────────────
+/** 떨어진(꾹 누른) 자리 핀의 HTML — 딥 틸 점 + 은은한 물결 + `여기` 라벨 */
+export function droppedPinHtml(label = '여기') {
+  return (
+    '<div style="position:relative;display:flex;flex-direction:column;align-items:center;width:max-content;' +
+    'transform:translateX(-50%);-webkit-tap-highlight-color:transparent;">' +
+    '<div style="position:relative;width:22px;height:22px;">' +
+    '<span class="reelpin-drop-pulse" style="position:absolute;left:50%;top:50%;width:22px;height:22px;' +
+    'margin:-11px 0 0 -11px;border-radius:50%;background:rgba(13,148,136,0.30);"></span>' +
+    '<div style="position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;' +
+    'box-sizing:border-box;border-radius:50%;background:#0D9488;border:3px solid #FFFFFF;' +
+    'box-shadow:0 2px 8px rgba(0,0,0,0.42);"></div>' +
+    '</div>' +
+    '<div style="margin-top:3px;padding:2px 7px;border-radius:999px;background:#0D9488;color:#FFFFFF;' +
+    'font-family:' +
+    PIN_LABEL_FONT_STACK +
+    ';font-size:10.5px;font-weight:900;line-height:13px;letter-spacing:-0.2px;white-space:nowrap;' +
+    'box-shadow:0 2px 6px rgba(0,0,0,0.30);">' +
+    escapeHtml(label) +
+    '</div></div>'
+  );
+}
+
+/** 떨어진 자리 핀의 anchor — 동그라미(16px) 중심이 정확히 그 좌표 위에 */
+export function droppedPinAnchor() {
+  return { x: 0, y: 11 };
+}
+
+const DROP_CSS =
+  '@keyframes reelpinDropPulse{0%{transform:scale(0.65);opacity:0.9}' +
+  '70%{transform:scale(2.2);opacity:0}100%{transform:scale(2.2);opacity:0}}' +
+  '.reelpin-drop-pulse{animation:reelpinDropPulse 1.7s ease-out infinite;}';
+
+/** 물결 애니메이션 keyframes 를 머리에 한 번만 넣습니다. (SSR 에서는 아무 일도 안 함) */
+export function ensureDroppedPinStyles(doc) {
+  const target = doc || (typeof document !== 'undefined' ? document : null);
+  if (!target || typeof target.createElement !== 'function') return false;
+  if (target.querySelector('style[data-reelpin-drop]')) return true;
+  const style = target.createElement('style');
+  style.setAttribute('data-reelpin-drop', '1');
+  style.textContent = DROP_CSS;
+  (target.head || target.body).appendChild(style);
+  return true;
 }
 
 /**
@@ -531,6 +577,10 @@ function NaverMap({
   controlsRef,
   onReady,
   onFail,
+  // v2.33.0 — 지도 꾹 누르기
+  onLongPress,
+  droppedPoint,
+  focusAnchorY = 0.5,
 }) {
   const hostRef = useRef(null);
   const mapRef = useRef(null);
@@ -542,6 +592,9 @@ function NaverMap({
   const onSelectRef = useRef(onSelect);
   const onReadyRef = useRef(onReady);
   const onFailRef = useRef(onFail);
+  // v2.33.0 — 꾹 누른 자리 표시 마커 + 콜백 (렌더마다 새 함수여도 지도는 다시 만들지 않습니다)
+  const droppedRef = useRef(null);
+  const onLongPressRef = useRef(onLongPress);
   const [ready, setReady] = useState(false);
   // v2.5 — 클러스터 배지 마커 (key = 무리 id 목록) 과 지금의 무리 상태
   const clusterMarkersRef = useRef(new Map());
@@ -560,6 +613,9 @@ function NaverMap({
   useEffect(() => {
     onFailRef.current = onFail;
   }, [onFail]);
+  useEffect(() => {
+    onLongPressRef.current = onLongPress;
+  }, [onLongPress]);
 
   /**
    * v2.5 — 이 순간의 화면 픽셀 좌표로 핀을 투영합니다.
@@ -624,6 +680,7 @@ function NaverMap({
   useEffect(() => {
     let cancelled = false;
     let resizeObserver = null;
+    let detachLongPress = null;
     const start = startLatLng(initialCenter, myCoordsRef.current, pins);
 
     // 인증 실패는 지도 생성 뒤에 늦게 올 수도 있어, 화면이 살아 있는 동안 계속 듣습니다.
@@ -658,6 +715,26 @@ function NaverMap({
         );
         nvRef.current = nv;
         mapRef.current = map;
+
+        // v2.33.0 — 꾹 누르기: 손가락이 멈춘 화면 픽셀을 지도 좌표로 바꿔 화면에 알립니다.
+        //   · `fromOffsetToCoord` 는 지도 컨테이너 기준 offset → 위경도 (v3 MapSystemProjection)
+        //   · 지도를 끌거나 두 손가락으로 확대하면 bindLongPress 쪽에서 취소됩니다
+        ensureDroppedPinStyles();
+        detachLongPress = bindLongPress(node, {
+          onLongPress: (press) => {
+            const current = mapRef.current;
+            const api = nvRef.current;
+            if (!current || !api || typeof onLongPressRef.current !== 'function') return;
+            let coord = null;
+            try {
+              coord = current.getProjection().fromOffsetToCoord(new api.Point(press.x, press.y));
+            } catch (e) {
+              coord = null;
+            }
+            if (!coord || typeof coord.lat !== 'function') return;
+            onLongPressRef.current({ lat: coord.lat(), lng: coord.lng() });
+          },
+        });
 
         const applySize = () => {
           if (cancelled || mapRef.current !== map) return;
@@ -725,9 +802,12 @@ function NaverMap({
           resizeObserver.disconnect();
         } catch (e) {}
       }
+      if (typeof detachLongPress === 'function') detachLongPress();
+      detachLongPress = null;
       markersRef.current.clear();
       clusterMarkersRef.current.clear();
       meRef.current = { dot: null, circle: null };
+      droppedRef.current = null;
       const map = mapRef.current;
       mapRef.current = null;
       if (map) {
@@ -931,7 +1011,42 @@ function NaverMap({
     }
   }, [myCoords, radiusMeters, ready]);
 
-  // 4) focusCoords 부드럽게 이동
+  // 3-b) v2.33.0 — 꾹 누른 자리 표시(떨어진 핀). 좌표가 없어지면(닫기) 지도에서 지웁니다.
+  useEffect(() => {
+    const map = mapRef.current;
+    const nv = nvRef.current;
+    if (!map || !nv || !ready) return;
+    const coords = normalizeCoords(droppedPoint);
+    if (!coords) {
+      if (droppedRef.current) {
+        try {
+          droppedRef.current.setMap(null);
+        } catch (e) {}
+        droppedRef.current = null;
+      }
+      return;
+    }
+    ensureDroppedPinStyles();
+    const position = new nv.LatLng(coords.lat, coords.lng);
+    const anchor = droppedPinAnchor();
+    const icon = { content: droppedPinHtml(), anchor: new nv.Point(anchor.x, anchor.y) };
+    if (!droppedRef.current) {
+      droppedRef.current = new nv.Marker({
+        position,
+        map,
+        icon,
+        title: '꾹 누른 자리',
+        zIndex: 400,
+        clickable: false,
+      });
+    } else {
+      droppedRef.current.setPosition(position);
+      droppedRef.current.setIcon(icon);
+      droppedRef.current.setMap(map);
+    }
+  }, [droppedPoint, ready]);
+
+  // 4) focusCoords 부드럽게 이동 — v2.33.0: focusAnchorY 로 화면 위쪽에 두고 시트를 띄웁니다.
   const focusLat = normalizeCoords(focus) ? normalizeCoords(focus).lat : null;
   const focusLng = normalizeCoords(focus) ? normalizeCoords(focus).lng : null;
   useEffect(() => {
@@ -939,7 +1054,15 @@ function NaverMap({
     const nv = nvRef.current;
     if (!map || !nv || !ready || focusLat === null || focusLng === null) return;
     const zoom = Math.max(map.getZoom() || initialZoom, 16);
-    const target = new nv.LatLng(focusLat, focusLng);
+    const size = measuredSize(toDomNode(hostRef.current)) || { w: 390, h: 700 };
+    const target = naverAnchorCenter(
+      nv,
+      map,
+      new nv.LatLng(focusLat, focusLng),
+      zoom,
+      size,
+      focusAnchorY
+    );
     try {
       // morph: 가까우면 부드럽게, 줌이 바뀌면 애니메이션만 유지
       map.morph(target, zoom, { duration: 500, easing: 'easeOutCubic' });
@@ -976,6 +1099,54 @@ function NaverMap({
   }, [fitPoints, fitKey, ready]);
 
   return <View ref={hostRef} style={styles.mapHost} accessibilityLabel="네이버 지도" />;
+}
+
+/**
+ * v2.33.0 — 꾹 누른 자리를 화면의 `anchorY`(0~1) 위치에 보이게 하는 **지도 중심 좌표**.
+ *   네이버 지도의 세계 좌표(0~256 타일)는 줌과 무관하므로, 목표 줌의 배율(2^zoom)로
+ *   화면 픽셀만큼만 중심을 옮기면 됩니다. (anchorY = 0.5 면 원래 중심 그대로)
+ */
+export function normalizeAnchorY(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n >= 1) return 0.5;
+  return n;
+}
+
+export function naverAnchorCenter(nv, map, coord, zoom, size, anchorY) {
+  const ratio = normalizeAnchorY(anchorY);
+  const width = Number(size && (size.w != null ? size.w : size.width)) || 0;
+  const height = Number(size && (size.h != null ? size.h : size.height)) || 0;
+  if (!nv || !map || !coord || ratio === 0.5 || !(width > 0 && height > 0)) return coord;
+  try {
+    const projection = map.getProjection();
+    if (!projection || typeof projection.fromCoordToPoint !== 'function') return coord;
+    const scale = Math.pow(2, Number(zoom) || 0);
+    const world = projection.fromCoordToPoint(coord);
+    if (!world || !Number.isFinite(world.x) || !Number.isFinite(world.y)) return coord;
+    const nextWorld = new nv.Point(world.x - width / 2 / scale, world.y - (height * ratio) / scale);
+    const center = projection.fromPointToCoord(nextWorld);
+    if (!center || typeof center.lat !== 'function') return coord;
+    return new nv.LatLng(center.lat(), center.lng());
+  } catch (e) {
+    return coord;
+  }
+}
+
+/** Leaflet — 같은 규칙(anchorY 위치에 점을 두는 중심 좌표)을 project/unproject 로 */
+export function leafletAnchorCenter(map, lat, lng, zoom, size, anchorY) {
+  const ratio = normalizeAnchorY(anchorY);
+  const width = Number(size && (size.w != null ? size.w : size.width)) || 0;
+  const height = Number(size && (size.h != null ? size.h : size.height)) || 0;
+  if (!map || ratio === 0.5 || !(width > 0 && height > 0)) return [lat, lng];
+  if (typeof map.project !== 'function' || typeof map.unproject !== 'function') return [lat, lng];
+  try {
+    const point = map.project([lat, lng], zoom);
+    const center = map.unproject(point.subtract([0, height * (ratio - 0.5)]), zoom);
+    if (!center || !Number.isFinite(center.lat) || !Number.isFinite(center.lng)) return [lat, lng];
+    return [center.lat, center.lng];
+  } catch (e) {
+    return [lat, lng];
+  }
 }
 
 /** 저장 핀 — 카테고리 색 원형 + 흰 테두리(선택 시 확대) 아래에 가게 이름 라벨 */
@@ -1017,6 +1188,10 @@ function LeafletMap({
   controlsRef,
   onReady,
   onFail,
+  // v2.33.0 — 지도 꾹 누르기
+  onLongPress,
+  droppedPoint,
+  focusAnchorY = 0.5,
 }) {
   const hostRef = useRef(null);
   const mapRef = useRef(null);
@@ -1033,6 +1208,9 @@ function LeafletMap({
   const clusterMarkersRef = useRef(new Map());
   const clusterSigRef = useRef('');
   const [clusters, setClusters] = useState([]);
+  // v2.33.0 — 꾹 누른 자리 표시 마커 + 콜백
+  const droppedRef = useRef(null);
+  const onLongPressRef = useRef(onLongPress);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -1046,6 +1224,9 @@ function LeafletMap({
   useEffect(() => {
     onFailRef.current = onFail;
   }, [onFail]);
+  useEffect(() => {
+    onLongPressRef.current = onLongPress;
+  }, [onLongPress]);
 
   /** 이 순간의 **컨테이너 픽셀 좌표** — Leaflet 의 latLngToContainerPoint */
   const projectPoint = useCallback((lat, lng) => {
@@ -1091,6 +1272,7 @@ function LeafletMap({
     let cancelled = false;
     let resizeObserver = null;
     let onWindowResize = null;
+    let detachLongPress = null;
 
     const start = startLatLng(initialCenter, myCoordsRef.current, pins);
 
@@ -1128,6 +1310,23 @@ function LeafletMap({
         liftLeafletBottom(node, tabBar.floatTop + 6);
 
         mapRef.current = map;
+
+        // v2.33.0 — 꾹 누르기: 컨테이너 픽셀 → 위경도 (Leaflet containerPointToLatLng)
+        ensureDroppedPinStyles();
+        detachLongPress = bindLongPress(node, {
+          onLongPress: (press) => {
+            const current = mapRef.current;
+            if (!current || typeof onLongPressRef.current !== 'function') return;
+            let coord = null;
+            try {
+              coord = current.containerPointToLatLng([press.x, press.y]);
+            } catch (e) {
+              coord = null;
+            }
+            if (!coord || !Number.isFinite(coord.lat) || !Number.isFinite(coord.lng)) return;
+            onLongPressRef.current({ lat: coord.lat, lng: coord.lng });
+          },
+        });
 
         // RNW 레이아웃이 늦게 잡히는 경우가 있어 한 번 더 크기를 알려 줍니다.
         setTimeout(() => {
@@ -1185,9 +1384,12 @@ function LeafletMap({
       if (onWindowResize && typeof window !== 'undefined') {
         window.removeEventListener('resize', onWindowResize);
       }
+      if (typeof detachLongPress === 'function') detachLongPress();
+      detachLongPress = null;
       markersRef.current.clear();
       clusterMarkersRef.current.clear();
       meRef.current = { dot: null, circle: null };
+      droppedRef.current = null;
       const map = mapRef.current;
       mapRef.current = null;
       if (map) {
@@ -1382,7 +1584,38 @@ function LeafletMap({
     }
   }, [myCoords, radiusMeters, ready]);
 
-  // focusCoords 부드럽게 이동
+  // v2.33.0 — 꾹 누른 자리 표시(떨어진 핀). 좌표가 없어지면 닫은 것으로 보고 지웁니다.
+  useEffect(() => {
+    const map = mapRef.current;
+    const L = leafletRef.current;
+    if (!map || !L || !ready) return;
+    const coords = normalizeCoords(droppedPoint);
+    if (!coords) {
+      if (droppedRef.current) {
+        try {
+          map.removeLayer(droppedRef.current);
+        } catch (e) {}
+        droppedRef.current = null;
+      }
+      return;
+    }
+    ensureDroppedPinStyles();
+    const latlng = [coords.lat, coords.lng];
+    const anchor = droppedPinAnchor();
+    if (!droppedRef.current) {
+      const icon = L.divIcon({
+        html: droppedPinHtml(),
+        className: 'reelpin-pin-drop',
+        iconSize: [0, 0],
+        iconAnchor: [anchor.x, anchor.y],
+      });
+      droppedRef.current = L.marker(latlng, { icon, keyboard: false, zIndexOffset: 2000 }).addTo(map);
+    } else {
+      droppedRef.current.setLatLng(latlng);
+    }
+  }, [droppedPoint, ready]);
+
+  // focusCoords 부드럽게 이동 — v2.33.0: focusAnchorY 로 화면 위쪽에 두고 시트를 띄웁니다.
   const focusLat = normalizeCoords(focus) ? normalizeCoords(focus).lat : null;
   const focusLng = normalizeCoords(focus) ? normalizeCoords(focus).lng : null;
   useEffect(() => {
@@ -1390,7 +1623,9 @@ function LeafletMap({
     if (!map || !ready || focusLat === null || focusLng === null) return;
     try {
       const zoom = Math.max(map.getZoom() || initialZoom, 16);
-      map.flyTo([focusLat, focusLng], zoom, { duration: 0.9 });
+      const size = measuredSize(toDomNode(hostRef.current)) || { w: 390, h: 700 };
+      const center = leafletAnchorCenter(map, focusLat, focusLng, zoom, size, focusAnchorY);
+      map.flyTo(center, zoom, { duration: 0.9 });
     } catch (e) {
       try {
         map.setView([focusLat, focusLng], 16);
@@ -1445,6 +1680,11 @@ export default function RealMapView({
   // v2.17 — 왼쪽 하단 도구 메뉴가 펼쳐져 있을 때는 지도 안내 알약을 감춥니다.
   //         (둘 다 왼쪽 아래라 펼친 카드가 안내 글자를 반쯤 가려 지저분해 보입니다)
   hideNotice = false,
+  // v2.33.0 — 지도 꾹 누르기: 좌표를 알려 주고, 그 자리에 떨어진 핀을 그립니다.
+  //   focusAnchorY … 그 자리가 화면의 몇 %(0~1)에 오도록 지도를 옮길지 (0.5 = 가운데)
+  onLongPress = null,
+  droppedPoint = null,
+  focusAnchorY = 0.5,
 }) {
   const controlsRef = useRef(null);
   // 인증 실패가 이미 확인된 세션이면 곧바로 폴백 지도로 시작합니다.
@@ -1497,6 +1737,9 @@ export default function RealMapView({
     initialZoom,
     categories,
     controlsRef,
+    onLongPress,
+    droppedPoint,
+    focusAnchorY,
   };
 
   const summary = useMemo(() => {

@@ -47,6 +47,9 @@ export default function LayerSheet({
   closeLabel = '닫기',
   children = null,
   footer = null,
+  // v2.33.0 — 지도 꾹 눌러 장소 등록 시트처럼 **위쪽 지도가 보여야 하는** 화면은
+  //           낮은 높이(66%)를 넘깁니다. 값을 주지 않으면 예전 그대로 86% 입니다.
+  height = SHEET_HEIGHT,
   // 검사·딥링크용 이름 (기존 화면의 testID 를 그대로 넘길 수 있게)
   overlayTestID = '',
   testID = 'layer-sheet',
@@ -67,7 +70,7 @@ export default function LayerSheet({
         accessibilityLabel={closeLabel}
         testID={testID + '-backdrop'}
       />
-      <View style={styles.sheet} testID={testID}>
+      <View style={[styles.sheet, height !== SHEET_HEIGHT ? { height } : null]} testID={testID}>
         <View style={styles.sheetHead} testID={headerTestID || testID + '-header'}>
           {typeof onBack === 'function' ? (
             <Pressable

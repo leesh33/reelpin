@@ -723,7 +723,7 @@ check('kakao(타임아웃): 키 노출 없음', !leaksSecret(r.raw), r.raw);
 
 // ── 8. api/*.js 는 Vercel Node 함수 규격(module.exports = handler) ──
 const root = process.cwd(); // run-tests.mjs 가 프로젝트 루트에서 실행합니다
-['youtube.js', 'kakao-local.js', 'naver-local.js', 'resolve-url.js', 'gemini.js'].forEach((file) => {
+['youtube.js', 'kakao-local.js', 'naver-local.js', 'resolve-url.js', 'gemini.js', 'reverse-place.js'].forEach((file) => {
   const src = fs.readFileSync(path.join(root, 'api', file), 'utf8');
   check('api/' + file + ': module.exports = async function', /module\.exports\s*=\s*async\s+function/.test(src));
   check('api/' + file + ': 키를 응답에 직접 넣지 않음', !/sendJson\([^)]*process\.env/.test(src));
