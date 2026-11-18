@@ -3394,7 +3394,10 @@ const v233Checks = [
   ['v2.33 시트: 조회 실패해도 직접 입력으로 저장할 수 있다(다시 시도 버튼)',
     placeSheetErrorHtml233.indexOf('이름을직접적어저장할수있어요') > 0 &&
       placeSheetErrorHtml233.indexOf('다시') > 0 &&
-      placeSheetErrorHtml233.indexOf('longpress-name-input') > 0],
+      placeSheetErrorHtml233.indexOf('longpress-name-input') > 0 &&
+      placeSheetErrorHtml233.indexOf('longpress-coords') > 0 &&
+      placeSheetErrorHtml233.indexOf('위도37.55630') > 0,
+    String(placeSheetErrorHtml233.indexOf('longpress-coords'))],
   ['v2.33 시트: 위쪽 지도가 보이도록 높이 70%(다른 레이어는 86% 그대로)',
     PLACE_SHEET_HEIGHT === '70%' && SHEET_HEIGHT === '86%', PLACE_SHEET_HEIGHT],
   ['v2.33 시트: 하단 탭바를 숨기는 규칙에 장소 등록 시트 포함',

@@ -128,6 +128,13 @@ export default function LongPressPlaceSheet({
 
   const addressText = addressLabelOf(address);
   const addressDetail = addressDetailOf(address);
+  // 주소를 못 찾았을 때는 좌표를 그대로 보여 줍니다 — "여기가 어디인지" 확인할 마지막 단서.
+  const latText = Number(point && point.lat);
+  const lngText = Number(point && point.lng);
+  const pointText =
+    Number.isFinite(latText) && Number.isFinite(lngText)
+      ? '위도 ' + latText.toFixed(5) + ' · 경도 ' + lngText.toFixed(5)
+      : '';
 
   return (
     <LayerSheet
@@ -177,6 +184,11 @@ export default function LongPressPlaceSheet({
             {!!addressDetail && (
               <Text style={styles.addressDetail} numberOfLines={1}>
                 {addressDetail}
+              </Text>
+            )}
+            {!loading && !addressText && !!pointText && (
+              <Text style={styles.addressDetail} numberOfLines={1} testID="longpress-coords">
+                {pointText}
               </Text>
             )}
           </View>
