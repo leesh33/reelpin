@@ -43,7 +43,9 @@ import {
   pressOffsetPoint,
   suggestedCategoryOf,
   suggestedNameOf,
+  visitedToggleText,
 } from '../src/utils/longPressPlace.js';
+import { pinToRow, rowToPin } from '../src/services/cloudSync.js';
 
 let fails = 0;
 const check = (label, cond, extra) => {
@@ -216,6 +218,53 @@ check('핀: 주변에 없어도 이름·좌표로 저장된다', personal && per
 check('핀: 개인 장소는 출처(카카오) 없음', personal && personal.providers.length === 0 && personal.placeUrl === '', JSON.stringify(personal && personal.providers));
 check('핀: 이름이 비면 만들지 않음', buildLongPressPin({ name: '   ', point: POINT }) === null);
 check('핀: 좌표가 없으면 만들지 않음', buildLongPressPin({ name: '어딘가', point: { lat: 'x' } }) === null);
+
+// ── v2.33.2 ✅ 가봤어요 토글 ──────────────────────────────
+//   시트에서 체크해 저장하면 핀에 visited: true(+visitedAt 저장 시각) 로 담깁니다.
+const VISIT_AT = new Date('2026-11-18T12:00:00.000Z');
+const visitedPin = buildLongPressPin({
+  name: '가까운집',
+  category: '맛집',
+  point: POINT,
+  place,
+  address: ADDRESS_FULL,
+  visited: true,
+  now: VISIT_AT,
+});
+check('가봤어요: 체크하고 저장하면 visited=true', visitedPin && visitedPin.visited === true, JSON.stringify(visitedPin && visitedPin.visited));
+check(
+  '가봤어요: 방문 시각(visitedAt)도 저장 시각으로 남는다',
+  visitedPin && visitedPin.visitedAt === VISIT_AT.toISOString(),
+  visitedPin && visitedPin.visitedAt
+);
+check('가봤어요: 체크하지 않으면 visited=false · visitedAt 빈 값', pin && pin.visited === false && pin.visitedAt === '', JSON.stringify([pin && pin.visited, pin && pin.visitedAt]));
+check(
+  '가봤어요: 문자열·undefined 같은 값은 체크로 보지 않음',
+  buildLongPressPin({ name: '어딘가', point: POINT, visited: 'true' }).visited === false &&
+    buildLongPressPin({ name: '어딘가', point: POINT }).visited === false
+);
+check(
+  '가봤어요: 개인 장소(주변에 없음)에도 체크가 담긴다',
+  buildLongPressPin({ name: '단골 주차장', point: POINT, address: ADDRESS_JIBUN_ONLY, visited: true, now: VISIT_AT }).visited === true
+);
+check(
+  '가봤어요: 토글 글 — 미체크 `가봤어요` / 체크 `가봤어요 (방문 완료)`',
+  visitedToggleText(false).label === '가봤어요' &&
+    visitedToggleText(false).action === '체크' &&
+    visitedToggleText(true).label === '가봤어요 (방문 완료)' &&
+    visitedToggleText(true).action === '해제',
+  JSON.stringify([visitedToggleText(false), visitedToggleText(true)])
+);
+// 클라우드(Supabase) 행으로 보낼 때도 visited 가 그대로 실립니다.
+const cloudRow = pinToRow('user-1', visitedPin, { now: VISIT_AT });
+check('가봤어요: 클라우드 행(pinToRow)에 visited=true 가 실린다', cloudRow && cloudRow.visited === true, JSON.stringify(cloudRow && cloudRow.visited));
+check(
+  '가봤어요: 클라우드에서 돌아온 행도 visited 를 지킨다',
+  (() => {
+    const back = rowToPin({ id: 'pin-1', name: '가까운집', visited: true, updated_at: VISIT_AT.toISOString() });
+    return back && back.visited === true && back.visitedAt === VISIT_AT.toISOString();
+  })()
+);
 
 // ── 시트가 열린 만큼 그 자리를 화면 위쪽에 두는 계산 ────────────
 //   네이버: 지도 중심의 offset 은 (W/2, H/2) → 점을 (W/2, H×ratio) 에 두려면 그 차이만큼만 옮깁니다.

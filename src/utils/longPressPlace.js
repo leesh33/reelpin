@@ -1,5 +1,5 @@
 /**
- * src/utils/longPressPlace.js — v2.33.0
+ * src/utils/longPressPlace.js — v2.33.2
  * ─────────────────────────────────────────────────────────────
  * 지도 **꾹 누르기(long press)** 로 장소를 등록할 때 쓰는 순수 규칙만 모읍니다.
  * (네이버 지도·Leaflet 공통 · 화면 없이 검사할 수 있게 DOM 을 건드리지 않습니다)
@@ -7,11 +7,13 @@
  * 상훈 님 요청(2026-11-18):
  *   "혹시 지도상에서 꾹 누르면 해당 위치의 장소를 등록 하는 기능은 못 만들까?"
  *   "꾹 누르면 해당장소의 장소명칭 나오면서 등록가능하게 부탁할게"
+ *   v2.33.2 — "등록할 때 '가봤어요' 체크도 같이 할 수 있게"
  *
  *   ① 꾹 누른 자리(픽셀) → 지도 좌표 … 화면 쪽(RealMapView)이 지도 API 로 바꿉니다
  *   ② 좌표 → 주소·주변 장소 … `/api/reverse-place` (카카오) 가 돌려줍니다
  *   ③ 그 답 → 화면에 보여 줄 이름·분류·거리 … **이 파일**
  *   ④ 저장 … 핀 모양으로 바꿔 App 이 지도에 꽂습니다 (`buildLongPressPin`)
+ *            … 이때 ✅ 가봤어요(`visited`) 도 함께 담깁니다 (v2.33.2)
  */
 
 import { buildPin, normalizeMemo } from './pins';
@@ -201,9 +203,22 @@ export function suggestedCategoryOf(result) {
 }
 
 /**
+ * v2.33.2 — ✅ 가봤어요 토글의 글 (상세 시트의 `가봤어요` 카드와 같은 결)
+ *   · 저장 화면(시트)과 검사가 같은 문구를 씁니다.
+ * @param {boolean} visited
+ * @returns {{label:string, sub:string, action:string}}
+ */
+export function visitedToggleText(visited) {
+  return visited === true
+    ? { label: '가봤어요 (방문 완료)', sub: '저장하면 방문 완료로 표시돼요', action: '해제' }
+    : { label: '가봤어요', sub: '다녀왔으면 눌러서 체크해 두세요', action: '체크' };
+}
+
+/**
  * 꾹 누른 자리 + 고른 장소/직접 적은 이름 → 저장할 핀.
  *   · place 가 있으면 전화번호·카카오 placeUrl·출처(kakao)까지 함께 담습니다.
  *   · 없으면(개인 장소) 이름·좌표·주소만 담습니다 — 지도에 그대로 꽂힙니다.
+ *   · v2.33.2 — `visited: true` 면 ✅ 가봤어요(방문 완료) 로 저장됩니다(visitedAt = 저장 시각).
  * @returns {object|null} utils/pins.buildPin 이 만든 핀 (이름이 비면 null)
  */
 export function buildLongPressPin(input = {}) {
@@ -239,6 +254,8 @@ export function buildLongPressPin(input = {}) {
       memo: input.memo,
       now: input.now,
       id: input.id,
+      // v2.33.2 — 시트의 ✅ 가봤어요 토글. buildPin 이 visitedAt(저장 시각)까지 채웁니다.
+      visited: input.visited === true,
     }
   );
 }

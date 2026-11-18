@@ -1,22 +1,23 @@
 /**
- * src/components/LongPressPlaceSheet.js — v2.33.0
+ * src/components/LongPressPlaceSheet.js — v2.33.2
  * ─────────────────────────────────────────────────────────────
  * 지도에서 **꾹 누른 자리**에 장소를 등록하는 레이어 팝업.
  *
  * 상훈 님 요청(2026-11-18):
  *   "혹시 지도상에서 꾹 누르면 해당 위치의 장소를 등록 하는 기능은 못 만들까?"
  *   "꾹 누르면 해당장소의 장소명칭 나오면서 등록가능하게 부탁할게"
+ *   v2.33.2 — "등록할 때 '가봤어요' 체크도 같이" → ✅ 가봤어요 토글(기본 미체크) 추가
  *
  *   · 위 … 꾹 누른 자리의 **도로명 주소 · 건물명**(카카오 coord2address)
  *   · 가운데 … 반경 60m 안의 **가까운 장소 이름들**(음식점·카페·관광명소·문화시설 · 거리 `12m`)
  *              — 한 줄을 누르면 그 이름·분류·전화·카카오 링크가 그대로 채워집니다
- *   · 아래 … **이름 직접 입력**(주변에 없거나 개인 장소일 때) · 분류 · 한줄 메모 · 컬렉션
+ *   · 아래 … **이름 직접 입력**(주변에 없거나 개인 장소일 때) · 분류 · ✅ 가봤어요 · 한줄 메모 · 컬렉션
  *   · 발끝 … **[내 지도에 저장]** — 앱의 기존 저장 흐름(App.handleSavedPlace)을 그대로 탑니다
  *            (중복은 새 핀을 만들지 않고 그 핀을 열어 줍니다 · 클라우드 동기화도 그대로)
  *
  * 틀은 다른 화면과 같은 `LayerSheet`(다크 차콜 헤더 · 제목 + ✕ · 바깥 탭 닫기)이고,
  * 헤더에 보조 텍스트를 두지 않는 v2.32.2 규칙을 그대로 지킵니다.
- * 높이는 66% — 시트 위로 꾹 누른 자리의 **떨어진 핀**이 보이도록 지도가 그만큼 남습니다.
+ * 높이는 70% — 시트 위로 꾹 누른 자리의 **떨어진 핀**이 보이도록 지도가 그만큼 남습니다.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -34,6 +35,7 @@ import {
   placeDistanceLabel,
   suggestedCategoryOf,
   suggestedNameOf,
+  visitedToggleText,
 } from '../utils/longPressPlace';
 
 /** 이 시트의 높이 — 위쪽 지도에 떨어진 핀이 보이게 86% 보다 낮춥니다. */
@@ -64,6 +66,8 @@ export default function LongPressPlaceSheet({
   const [category, setCategory] = useState(() => suggestedCategoryOf(result));
   const [memo, setMemo] = useState('');
   const [collectionId, setCollectionId] = useState('');
+  // v2.33.2 — ✅ 가봤어요. 기본은 미체크(`안 가봄`)이고, 새 자리를 꾹 누를 때마다 풀립니다.
+  const [visited, setVisited] = useState(false);
   // 꾹 누른 뒤 결과가 늦게 와도 **사용자가 먼저 적은 이름·분류를 덮어쓰지 않습니다.**
   const touchedRef = useRef(false);
 
@@ -87,6 +91,7 @@ export default function LongPressPlaceSheet({
     }
     setMemo('');
     setCollectionId('');
+    setVisited(false);
     touchedRef.current = false;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultKey]);
@@ -95,6 +100,7 @@ export default function LongPressPlaceSheet({
 
   const canSave = Boolean(String(name || '').trim());
   const selectedPlace = rows.find((row) => String(row.id) === String(selectedId)) || null;
+  const visitedText = visitedToggleText(visited);
 
   const choosePlace = (place) => {
     if (!place) return;
@@ -121,6 +127,7 @@ export default function LongPressPlaceSheet({
       point,
       place: selectedPlace,
       address,
+      visited,
     });
     if (!pin) return;
     onSave(pin, { collectionId: collectionId || '' });
@@ -294,7 +301,32 @@ export default function LongPressPlaceSheet({
           )}
         </View>
 
-        {/* ④ 분류 · 한줄 메모 · 컬렉션 */}
+        {/* ④ ✅ 가봤어요 — 이미 다녀온 곳이면 저장과 함께 방문 완료로 (상세 시트와 같은 결)
+            · 기본은 미체크(`가봤어요` · 빈 체크박스) · 꾹 누른 자리가 바뀌면 다시 풀립니다. */}
+        <Pressable
+          style={[styles.visitBtn, visited && styles.visitBtnOn]}
+          onPress={() => setVisited((prev) => prev !== true)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: visited }}
+          aria-checked={visited}
+          accessibilityLabel={visited ? '가봤어요 체크 해제' : '가봤어요로 체크'}
+          testID="longpress-visited-toggle"
+        >
+          <View style={[styles.visitCheck, visited && styles.visitCheckOn]} testID="longpress-visited-box">
+            {visited ? <Ionicons name="checkmark" size={13} color={colors.white} /> : null}
+          </View>
+          <View style={styles.visitTextWrap}>
+            <Text style={[styles.visitText, visited && styles.visitTextOn]} testID="longpress-visited-label">
+              {visitedText.label}
+            </Text>
+            <Text style={[styles.visitSub, visited && styles.visitSubOn]} numberOfLines={1}>
+              {visitedText.sub}
+            </Text>
+          </View>
+          <Text style={[styles.visitAction, visited && styles.visitActionOn]}>{visitedText.action}</Text>
+        </Pressable>
+
+        {/* ⑤ 분류 · 한줄 메모 · 컬렉션 */}
         <CategoryPicker
           value={category}
           onChange={setCategory}
@@ -528,6 +560,64 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     fontWeight: '600',
     color: colors.textMuted,
+  },
+  // v2.33.2 — ✅ 가봤어요 토글 (PinDetailSheet 의 같은 카드와 같은 결)
+  visitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    marginTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.line,
+    backgroundColor: colors.bg,
+  },
+  visitBtnOn: {
+    borderColor: colors.visitLine,
+    backgroundColor: colors.visitSoft,
+  },
+  visitCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: '#C4CAD6',
+    backgroundColor: colors.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  visitCheckOn: {
+    borderColor: colors.visit,
+    backgroundColor: colors.visit,
+  },
+  visitTextWrap: { flex: 1, minWidth: 0 },
+  visitText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  visitTextOn: {
+    color: colors.visitDark,
+  },
+  visitSub: {
+    marginTop: 1,
+    fontSize: 10.5,
+    fontWeight: '600',
+    color: colors.textMuted,
+  },
+  visitSubOn: {
+    color: colors.visitDark,
+    opacity: 0.75,
+  },
+  visitAction: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: colors.textSub,
+  },
+  visitActionOn: {
+    color: colors.visitDark,
   },
   memoInput: {
     height: 42,

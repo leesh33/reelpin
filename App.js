@@ -773,18 +773,25 @@ export default function App() {
    *   · 이미 있는 곳(이름+동네·placeId·매장 URL)이면 새 핀을 만들지 않고 그 핀을 열어 줍니다.
    *   · 컬렉션을 골랐으면 그 핀을 컬렉션에도 담습니다.
    *   · 클라우드 동기화·토스트는 기존 저장 흐름과 같습니다.
+   *   · v2.33.2 — 시트에서 ✅ 가봤어요를 체크했으면 그대로 방문 완료로 저장됩니다.
+   *     이미 있는 핀이면 **미방문 → 방문 완료로만** 바꿉니다(체크를 풀어 저장해도 기존 기록은 지우지 않음).
    */
   const handleSavedPlace = useCallback(
     (pin, options = {}) => {
       if (!pin) return null;
       const list = pinsRef.current || pins || [];
       const existing = findExistingPin(list, pin);
-      const target = existing || pin;
+      const markVisited = pin.visited === true;
+      let target = existing || pin;
       if (!existing) {
         const next = [pin, ...list];
         pinsRef.current = next;
         setPins(next);
         pushPinsToCloud([pin]);
+      } else if (markVisited && existing.visited !== true) {
+        // 이미 지도에 있는 곳에 '가봤어요'를 체크해 저장 → 그 핀을 방문 완료로 (클라우드까지)
+        handleTogglePinVisited(existing.id, true);
+        target = { ...existing, visited: true };
       }
       const collectionId = String((options && options.collectionId) || '');
       let collectionName = '';
@@ -808,7 +815,7 @@ export default function App() {
       showToast(parts.join(' · '), existing ? 'dark' : 'pro');
       return target;
     },
-    [pins, pushPinsToCloud, showToast]
+    [pins, pushPinsToCloud, showToast, handleTogglePinVisited]
   );
 
   /**
