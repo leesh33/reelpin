@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
@@ -11,6 +11,13 @@ import CategoryPicker from './CategoryPicker';
 import { DEFAULT_CATEGORIES, categoryTextColor, categoryTint, getCategoryColor } from '../utils/categories';
 // v2.20 — 지금 영업 중 / 브레이크타임 / 휴무일 배지 (한국 시간 기준 · 확인된 값만)
 import { evaluateOpening, hasConfirmedHours, todaySummary } from '../utils/openingStatus';
+// v2.34.0 — 헤더 부근을 아래로 쓸어내려 닫기 (상훈 님 요청 IMG_9274)
+import {
+  SHEET_SPRING_BACK,
+  clampedDragOffset,
+  shouldDismissSheet,
+  sheetCloseDuration,
+} from '../utils/sheetDismiss';
 
 const PLATFORM_LABEL = {
   instagram: '인스타 릴스',
@@ -45,6 +52,94 @@ export default function PinDetailSheet({
   const [placeModalOpen, setPlaceModalOpen] = useState(false);
   // v2.10 — 📝 한줄 메모는 입력 중인 글자를 따로 들고 있다가 저장할 때 핀에 반영합니다.
   const [memoDraft, setMemoDraft] = useState(String((pin && pin.memo) || ''));
+
+  // ── v2.34.0 · 아래로 쓸어내려 닫기 ─────────────────────────────
+  //   · 손가락이 내려간 만큼 시트가 따라 내려오고(translateY), 손을 뗐을 때
+  //     충분히 내렸거나(96px) 빠르게 튕겼으면 닫힙니다. 모자라면 스프링으로 제자리로.
+  //   · X 버튼 탭(움직임 없음)과 본문 스크롤(맨 위가 아닐 때)은 건드리지 않습니다.
+  const translateY = useRef(new Animated.Value(0)).current;
+  const draggedRef = useRef(0);
+  const sheetHeightRef = useRef(0);
+  const scrollYRef = useRef(0);
+  const closingRef = useRef(false);
+  const closeRef = useRef(onClose);
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  /** 끄는 동안 시트를 손가락 위치로 (위로는 올라가지 않음) */
+  const dragTo = (dy) => {
+    draggedRef.current = clampedDragOffset(dy);
+    translateY.setValue(draggedRef.current);
+  };
+  /** 모자라면 제자리로 — 부드러운 스프링 */
+  const springBack = () => {
+    draggedRef.current = 0;
+    Animated.spring(translateY, { ...SHEET_SPRING_BACK, useNativeDriver: false }).start();
+  };
+  /** 충분히 내렸으면 시트를 화면 아래로 내리고 닫기 */
+  const closeWithAnimation = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    const height = sheetHeightRef.current || 500;
+    Animated.timing(translateY, {
+      toValue: height,
+      duration: sheetCloseDuration(draggedRef.current, height),
+      useNativeDriver: false,
+    }).start(() => {
+      if (typeof closeRef.current === 'function') closeRef.current();
+    });
+  };
+  const releaseDrag = (gesture) => {
+    const dismiss = shouldDismissSheet({
+      dy: gesture.dy,
+      vy: gesture.vy,
+      height: sheetHeightRef.current,
+    });
+    if (dismiss) closeWithAnimation();
+    else springBack();
+  };
+
+  /** 헤더(핸들·가게 이름·✕ 줄) — 항상 잡힙니다. X 탭은 움직임이 없어 그대로 눌립니다. */
+  const sheetPan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (event, gesture) =>
+          !closingRef.current && gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (event, gesture) => dragTo(gesture.dy),
+        onPanResponderRelease: (event, gesture) => releaseDrag(gesture),
+        onPanResponderTerminate: () => springBack(),
+      }),
+    []
+  );
+
+  /** 본문 — 스크롤이 맨 위(scrollTop 0)일 때만 아래로 당기기를 받습니다. */
+  const bodyPan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (event, gesture) =>
+          !closingRef.current &&
+          scrollYRef.current <= 0 &&
+          gesture.dy > 12 &&
+          Math.abs(gesture.dy) > Math.abs(gesture.dx) * 1.2,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (event, gesture) => dragTo(gesture.dy),
+        onPanResponderRelease: (event, gesture) => releaseDrag(gesture),
+        onPanResponderTerminate: () => springBack(),
+      }),
+    []
+  );
+
+  // 다른 핀으로 바뀌면(닫히지 않고 내용만 교체) 시트 위치·스크롤을 처음 상태로
+  useEffect(() => {
+    closingRef.current = false;
+    draggedRef.current = 0;
+    scrollYRef.current = 0;
+    translateY.setValue(0);
+  }, [pin && pin.id]);
 
   useEffect(() => {
     setMemoDraft(String((pin && pin.memo) || ''));
@@ -159,12 +254,26 @@ export default function PinDetailSheet({
   };
 
   return (
-    <View style={styles.sheet}>
+    <Animated.View
+      style={[styles.sheet, { transform: [{ translateY }] }]}
+      testID="pin-detail-sheet"
+      onLayout={(event) => {
+        const height = event && event.nativeEvent && event.nativeEvent.layout
+          ? event.nativeEvent.layout.height
+          : 0;
+        if (Number.isFinite(height) && height > 0) sheetHeightRef.current = height;
+      }}
+    >
       {/* 헤더 바 — v2.19.2: 상훈 님 요청으로 헤더 배경을 **그 핀의 분류 색**으로 맞췄습니다.
           (맛집 = 딥 틸 #0D9488 · 카페 = 앰버 #D97706 · 가볼곳 = 블루 #3B82F6 · 커스텀 분류 = 각 분류 색)
           분류를 바꾸면 헤더 색도 즉시 따라 바뀌고, 흰 가게 이름·반투명 흰 원 ✕ 는 그대로라
           어떤 분류 색 위에서도 또렷합니다. 시트 위쪽 둥근 모서리도 그대로 이어집니다. */}
-      <View style={[styles.headerBar, { backgroundColor: headerColor }]} testID="pin-sheet-header">
+      <View
+        style={[styles.headerBar, { backgroundColor: headerColor }]}
+        testID="pin-sheet-header"
+        accessibilityHint="아래로 쓸어내리면 닫혀요"
+        {...sheetPan.panHandlers}
+      >
         <View style={styles.handle} />
         <View style={styles.headerRow}>
           <Text style={styles.name} numberOfLines={1}>
@@ -180,11 +289,20 @@ export default function PinDetailSheet({
           다크 헤더의 ✕ 닫기 버튼이 아이폰 사파리 상태바 밖으로 잘려 나갔습니다.
           → 헤더는 시트 **상단에 고정**하고, 본문만 스크롤되게 감쌉니다. (sheet maxHeight 86%) */}
       <ScrollView
+        {...bodyPan.panHandlers}
         style={styles.bodyScroll}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
         testID="pin-sheet-scroll"
+        scrollEventThrottle={16}
+        onScroll={(event) => {
+          const y =
+            event && event.nativeEvent && event.nativeEvent.contentOffset
+              ? event.nativeEvent.contentOffset.y
+              : 0;
+          scrollYRef.current = Number.isFinite(y) ? y : 0;
+        }}
       >
         <View style={styles.chipRow}>
           <View
@@ -532,7 +650,7 @@ export default function PinDetailSheet({
           onToast={onToast}
         />
       )}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -558,6 +676,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 14,
+    // v2.34.0 — 헤더를 잡고 아래로 끌 때 브라우저 스크롤·줌이 먼저 가로채지 않게 (웹 아이폰 사파리)
+    ...(Platform.OS === 'web' ? { cursor: 'grab', touchAction: 'none' } : null),
   },
   handle: {
     alignSelf: 'center',

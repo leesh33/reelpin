@@ -20,6 +20,7 @@ import {
   parseUrl,
   pickImageFile,
   searchPlacesDirect,
+  softCurrentPosition,
   splitSharedText,
 } from '../services/extractor';
 import OverlayHeader from '../components/OverlayHeader';
@@ -30,7 +31,11 @@ import CategoryPicker from '../components/CategoryPicker';
 import VisitedToggleCard from '../components/VisitedToggleCard';
 // v2.33.4 — 선택한 후보 → 핀 목록(가봤어요·한줄 메모·링크까지 한 곳에서)
 import { buildResultPins } from '../utils/saveResult';
+// v2.34.0 — 검색 결과 카드의 `내 위치에서 450m` 표기 (거리 계산·표기는 위치 서비스 한 곳)
+import { formatDistance } from '../services/location';
 import { DEFAULT_CATEGORIES, getCategoryColor, mapLegacyCategory } from '../utils/categories';
+// v2.34.0 — 내 위치 좌표 검사(0,0·범위 밖 제외)는 정렬 모듈 한 곳을 씁니다.
+import { usableOrigin } from '../utils/placeRanking';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 
 const EMOJI_BY_CATEGORY = {
@@ -57,6 +62,8 @@ export default function PasteScreen({
   onSavedMany,
   onClose,
   onToast,
+  // v2.34.0 — 지도 탭이 잡아 둔 현재 위치(허용된 경우). 가게명 찾기 정렬·거리 표시에 씁니다.
+  myCoords = null,
   initialMode = 'link',
   // v2.18 — 헤더가 OverlayHeader 로 바뀌면서 상단 아이콘(🔍🔔☰) 묶음은 쓰지 않습니다.
   //          (다른 탭에서 그대로 쓸 수 있게 prop 은 받아 두되 그리지 않습니다)
@@ -281,7 +288,11 @@ export default function PasteScreen({
 
     const stageTimer = startProgress();
     try {
-      const result = await searchPlacesDirect(value, { limit: MAX_DIRECT_CANDIDATES });
+      // v2.34.0 — 정렬 기준이 되는 **내 위치**.
+      //   ① 지도 탭이 이미 잡아 둔 위치(myCoords) → ② 이미 허용된 브라우저 위치(권한 팝업 없이)
+      //   둘 다 없으면 예전처럼 정확도·출처 순서로만 보여 줍니다(거리 표시 없음).
+      const near = usableOrigin(myCoords) || (await softCurrentPosition());
+      const result = await searchPlacesDirect(value, { limit: MAX_DIRECT_CANDIDATES, near });
       await new Promise((resolve) => setTimeout(resolve, 420));
       clearInterval(stageTimer);
       if (seq !== runSeq.current) return;
@@ -306,6 +317,9 @@ export default function PasteScreen({
         usedAdapter: result.usedAdapter,
         query: result.query,
         sources: result.providersUsed || [],
+        // v2.34.0 — 내 위치 기준으로 정렬됐는지 (결과 줄의 `가까운 순` 안내)
+        distanceRanked: result.distanceRanked === true,
+        near: result.near || null,
       });
       setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
     } catch (e) {
@@ -771,6 +785,7 @@ export default function PasteScreen({
                 <Text style={styles.sourceLineText} numberOfLines={1}>
                   {sourceLabel} 지도에서 실시간 확인
                   {meta && meta.query ? ' · “' + meta.query + '”' : ''}
+                  {meta && meta.distanceRanked ? ' · 내 위치에서 가까운 순' : ''}
                 </Text>
               </View>
             )}
@@ -860,6 +875,14 @@ export default function PasteScreen({
                       <View
                         style={[styles.candCatDot, { backgroundColor: getCategoryColor(c.category, categories) }]}
                       />
+                      {/* v2.34.0 — 내 위치에서 가까운 순서가 한눈에 보이게 거리 배지
+                          (좌표·위치를 모를 때는 그리지 않고 주소만 남깁니다) */}
+                      {Number.isFinite(Number(c.distanceM)) ? (
+                        <View style={styles.candDist} testID={'paste-cand-distance-' + c.id}>
+                          <Ionicons name="navigate" size={10} color={colors.brandDark} />
+                          <Text style={styles.candDistText}>{formatDistance(c.distanceM)}</Text>
+                        </View>
+                      ) : null}
                       <Text style={styles.candAddr} numberOfLines={1}>
                         {c.address} · {mapLegacyCategory(c.category)}
                       </Text>
@@ -1414,6 +1437,21 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     color: colors.textSub,
+  },
+  // v2.34.0 — 후보 카드의 거리 배지(`450m` · `1.3km`) — 주소 줄을 밀지 않게 작게
+  candDist: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    backgroundColor: 'rgba(13,148,136,0.10)',
+  },
+  candDistText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: colors.brandDark,
   },
   radio: {
     width: 22,

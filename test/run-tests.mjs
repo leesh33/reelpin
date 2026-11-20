@@ -241,6 +241,28 @@ if (!only || only === 'legal') {
   });
 }
 
+if (!only || only === 'rank') {
+  // v2.34.0 — 가게명 찾기 정렬: 이름 정확도 → 내 위치에서 가까운 순 · 20km 2차 조회
+  failed += await runSuite({
+    name: '가게명 찾기 정확도·거리순 정렬 테스트',
+    entry: 'search-rank-test.mjs',
+    out: 'search-rank-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
+if (!only || only === 'sheet') {
+  // v2.34.0 — 장소 상세 시트를 헤더 부근에서 아래로 쓸어내려 닫기 (임계값·배선)
+  failed += await runSuite({
+    name: '상세 시트 아래로 쓸어내려 닫기 테스트',
+    entry: 'sheet-dismiss-test.mjs',
+    out: 'sheet-dismiss-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

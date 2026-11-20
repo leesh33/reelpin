@@ -34,6 +34,13 @@ import { Platform } from 'react-native';
 import { extractNaverPlaceId, isShortLinkUrl, naverPlaceDetailUrl } from '../utils/links';
 // v2.20 — 저장 화면 `한줄 메모` 초안 (AI·설명글 키워드, 확인된 값만)
 import { memoDraftFromText, memoDraftOfParts, mergeMemoDrafts } from '../utils/memoDraft';
+// v2.34.0 — 가게명 찾기 결과를 **이름 정확도 → 내 위치에서 가까운 순**으로 정렬 (상훈 님 요청)
+import {
+  distanceBetweenMeters,
+  isDistanceRanked,
+  rankPlaceCandidates,
+  usableOrigin,
+} from '../utils/placeRanking';
 // v2.26 — 사진으로 찾기: 이미 허용된 브라우저 위치만 조용히 (권한 팝업 없이)
 import {
   geolocationPermissionState,
@@ -3417,6 +3424,12 @@ export const MAX_MAP_RESULTS = 5;
  *   · 링크·캡션에서 한 곳을 고르는 흐름은 기존대로 MAX_MAP_RESULTS(5)를 씁니다.
  */
 export const MAX_DIRECT_CANDIDATES = 15; 
+/**
+ * v2.34.0 — `가게명 찾기` 가까운 순 2차 조회 반경(m).
+ *   · 가까운 지점이 카카오 정확도 15곳 밖으로 밀리는 경우(예: `버거리` → 검단·청라·김포 지점)를
+ *     끌어오려고 반경 20km(카카오 상한)로 한 번 더 묻습니다.
+ */
+export const DIRECT_SEARCH_NEARBY_RADIUS_M = 20000;
 /** 카카오 로컬 keyword.json size 상한 (문서 규격) */
 export const KAKAO_SIZE_MAX = 15;
 /** 네이버 지역검색 display 상한 (HUB·legacy 두 규격 모두 5) */
@@ -3783,14 +3796,17 @@ function mapKakaoDocuments(documents) {
  * `near`(사진을 찍은 자리) → 카카오 키워드 검색의 `x`(경도)·`y`(위도)·`radius` 인자.
  *   · 좌표가 없거나 이상하면 null — 그러면 기존과 똑같이 `sort=accuracy` 로 부릅니다.
  */
-function kakaoLocationParams(near) {
+function kakaoLocationParams(near, radiusM) {
   if (!near || typeof near !== 'object') return null;
   const lat = Number(near.lat);
   const lng = Number(near.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
   if (lat === 0 && lng === 0) return null;
   if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return { x: lng, y: lat, radius: NEARBY_FALLBACK_RADIUS_M };
+  const asked = Number(radiusM);
+  // 카카오 키워드 검색 radius 상한은 20,000m 입니다. (사진 흐름은 5km 그대로)
+  const radius = Number.isFinite(asked) && asked > 0 ? Math.min(20000, Math.trunc(asked)) : NEARBY_FALLBACK_RADIUS_M;
+  return { x: lng, y: lat, radius };
 }
 
 /** 네이버 items[] → 앱 후보 (직접 호출·프록시 공통) */
@@ -3842,13 +3858,13 @@ export const kakaoLocalAdapter = {
    * v2.26 — `near`(사진을 찍은 자리)가 있으면 `x`·`y`·`radius`·`sort=distance` 를 보내
    *          같은 동네·인근 가게가 먼저 오게 합니다. (카카오 키워드 검색의 공식 인자)
    */
-  async search({ query, limit = 3, near } = {}) {
+  async search({ query, limit = 3, near, radiusM } = {}) {
     const key = process.env.EXPO_PUBLIC_KAKAO_REST_API_KEY;
     if (!query) return [];
-    const hint = kakaoLocationParams(near);
+    const hint = kakaoLocationParams(near, radiusM);
     // 카카오 로컬(dapi.kakao.com)도 브라우저 CORS 를 열지 않습니다 → 웹은 프록시가 답합니다.
     if (isWebPlatform()) {
-      const proxied = await this.searchViaProxy({ query, limit, near });
+      const proxied = await this.searchViaProxy({ query, limit, near, radiusM });
       if (proxied) return proxied; // [] (결과 없음) 과 null(실패) 을 구분합니다
       if (!key) return [];
     }
@@ -3874,8 +3890,8 @@ export const kakaoLocalAdapter = {
    * 웹 전용: `/api/kakao-local?query=..&size=..` → 카카오 응답을 앱 후보로 옮깁니다.
    * @returns {Promise<Array<object>|null>} 실패는 null, 성공(결과 0개 포함)은 배열
    */
-  async searchViaProxy({ query, limit = 3, near } = {}) {
-    const hint = kakaoLocationParams(near);
+  async searchViaProxy({ query, limit = 3, near, radiusM } = {}) {
+    const hint = kakaoLocationParams(near, radiusM);
     const json = await fetchProxyJson(
       proxyPathOf('kakao', {
         query,
@@ -4171,11 +4187,12 @@ function proximityBonus(distanceM) {
  *        `area` 는 v2.26 지역 검증 — 사진·영상에서 읽은 지역어(예: `영등포로36길`).
  *        `near` 는 위치 단서(사진을 찍은 자리) — 순위 가중치로만 쓰고, `distanceFirst` 면
  *        카카오에 `sort=distance` 를 요청해 가까운 순으로 받아 옵니다.
+ *        `nearRadiusM` 을 주면 그 반경(최대 20km)으로 묻습니다 (v2.34.0 가게명 찾기의 가까운 순 2차 조회).
  * @returns {Promise<{candidates:Array<object>, providersTried:string[], providersUsed:string[],
  *                    failures:Array<{provider:string,error:string}>, naverBackfill?:object,
  *                    areaFilter?:object, reason?:string}>}
  */
-export async function searchPlaceProviders({ query, limit = 3, providers, backfill, max, area, near, distanceFirst } = {}) {
+export async function searchPlaceProviders({ query, limit = 3, providers, backfill, max, area, near, distanceFirst, nearRadiusM } = {}) {
   const q = String(query || '').trim();
   const empty = { candidates: [], providersTried: [], providersUsed: [], failures: [] };
   if (!q) return { ...empty, reason: 'empty-query' };
@@ -4190,7 +4207,13 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
   const results = await Promise.all(
     active.map(async (p) => {
       try {
-        const items = await p.search({ query: q, limit, near: sortNear });
+        const items = await p.search({
+          query: q,
+          limit,
+          near: sortNear,
+          // v2.34.0 — 가까운 순 2차 조회는 20km(카카오 상한)까지 봅니다. (사진 흐름은 기본 5km 그대로)
+          ...(sortNear && Number(nearRadiusM) > 0 ? { radiusM: Number(nearRadiusM) } : {}),
+        });
         return { provider: p.id, ok: true, items: Array.isArray(items) ? items : [] };
       } catch (e) {
         return { provider: p.id, ok: false, items: [], error: String((e && e.message) || e) };
@@ -4265,17 +4288,54 @@ export async function searchPlaceProviders({ query, limit = 3, providers, backfi
 }
 
 /**
+ * v2.34.0 — 가까운 순 2차 조회 결과를 정확도 조회 결과에 **중복 없이** 합칩니다.
+ *   · 두 조회 모두 카카오라 id(`kakao-…`)가 같으면 같은 곳 → 하나로 합칩니다.
+ *   · 네이버와 겹칠 때는 같은 이름 + 80m 안이면 같은 곳으로 봅니다 (같은 지점이 두 지도에서 온 경우).
+ *   · 합친 쪽이 거리(m)를 알고 있으면 그 값을 남깁니다.
+ * @returns {{list:Array<object>, added:number}}
+ */
+export function mergeNearbyCandidates(base, extras) {
+  const list = Array.isArray(base) ? base.slice() : [];
+  let added = 0;
+  (Array.isArray(extras) ? extras : []).forEach((item) => {
+    if (!item || !item.name) return;
+    const dup = list.find((c) => {
+      if (!c) return false;
+      if (c.id && item.id && c.id === item.id) return true;
+      const sameName = normalizeName(c.name) === normalizeName(item.name);
+      const meters = distanceBetweenMeters(c, item);
+      if (sameName && (meters == null || meters <= 80)) return true;
+      return meters != null && meters <= 30;
+    });
+    if (dup) {
+      if (dup.distanceM == null && item.distanceM != null) dup.distanceM = item.distanceM;
+      if (!dup.providers && item.provider) dup.providers = [item.provider];
+      return;
+    }
+    list.push(item);
+    added += 1;
+  });
+  return { list, added };
+}
+
+/**
  * 직접 검색 — 릴스 캡션을 못 긁어온 상황에서 '가게명/동네'만으로 지도 3사를 조회합니다.
  * 화면(PasteScreen '가게명으로 찾기' 모드)에서 그대로 호출하고, 결과 후보를 핀으로 꽂습니다.
  *
  * v2.21 — 후보를 최대 MAX_DIRECT_CANDIDATES(15)개까지 보여 줍니다.
  *   · 카카오 로컬 size=15 · 네이버 지역검색 display=5(규격 상한) · 합친 뒤 15개에서 자릅니다.
+ * v2.34.0 — 상훈 님 요청(IMG_9273): **정확한 이름 → 내 위치에서 가까운 순**으로 정렬합니다.
+ *   · `near`(내 위치)가 있으면 카카오에 반경 20km `sort=distance` 로 **한 번 더** 물어
+ *     정확도 상위 15곳 밖으로 밀렸던 내 주변 지점(예: `버거리 인천검단아라신도시점`)을 끌어와 합칩니다.
+ *   · 그 뒤 이름 정확도 → 거리 순으로 정렬해 15개로 자릅니다 (utils/placeRanking).
  *
  * @param {string} rawQuery 예: '성수동 소금빵', '연남동 딸기케이크'
- * @param {{limit?:number, max?:number, providers?:string[]}} options
+ * @param {{limit?:number, max?:number, providers?:string[], near?:{lat:number,lng:number}|null}} options
+ *        `near` 는 내 위치 — 없으면 예전처럼 정확도·출처 신뢰도 순서로만 정렬합니다.
  * @returns {Promise<{ok:boolean, query:string, candidates:Array<object>, message?:string,
  *                    reason?:string, usedAdapter?:string, providersTried:string[],
- *                    providersUsed:string[], failures:Array<object>}>}
+ *                    providersUsed:string[], failures:Array<object>,
+ *                    distanceRanked?:boolean, near?:object|null, nearbyAdded?:number}>}
  */
 export async function searchPlacesDirect(rawQuery, options = {}) {
   const query = String(rawQuery || '')
@@ -4290,24 +4350,47 @@ export async function searchPlacesDirect(rawQuery, options = {}) {
     return { ok: false, ...empty, query, reason: 'too-short', message: '두 글자 이상으로 찾아 주세요. (예: 성수동 소금빵)' };
   }
 
+  const origin = usableOrigin(options.near);
+  const cap = Math.max(1, Number(options.max) || MAX_DIRECT_CANDIDATES);
   const chain = await searchPlaceProviders({
     query,
     limit: options.limit || MAX_DIRECT_CANDIDATES,
-    max: options.max || MAX_DIRECT_CANDIDATES,
+    // v2.34.0 — 자르기(15곳)는 **정렬한 뒤에**. 정확도 응답 순서에 밀려 정확한 이름이
+    //           합치기 단계에서 잘리지 않도록 조금 넓게 받아 둡니다.
+    max: Math.max(cap, MAX_DIRECT_CANDIDATES * 2),
     providers: options.providers,
+    // v2.34.0 — 위치를 알면 후보마다 거리(m)를 채워 정렬에 쓸 수 있게 합니다.
+    near: origin,
   });
 
   if (chain.candidates.length) {
+    let candidates = chain.candidates;
+    let nearbyAdded = 0;
+    // ── v2.34.0 · 가까운 순 2차 조회 — 정확도 15곳 밖에 있는 내 주변 지점까지 끌어옵니다 ──
+    const kakaoAllowed = !options.providers || options.providers.indexOf('kakao') >= 0;
+    if (origin && kakaoAllowed) {
+      const extras = await searchNearbyKakaoCandidates(query, origin, MAX_DIRECT_CANDIDATES);
+      if (extras.length) {
+        const merged = mergeNearbyCandidates(candidates, extras);
+        candidates = merged.list;
+        nearbyAdded = merged.added;
+      }
+    }
+    candidates = rankPlaceCandidates(candidates, query, origin).slice(0, cap);
     return {
       ok: true,
       query,
-      candidates: chain.candidates,
+      candidates,
       usedAdapter: chain.providersUsed.join('+'),
       providersTried: chain.providersTried,
       providersUsed: chain.providersUsed,
       failures: chain.failures,
       // v2.12 — 주소 기반 네이버 보강 내역(근거 추적용)
       naverBackfill: chain.naverBackfill,
+      // v2.34.0 — 화면이 `내 위치에서 가까운 순` 안내·거리 표시를 그릴 때 쓰는 값
+      distanceRanked: Boolean(origin) && isDistanceRanked(candidates),
+      near: origin,
+      nearbyAdded,
     };
   }
 
@@ -4326,6 +4409,26 @@ export async function searchPlacesDirect(rawQuery, options = {}) {
     reason: chain.reason || 'no-result',
     message,
   };
+}
+
+/**
+ * v2.34.0 — 내 위치 반경 20km 에서 **가까운 순**(`sort=distance`)으로 한 번 더 찾습니다.
+ *   · 카카오가 없거나 실패하면 조용히 [] — 정확도 결과만으로 계속합니다 (앱이 멈추지 않게).
+ */
+async function searchNearbyKakaoCandidates(query, origin, limit) {
+  try {
+    const adapter = MAP_PROVIDERS.find((p) => p.id === 'kakao');
+    if (!adapter || !adapter.isConfigured()) return [];
+    const items = await adapter.search({
+      query,
+      limit,
+      near: origin,
+      radiusM: DIRECT_SEARCH_NEARBY_RADIUS_M,
+    });
+    return Array.isArray(items) ? items : [];
+  } catch (e) {
+    return [];
+  }
 }
 
 /** v1.0 호환용: 네이버 로컬 단독 검색 API를 그대로 쓰던 자리 */

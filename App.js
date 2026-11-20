@@ -1358,6 +1358,8 @@ export default function App() {
               pinCount={pins.length}
               header={headerProps}
               request={pasteRequest}
+              // v2.34.0 — 가게명 찾기 결과를 `내 위치에서 가까운 순`으로 (지도 탭이 잡은 위치)
+              myCoords={alertCoords}
               categories={categories}
               onAddCategory={handleAddCategory}
               onSaved={handleSaved}
