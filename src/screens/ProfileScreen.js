@@ -291,7 +291,7 @@ function AccountCard({
             >
               이용약관
             </Text>
-            {' '}과{' '}
+            과{' '}
             <Text
               style={styles.legalConsentLink}
               onPress={() => openLegalPage(LEGAL_LINKS[0].path)}
