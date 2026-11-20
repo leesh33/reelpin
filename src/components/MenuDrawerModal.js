@@ -21,7 +21,7 @@
  * 서브 페이지는 **시트 안에서** 열리고 `‹ 뒤로` 로 원래 목록으로 돌아옵니다.
  */
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import ProfileScreen, {
   APP_INFO_VERSION,
   AlertsSetting,
@@ -39,6 +39,11 @@ export const APP_VERSION_LABEL = '릴스핀 v2.33.4';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
+
+// 2026-11-20 — 법적 고지(개인정보처리방침 · 이용약관)는 `src/utils/legal.js` 한 곳에서 옵니다.
+//   시트 발끝의 버전 줄 아래에 조용한 두 글자 링크만 둡니다.
+export { LEGAL_BASE_URL, LEGAL_LINKS, legalPageUrl, openLegalPage } from '../utils/legal';
+import { LEGAL_LINKS, openLegalPage } from '../utils/legal';
 
 export default function MenuDrawerModal({
   visible,
@@ -213,10 +218,29 @@ export default function MenuDrawerModal({
       backTestID="menu-sub-back"
       zIndex={45}
       footer={
-        <Text style={styles.version} testID="menu-version">
-          {APP_VERSION_LABEL}
-          {APP_INFO_VERSION === APP_VERSION_LABEL ? '' : ' · ' + APP_INFO_VERSION}
-        </Text>
+        <View style={styles.footerBox}>
+          <Text style={styles.version} testID="menu-version">
+            {APP_VERSION_LABEL}
+            {APP_INFO_VERSION === APP_VERSION_LABEL ? '' : ' · ' + APP_INFO_VERSION}
+          </Text>
+          {/* 2026-11-20 — 개인정보처리방침 · 이용약관 (조용한 두 글자 링크) */}
+          <View style={styles.legalRow} testID="menu-legal">
+            {LEGAL_LINKS.map((item, index) => (
+              <React.Fragment key={item.key}>
+                {index > 0 ? <Text style={styles.legalDot}>·</Text> : null}
+                <Pressable
+                  onPress={() => openLegalPage(item.path)}
+                  hitSlop={8}
+                  accessibilityRole="link"
+                  accessibilityLabel={item.label + ' 열기'}
+                  testID={'menu-legal-' + item.key}
+                >
+                  <Text style={styles.legalLink}>{item.label}</Text>
+                </Pressable>
+              </React.Fragment>
+            ))}
+          </View>
+        </View>
       }
     >
       {subPage ? (
@@ -246,5 +270,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 8,
     backgroundColor: colors.card,
+  },
+  footerBox: {
+    backgroundColor: colors.card,
+    paddingBottom: 4,
+  },
+  legalRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 7,
+    paddingBottom: 8,
+  },
+  legalLink: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSub,
+    textDecorationLine: 'underline',
+  },
+  legalDot: {
+    fontSize: 10,
+    color: colors.textMuted,
   },
 });

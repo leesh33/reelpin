@@ -871,8 +871,11 @@ check(
   Object.keys(vercel.functions || {})[0] === 'api/gemini.js',
   JSON.stringify(Object.keys(vercel.functions || {}))
 );
-const rewrite = (vercel.rewrites || [])[0] || {};
-check('vercel.json: SPA rewrite → index.html', rewrite.destination === '/index.html', JSON.stringify(rewrite));
+// 2026-11-20 — `/privacy` · `/terms` 정적 페이지 rewrite 가 앞에 붙어, SPA rewrite 는 **첫 줄이 아닙니다**.
+//   index.html 로 가는 catch-all 을 찾아서 같은 규칙을 확인합니다(순서·개수는 legal 테스트가 봅니다).
+const rewritesAll = vercel.rewrites || [];
+const rewrite = rewritesAll.find((r) => r.destination === '/index.html') || {};
+check('vercel.json: SPA rewrite → index.html', rewrite.destination === '/index.html', JSON.stringify(rewritesAll));
 check('vercel.json: /api 는 rewrite 제외', String(rewrite.source).indexOf('(?!api/)') > 0, String(rewrite.source));
 check('vercel.json: 확장자 있는 파일(js·png) 은 rewrite 제외', String(rewrite.source).indexOf('(?!.*\\.)') > 0, String(rewrite.source));
 

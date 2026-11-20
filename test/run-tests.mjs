@@ -230,6 +230,17 @@ if (!only || only === 'paste') {
   });
 }
 
+if (!only || only === 'legal') {
+  // 2026-11-20 — 📄 개인정보처리방침(/privacy) · 이용약관(/terms) 페이지와 배포 배선(vercel.json) · 앱 안 링크
+  failed += await runSuite({
+    name: '개인정보처리방침·이용약관 페이지 테스트',
+    entry: 'legal-test.mjs',
+    out: 'legal-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

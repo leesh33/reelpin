@@ -14,6 +14,14 @@
   },
   "rewrites": [
     {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
       "source": "/((?!api/)(?!_expo/)(?!assets/)(?!favicon\\.ico)(?!metadata\\.json)(?!.*\\.).*)",
       "destination": "/index.html"
     }

@@ -30,7 +30,8 @@
     "test:feedback": "node test/run-tests.mjs feedback",
     "test:curation": "node test/run-tests.mjs curation",
     "test:longpress": "node test/run-tests.mjs longpress",
-    "test:paste": "node test/run-tests.mjs paste"
+    "test:paste": "node test/run-tests.mjs paste",
+    "test:legal": "node test/run-tests.mjs legal"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

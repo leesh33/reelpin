@@ -7,6 +7,8 @@ import { OAUTH_PENDING_MESSAGE, OAUTH_PROVIDERS, oauthProviderReady } from '../s
 import { SUPABASE_SETUP_HINT } from '../services/supabase';
 // v2.20.1 — 로그아웃 상태의 상단 카드는 `게스트` (예전 기본 이름 '이상훈' 대신)
 import { GUEST_HINT, GUEST_NAME } from '../utils/profileIdentity';
+// 2026-11-20 — 로그인 카드의 이용약관·개인정보처리방침 링크(☰ 시트 발끝과 같은 주소)
+import { LEGAL_LINKS, openLegalPage } from '../utils/legal';
 import {
   CATEGORY_MAX_LENGTH,
   allCategories,
@@ -274,6 +276,33 @@ function AccountCard({
             {cloudConfigured
               ? '로그인하면 핀이 클라우드에 저장돼 아이폰·아이패드 어디서든 같은 지도를 봅니다. 비밀번호는 앱에 저장하지 않아요.'
               : SUPABASE_SETUP_HINT}
+          </Text>
+
+          {/* 2026-11-20 — 계속하면 약관·개인정보처리방침에 동의(두 낱말만 눌리는 링크) */}
+          <Text style={styles.legalConsent} testID="login-legal-consent">
+            계속하면 릴스핀의{' '}
+            <Text
+              style={styles.legalConsentLink}
+              onPress={() => openLegalPage(LEGAL_LINKS[1].path)}
+              accessibilityRole="link"
+              accessibilityLabel="이용약관 열기"
+              testID="login-legal-terms"
+              suppressHighlighting
+            >
+              이용약관
+            </Text>
+            {' '}과{' '}
+            <Text
+              style={styles.legalConsentLink}
+              onPress={() => openLegalPage(LEGAL_LINKS[0].path)}
+              accessibilityRole="link"
+              accessibilityLabel="개인정보처리방침 열기"
+              testID="login-legal-privacy"
+              suppressHighlighting
+            >
+              개인정보처리방침
+            </Text>
+            에 동의하는 것으로 봅니다.
           </Text>
         </>
       )}
@@ -1399,6 +1428,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSub,
     lineHeight: 17,
+  },
+  // 2026-11-20 — 로그인 카드 맨 아래 동의 안내(두 낱말만 링크)
+  legalConsent: {
+    marginTop: 10,
+    fontSize: 11.5,
+    color: colors.textMuted,
+    lineHeight: 17,
+  },
+  legalConsentLink: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: colors.brandDark,
+    textDecorationLine: 'underline',
   },
   // ── v2.2 분류 관리 카드 ──────────────────────
   catCountChip: {
