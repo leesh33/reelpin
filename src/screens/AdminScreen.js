@@ -2621,6 +2621,7 @@ const styles = StyleSheet.create({
     lineHeight: 12,
     height: 12,
     width: 44,
+    maxWidth: 44,
     flexShrink: 0,
     textAlign: 'center',
     color: colors.textMuted,
