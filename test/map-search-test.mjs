@@ -197,6 +197,14 @@ check(
   '결과 목록: [전체 N곳] 은 목록 보기로 (기존 동작 유지)',
   mapSource.indexOf('onShowAll={toggleView}') > 0
 );
+check(
+  '결과 목록: 0곳일 때 [전체 0곳] 버튼은 그리지 않음',
+  resultsSource.indexOf('{total > 0 && (') > 0
+);
+check(
+  '결과 목록: 오른쪽 칸은 거리만 (아래 줄 주소와 중복되지 않게)',
+  resultsSource.indexOf("? formatDistance(distance) : ''") > 0 && resultsSource.indexOf(': place;') < 0
+);
 
 // ── 5. 버전 ────────────────────────────────────────────────
 check('버전: package.json · app.json = 2.35.0', pkg.version === '2.35.0' && expo.version === '2.35.0', pkg.version + '/' + expo.version);

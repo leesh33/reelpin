@@ -45,18 +45,21 @@ export default function PinSearchResults({
         <Text style={styles.headText} numberOfLines={1}>
           {'‘' + keyword + '’ 검색 · ' + total + '곳'}
         </Text>
-        <Pressable
-          style={styles.allBtn}
-          onPress={() => {
-            if (typeof onShowAll === 'function') onShowAll();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={'검색 결과 ' + total + '곳 목록으로 보기'}
-          testID="pin-results-show-all"
-        >
-          <Ionicons name="list-outline" size={12} color={colors.white} />
-          <Text style={styles.allText}>{'전체 ' + total + '곳'}</Text>
-        </Pressable>
+        {/* v2.35.0 — 0곳일 때는 [전체 0곳] 버튼을 그리지 않습니다(누를 곳이 없음). */}
+        {total > 0 && (
+          <Pressable
+            style={styles.allBtn}
+            onPress={() => {
+              if (typeof onShowAll === 'function') onShowAll();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={'검색 결과 ' + total + '곳 목록으로 보기'}
+            testID="pin-results-show-all"
+          >
+            <Ionicons name="list-outline" size={12} color={colors.white} />
+            <Text style={styles.allText}>{'전체 ' + total + '곳'}</Text>
+          </Pressable>
+        )}
       </View>
 
       {shown.map((pin, index) => {
@@ -64,7 +67,9 @@ export default function PinSearchResults({
         const category = mapLegacyCategory(pin.category) || '맛집';
         const place = [pin.area, pin.address].filter(Boolean).join(' · ');
         const distance = origin ? pinDistanceMeters(origin, pin) : null;
-        const right = distance != null && Number.isFinite(distance) ? formatDistance(distance) : place;
+        // v2.35.0 — 오른쪽 칸은 **거리만** (거리를 모르면 비움).
+        //   아래 줄이 이미 `분류 · 동네 · 주소`를 보여 주므로 같은 글자를 두 번 쓰지 않습니다.
+        const right = distance != null && Number.isFinite(distance) ? formatDistance(distance) : '';
         return (
           <Pressable
             key={pin.id}
