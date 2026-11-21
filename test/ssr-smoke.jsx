@@ -134,6 +134,8 @@ import {
   injectPwaHead,
   PWA_REQUIRED_MARKERS,
   PWA_APP_TITLE,
+  VIBEAICLUB_VERIFY_CODE,
+  VIBEAICLUB_VERIFY_PATH,
 } from '../scripts/patch-web-html.mjs';
 import { colors, mapControls, tabBar } from '../src/theme';
 import { SEED_PINS } from '../src/data/seedPins';
@@ -680,6 +682,24 @@ const pwaChecks = [
   ['PWA: 빈 HTML 은 그대로', injectPwaHead('').html === '' && injectPwaHead(null).added.length === 0],
 ];
 for (const [label, ok, extra] of pwaChecks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra ? '  -> ' + extra : ''));
+  }
+}
+
+// 2026-11-21 — VibeAiClub 사이트 소유 인증: <head> meta(방법 1) + /.well-known 정적 파일(방법 2)
+const verifyMeta = '<meta name="vibeaiclub-verify" content="' + VIBEAICLUB_VERIFY_CODE + '" />';
+const verifyFilePath = path.join(process.cwd(), 'public', VIBEAICLUB_VERIFY_PATH);
+const verifyFileBody = fs.existsSync(verifyFilePath) ? fs.readFileSync(verifyFilePath, 'utf8').trim() : '';
+const verifyChecks = [
+  ['소유 인증: <head> 에 vibeaiclub-verify meta (방법 1)', injected.html.indexOf(verifyMeta) >= 0, injected.added.join(', ')],
+  ['소유 인증: meta 의 content 가 발급 코드와 같음', (injected.html.match(/<meta name="vibeaiclub-verify" content="([^"]*)"/) || [])[1] === VIBEAICLUB_VERIFY_CODE],
+  ['소유 인증: public/' + VIBEAICLUB_VERIFY_PATH + ' 본문 = 코드 (방법 2)', verifyFileBody === VIBEAICLUB_VERIFY_CODE, JSON.stringify(verifyFileBody)],
+  ['소유 인증: meta 는 한 번만 들어감(idempotent)', (injected.html.match(/name="vibeaiclub-verify"/g) || []).length === 1],
+];
+for (const [label, ok, extra] of verifyChecks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;

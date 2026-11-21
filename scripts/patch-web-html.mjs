@@ -34,6 +34,15 @@ import { pathToFileURL } from 'node:url';
 export const PWA_THEME_COLOR = '#0D9488';
 export const PWA_APP_TITLE = '릴스핀';
 
+/**
+ * 2026-11-21 — VibeAiClub 사이트 소유 인증 (상훈 님 요청, 버전 번호는 그대로)
+ *   · 방법 1: 첫 화면(index.html) <head> 의 meta 태그
+ *   · 방법 2: 정적 파일 /.well-known/vibeaiclub-verify.txt (public/ → dist/)
+ *   둘 중 하나만 통과해도 되지만, 어느 쪽을 보는지 알 수 없어 둘 다 넣습니다.
+ */
+export const VIBEAICLUB_VERIFY_CODE = 'vac-4ODYOLDHpDauAQOUPmdQgXej';
+export const VIBEAICLUB_VERIFY_PATH = '.well-known/vibeaiclub-verify.txt';
+
 /** `public/` 에서 dist 로 반드시 있어야 하는 파일 */
 export const PWA_PUBLIC_FILES = [
   'manifest.json',
@@ -153,6 +162,13 @@ export const PWA_HEAD_TAGS = [
     html: '<link rel="preload" href="/fonts/GmarketSans-Bold.woff2" as="font" type="font/woff2" crossorigin />',
   },
   { key: 'reelpin-font', marker: 'id="reelpin-font"', html: '<style id="reelpin-font">\n' + FONT_CSS + '\n</style>' },
+
+  // 2026-11-21 — VibeAiClub 소유 인증(방법 1: <head> meta)
+  {
+    key: 'vibeaiclub-verify',
+    marker: 'name="vibeaiclub-verify"',
+    html: '<meta name="vibeaiclub-verify" content="' + VIBEAICLUB_VERIFY_CODE + '" />',
+  },
 ];
 
 /**
@@ -196,6 +212,7 @@ export const PWA_REQUIRED_MARKERS = [
   '/icon-192.png',
   '/icon-512.png',
   'lang="ko"',
+  'name="vibeaiclub-verify"',
 ];
 
 /** v2.38.0 — Gmarket Sans 가 실제로 들어갔는지 확인하는 표식 */
@@ -240,6 +257,26 @@ export function ensureFontFiles(projectRoot, distDir) {
   return copied;
 }
 
+/**
+ * 2026-11-21 — `public/.well-known/` 의 소유 인증 파일을 dist 로 복사합니다.
+ *   · Expo 의 `public/` 복사는 숨김 폴더(`.well-known`)를 건너뛸 수 있어 직접 확인해 복사합니다.
+ *   · 본문이 다르면 덮어씁니다(인증 코드는 한 글자라도 틀리면 실패).
+ * @returns {string[]} 복사한 파일 경로
+ */
+export function ensureWellKnownFiles(projectRoot, distDir) {
+  const copied = [];
+  const from = path.join(projectRoot, 'public', VIBEAICLUB_VERIFY_PATH);
+  const to = path.join(distDir, VIBEAICLUB_VERIFY_PATH);
+  if (!fs.existsSync(from)) return copied;
+  const want = fs.readFileSync(from, 'utf8').trim();
+  const have = fs.existsSync(to) ? fs.readFileSync(to, 'utf8').trim() : null;
+  if (have === want) return copied;
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+  copied.push(VIBEAICLUB_VERIFY_PATH);
+  return copied;
+}
+
 /** CLI 진입점 — dist/index.html 을 고치고 결과를 한 줄로 알려 줍니다. */
 function main() {
   const projectRoot = process.cwd();
@@ -251,6 +288,7 @@ function main() {
   }
   const copied = ensurePublicFiles(projectRoot, distDir);
   const copiedFonts = ensureFontFiles(projectRoot, distDir);
+  const wellKnown = ensureWellKnownFiles(projectRoot, distDir);
   const before = fs.readFileSync(indexPath, 'utf8');
   const { html, added } = injectPwaHead(before);
   if (html !== before) fs.writeFileSync(indexPath, html, 'utf8');
@@ -258,7 +296,8 @@ function main() {
     '[web-html] ' +
       (added.length ? '주입: ' + added.join(', ') : 'already-ok') +
       (copied.length ? ' · 복사: ' + copied.join(', ') : '') +
-      (copiedFonts.length ? ' · 폰트 복사: ' + copiedFonts.join(', ') : '')
+      (copiedFonts.length ? ' · 폰트 복사: ' + copiedFonts.join(', ') : '') +
+      (wellKnown.length ? ' · 인증 파일: ' + wellKnown.join(', ') : '')
   );
   const missingTags = PWA_REQUIRED_MARKERS.filter((marker) => html.indexOf(marker) < 0);
   if (missingTags.length) {
@@ -273,6 +312,13 @@ function main() {
   const missingFiles = FONT_FILES.filter((name) => !fs.existsSync(path.join(distDir, 'fonts', name)));
   if (missingFiles.length) {
     console.error('[web-html] 폰트 파일 없음: ' + missingFiles.join(', '));
+    process.exit(1);
+  }
+  // 2026-11-21 — 소유 인증 파일이 dist 에 정확한 본문으로 있는지 (Vercel 이 그대로 서빙)
+  const verifyFile = path.join(distDir, VIBEAICLUB_VERIFY_PATH);
+  const verifyBody = fs.existsSync(verifyFile) ? fs.readFileSync(verifyFile, 'utf8').trim() : '';
+  if (verifyBody !== VIBEAICLUB_VERIFY_CODE) {
+    console.error('[web-html] 소유 인증 파일 확인 실패: ' + VIBEAICLUB_VERIFY_PATH + ' (본문 ' + JSON.stringify(verifyBody) + ')');
     process.exit(1);
   }
 }
