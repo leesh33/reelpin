@@ -18,11 +18,13 @@ import CollectionsScreen, { SHOW_CURATED_FEED } from './src/screens/CollectionsS
 import TabBar from './src/components/TabBar';
 // v2.28.0 — 상세 시트·레이어가 열려 있는 동안 하단 탭바를 숨깁니다(바닥 버튼을 가리지 않게).
 import { tabBarVisibility } from './src/utils/tabBarVisibility';
+// v2.35.0 — 지도 통합 검색창의 [새 장소 찾기] 요청(mode:'search' · auto:true)
+import { pasteSearchRequest } from './src/utils/mapSearch';
 import Toast, { toastTopBelowSheetHeader } from './src/components/Toast';
 // v2.15 — 전 탭 공통 상단 다크 헤더 · 🔔 알림 모음
-// v2.16 — 호갱노노처럼 헤더(🔍 · 🔔 · ☰) + 🔍 검색 레이어 팝업 · ☰ 메뉴 시트
+// v2.16 — 호갱노노처럼 헤더(🔔 · ☰) + ☰ 메뉴 시트
+// v2.35.0 — 헤더 🔍 를 걷어내고, 지도 화면의 통합 검색창(MapSearchBar)이 검색을 맡습니다.
 import AlertInbox from './src/components/AlertInbox';
-import SearchOverlayModal from './src/components/SearchOverlayModal';
 import MenuDrawerModal from './src/components/MenuDrawerModal';
 // v2.21 🛡️ 어드민 — /admin 경로면 앱 대신 어드민 화면을, 관리자 계정이면 ☰ 메뉴에 진입점을 보여 줍니다.
 import AdminScreen from './src/screens/AdminScreen';
@@ -143,12 +145,10 @@ export default function App() {
   const [pinFocus, setPinFocus] = useState(null);
   const pinFocusId = useRef(0);
 
-  // ── v2.16 · 헤더 🔍 검색 레이어 팝업 · ☰ 메뉴 시트 ──────────────────
-  //   searchOpen … 🔍 팝업이 열려 있는가 (전체 레이어)
+  // ── v2.16 · ☰ 메뉴 시트 (v2.35.0 — 🔍 검색 레이어 팝업은 지도 통합 검색창에 흡수) ──
   //   menuOpen   … ☰ 메뉴 시트가 열려 있는가
-  //   pasteRequest … 검색 팝업에서 [저장 탭에서 가게명으로 찾기] 로 넘길 때의 요청
-  //                  ({ id, mode:'search', query }) — PasteScreen 이 id 가 바뀔 때만 적용
-  const [searchOpen, setSearchOpen] = useState(false);
+  //   pasteRequest … 지도 통합 검색창의 [새 장소 찾기]로 넘길 때의 요청
+  //                  ({ id, mode:'search', query, auto:true }) — PasteScreen 이 id 가 바뀔 때만 적용
   const [menuOpen, setMenuOpen] = useState(false);
   // v2.23 — ☰ 내 정보에서 여는 💬 제안 · 버그 제보 시트 (내 정보 위에 겹쳐 올라갑니다)
   const [feedbackOpen, setFeedbackOpen] = useState(false);
@@ -1070,7 +1070,6 @@ export default function App() {
       setCollectionFilterId(collection.id);
       setMenuOpen(false);
       setAlertOpen(false);
-      setSearchOpen(false);
       setTab('map');
       const count = (collection.pinIds || []).length;
       showToast(
@@ -1141,18 +1140,16 @@ export default function App() {
 
   const openAlerts = useCallback(() => {
     setAlertError('');
-    setSearchOpen(false);
     setMenuOpen(false);
     setAlertOpen(true);
   }, []);
 
   const closeAlerts = useCallback(() => setAlertOpen(false), []);
 
-  /** 핀 하나를 지도에서 열기 (알림 모음 · 🔍 검색 · 컬렉션 공통) */
+  /** 핀 하나를 지도에서 열기 (알림 모음 · 컬렉션 공통) */
   const openPinOnMap = useCallback((pin) => {
     if (!pin || !pin.id) return;
     setAlertOpen(false);
-    setSearchOpen(false);
     setMenuOpen(false);
     setTab('map');
     pinFocusId.current += 1;
@@ -1173,18 +1170,9 @@ export default function App() {
     setTab('map');
   }, []);
 
-  // ── v2.16 · 🔍 검색 레이어 팝업 · ☰ 메뉴 ─────────────────────
-  const openSearch = useCallback(() => {
-    setAlertOpen(false);
-    setMenuOpen(false);
-    setSearchOpen(true);
-  }, []);
-
-  const closeSearch = useCallback(() => setSearchOpen(false), []);
-
+  // ── v2.16 · ☰ 메뉴 (v2.35.0 — 헤더 🔍 제거) ─────────────────────
   const openMenu = useCallback(() => {
     setAlertOpen(false);
-    setSearchOpen(false);
     setMenuOpen(true);
   }, []);
 
@@ -1192,40 +1180,28 @@ export default function App() {
 
   /**
    * v2.25.0 — 장소 상세 시트의 [🗺️ 지도에서 보기]:
-   *   상세 시트를 열기 전에 떠 있던 레이어(🔍 검색 · 🔔 알림 · ☰ 메뉴 · 💬 제보)를 모두 닫고 지도 탭으로 돌려보냅니다.
+   *   상세 시트를 열기 전에 떠 있던 레이어(🔔 알림 · ☰ 메뉴 · 💬 제보)를 모두 닫고 지도 탭으로 돌려보냅니다.
    *   (지도 이동·시트 닫기는 MapScreen 이 이어서 처리)
    */
   const dismissOverlaysForMap = useCallback(() => {
-    setSearchOpen(false);
     setAlertOpen(false);
     setMenuOpen(false);
     setFeedbackOpen(false);
     setTab('map');
   }, []);
 
-  /** 🔍 팝업에서 핀을 고르면 팝업을 닫고 지도 탭에서 그 핀 상세를 엽니다(🔔 와 같은 규칙) */
-  const openPinFromSearch = useCallback(
-    (pin) => {
-      if (!pin || !pin.id) return;
-      setSearchOpen(false);
-      setTab('map');
-      pinFocusId.current += 1;
-      setPinFocus({ id: pin.id, key: pinFocusId.current });
-    },
-    []
-  );
-
-  /** 🔍 팝업의 ‘내 핀에 없음’ → 저장 탭 [가게명으로 찾기] 에 검색어를 채워 열기 */
+  /**
+   * v2.35.0 — 지도 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]
+   *   저장 탭을 `가게명 찾기`로 열고 그 검색어로 **바로** 조회합니다(auto).
+   */
   const goPasteSearch = useCallback((query) => {
-    setSearchOpen(false);
+    const request = pasteSearchRequest(query);
+    if (!request) return false;
     setMenuOpen(false);
     pasteRequestId.current += 1;
-    setPasteRequest({
-      id: pasteRequestId.current,
-      mode: 'search',
-      query: String(query == null ? '' : query),
-    });
+    setPasteRequest({ id: pasteRequestId.current, ...request });
     setTab('paste');
+    return true;
   }, []);
 
   /** ☰ 메뉴의 [내 지도 공유] — 시트 안 통합 계정 카드 바로 아래 공유 카드가 부릅니다. */
@@ -1256,16 +1232,15 @@ export default function App() {
   const signedIn = Boolean(cloudUser && (cloudUser.email || cloudUser.id));
   // v2.20.1 — 로그아웃 상태에서는 이름 · 핸들을 넘기지 않습니다(예전 기본값 '이상훈'/'odol' 제거)
   const profile = useMemo(() => profileIdentity(cloudUser), [cloudUser]);
-  /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 — v2.16 `🔍 · 🔔 · ☰` */
+  /** 세 탭이 같이 쓰는 헤더 오른쪽 아이콘 설정 — v2.35.0 `🔔 · ☰` (헤더 🔍 는 없어졌습니다) */
   const headerProps = useMemo(
     () => ({
       alertCount: alertFeed.badgeCount,
-      onPressSearch: openSearch,
       onPressAlerts: openAlerts,
       onPressMenu: openMenu,
       signedIn,
     }),
-    [alertFeed.badgeCount, openSearch, openAlerts, openMenu, signedIn]
+    [alertFeed.badgeCount, openAlerts, openMenu, signedIn]
   );
 
   /**
@@ -1282,12 +1257,11 @@ export default function App() {
         placeSheet: mapPlaceSheet,
         collection: collectionSheet || Boolean(sharedCollection),
         curated: curatedPreviewOpen,
-        search: searchOpen,
         alerts: alertOpen,
         menu: menuOpen,
         feedback: feedbackOpen,
       }),
-    [tab, selectedPinId, mapListSheet, mapPlaceSheet, collectionSheet, sharedCollection, curatedPreviewOpen, searchOpen, alertOpen, menuOpen, feedbackOpen]
+    [tab, selectedPinId, mapListSheet, mapPlaceSheet, collectionSheet, sharedCollection, curatedPreviewOpen, alertOpen, menuOpen, feedbackOpen]
   );
 
   // v2.21 🛡️ `/admin` — 앱 화면 대신 어드민 화면을 그립니다. (권한은 /api/admin 이 최종 확인)
@@ -1351,6 +1325,8 @@ export default function App() {
               onPlaceSheetChange={setMapPlaceSheet}
               collections={collections}
               onSavePlace={handleSavedPlace}
+              // v2.35.0 — 지도 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]
+              onSearchNewPlace={goPasteSearch}
             />
           </View>
           <View style={[styles.screen, tab !== 'paste' && styles.hidden]}>
@@ -1416,17 +1392,8 @@ export default function App() {
           onOpenPin={openPinFromAlerts}
           onGoMap={goMapFromAlerts}
         />
-        {/* v2.16 — 🔍 검색 레이어 팝업 (저장 화면과 같은 형태 · 인풋 + 추천 + 인기 장소) */}
-        <SearchOverlayModal
-          visible={searchOpen}
-          onClose={closeSearch}
-          pins={pins}
-          myCoords={alertCoords}
-          locating={alertLocating}
-          onLocate={handleLocateForAlerts}
-          onOpenPin={openPinFromSearch}
-          onGoPasteSearch={goPasteSearch}
-        />
+        {/* v2.35.0 — 🔍 검색 레이어 팝업은 없어졌습니다. 지도 화면 상단의 통합 검색창
+            (MapSearchBar · MapSearchPanel)이 내 핀 검색과 `새 장소 찾기`를 함께 맡습니다. */}
         {/* v2.16 — ☰ 메뉴 시트 = v2.19 에서 「내 정보」와 머지 (계정·동기화 · 설정 3행 · 저장 요약 · 지도 공유 · 버전) */}
         <MenuDrawerModal
           visible={menuOpen}

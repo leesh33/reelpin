@@ -10,9 +10,13 @@ import { colors } from '../theme';
  *               우측 상단에는 돋보기 버튼 알림 짝대기 3개"
  *
  *   · 왼쪽  : 주황 핀 + `Reelspin` + 지금 보고 있는 탭 뱃지(`지도` / `저장` / `컬렉션`)
- *   · 오른쪽: 🔍 돋보기(검색 레이어 팝업) · 🔔 알림 모음(반경 500m 안 저장 장소 숫자 뱃지)
+ *   · 오른쪽: 🔔 알림 모음(반경 500m 안 저장 장소 숫자 뱃지)
  *             ☰ 짝대기 3개(메뉴 — 예전 👤 로그인 알약/아바타를 이 안으로 통합, 로그인 상태면 초록 점)
  *             ✕ 저장 탭에서 지도로 돌아가기 (onPressClose 를 넘긴 화면만)
+ *
+ * v2.35.0 — 오른쪽 첫 칸의 🔍 돋보기를 없앴습니다. 지도 화면에 **상시 노출 통합 검색창**
+ *   (`MapSearchBar` · 분류 칩 바로 위)이 생겨서, 헤더 돋보기로 한 단계 들어가 검색하던
+ *   길과 중복되기 때문입니다(상훈 님 요청). 알림·메뉴는 그대로입니다.
  *
  * 세 탭이 **같은 컴포넌트**를 쓰므로 색·높이·여백이 어긋날 수 없습니다.
  * (v2.11 부터 쓰던 저장 화면의 다크 차콜 #1C1C1E 헤더를 그대로 이어받았습니다.)
@@ -29,19 +33,17 @@ export function alertBadgeLabel(count) {
 // v2.19 — 하단 탭은 `지도 · 저장 · 컬렉션` (내 정보는 헤더 ☰ 시트로 머지)
 export const HEADER_TABS = ['지도', '저장', '컬렉션'];
 
-/** 헤더 오른쪽 아이콘 순서 — 화면 폭 계산·검사에 쓰는 단일 출처 */
-export const HEADER_ACTIONS = ['search', 'alerts', 'menu'];
+/** 헤더 오른쪽 아이콘 순서 — 화면 폭 계산·검사에 쓰는 단일 출처 (v2.35.0: 🔍 제거) */
+export const HEADER_ACTIONS = ['alerts', 'menu'];
 
 export default function AppHeader({
   badge = '지도',
-  onPressSearch,
   onPressAlerts,
   alertCount = 0,
   onPressMenu,
   signedIn = false,
   onPressClose,
   closeLabel = '닫기',
-  showSearch = true,
   showAlerts = true,
   showMenu = true,
 }) {
@@ -59,19 +61,6 @@ export default function AppHeader({
       </View>
 
       <View style={styles.actions}>
-        {showSearch && (
-          <Pressable
-            style={styles.iconBtn}
-            onPress={onPressSearch}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="내 장소 검색"
-            testID="header-search"
-          >
-            <Ionicons name="search" size={18} color={colors.white} />
-          </Pressable>
-        )}
-
         {showAlerts && (
           <Pressable
             style={styles.iconBtn}
@@ -178,7 +167,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  // 다크 헤더 위 반투명 필 — 🔍·🔔·☰·✕ 아이콘의 기본 모양 (흰색 라인 아이콘)
+  // 다크 헤더 위 반투명 필 — 🔔·☰·✕ 아이콘의 기본 모양 (흰색 라인 아이콘)
   iconBtn: {
     width: 32,
     height: 32,

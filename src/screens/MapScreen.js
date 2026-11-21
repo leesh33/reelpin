@@ -9,9 +9,16 @@ import FilterChips from '../components/FilterChips';
 // v2.6 — 검색 결과 1곳이면 그 핀으로 지도 이동, 2곳 이상이면 검색창 아래 결과 목록
 // v2.16 — 지도 위 검색창은 상단 헤더 🔍(검색 레이어 팝업)로 올라갔습니다.
 //         지도 화면에는 분류 필터 칩만 남기고, 목록 보기의 검색은 그대로 둡니다.
+// v2.35.0 — 반대로 **헤더 🔍 를 없애고** 지도 화면에 **상시 노출 통합 검색창**(MapSearchBar)을
+//         분류 칩 바로 위에 둡니다. 입력하면 내 핀 결과(드롭다운) → ‘검색어’ 네이버/카카오에서
+//         새 장소 찾기(저장 탭 가게명 찾기 즉시 실행)로 이어집니다.
 // v2.17 — 지도 상단 2번째 줄(방문 필터 칩)과 오른쪽 `지도 공유` 를 없애고,
 //         **가본 곳만 보기 · 지도 공유하기** 를 왼쪽 하단 펼침 메뉴(MapToolsMenu)로 모았습니다.
 import PinListView from '../components/PinListView';
+// v2.35.0 — 지도 상단 통합 검색창(내 핀 + 새 장소 찾기)과 그 결과 드롭다운
+import MapSearchBar from '../components/MapSearchBar';
+import MapSearchPanel from '../components/MapSearchPanel';
+import { mapSearchQuery, shouldShowMapSearchPanel } from '../utils/mapSearch';
 import MapToolsMenu, { toolsSummary } from '../components/MapToolsMenu';
 import LayerSheet from '../components/LayerSheet';
 import {
@@ -106,6 +113,9 @@ export default function MapScreen({
   onSavePlace,
   onPlaceSheetChange,
   collections = [],
+  // v2.35.0 — 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]
+  //   저장 탭을 `가게명 찾기`로 열고 그 검색어로 **바로** 조회합니다(App.goPasteSearch).
+  onSearchNewPlace,
 }) {
   /**
    * v2.15 — 공통 헤더(🔔 알림 모음 · 👤 계정)가 어느 탭에서든 지금 위치를 알 수 있게,
@@ -499,6 +509,21 @@ export default function MapScreen({
     setNavQuery('');
   }, []);
 
+  /**
+   * v2.35.0 — 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기].
+   *   드롭다운을 먼저 닫고(지도 보기로 복귀), 저장 탭의 `가게명 찾기`가 그 검색어로 즉시 조회합니다.
+   *   (v2.34.0 의 정확도 → 가까운 순 정렬을 그대로 타므로, 넘기는 것은 검색어 하나면 충분합니다)
+   */
+  const searchNewPlace = useCallback(
+    (keyword) => {
+      const text = mapSearchQuery(keyword);
+      if (!text) return;
+      clearSearch();
+      if (typeof onSearchNewPlace === 'function') onSearchNewPlace(text);
+    },
+    [clearSearch, onSearchNewPlace]
+  );
+
   // ── v2.6 🔍 검색 결과 → 지도 이동 / 결과 목록 (한글 IME 조합 중에는 기다립니다) ──
   useEffect(() => {
     const text = String(query || '').trim();
@@ -543,7 +568,9 @@ export default function MapScreen({
         setFitKey((k) => k + 1);
         setNearbyOpen(false);
       } else if (action.type === 'toast') {
-        showToast(action.message);
+        // v2.35.0 — 0곳 안내는 지도 위 검색 드롭다운이 `내 핀에는 없어요`로 이미 보여 주므로
+        //   같은 말을 토스트로 한 번 더 띄우지 않습니다(지도 위 글자가 겹치지 않게).
+        if (plan.mode !== 'empty') showToast(action.message);
       }
     });
   }, [navQuery, filter, pins, visitFilter, showToast]);
@@ -814,6 +841,16 @@ export default function MapScreen({
 
   const nearbyList = myCoords ? nearby : [];
 
+  /**
+   * v2.35.0 — 검색 결과 드롭다운을 띄울지 (지도 보기 + 검색어 있음 + 상세 시트 닫힘).
+   *   규칙은 utils/mapSearch.shouldShowMapSearchPanel 한 곳에 있습니다.
+   */
+  const mapSearchOpen = shouldShowMapSearchPanel({
+    view,
+    query,
+    selected: Boolean(selectedPin),
+  });
+
   /** v2.10 — 방문 상태 칩: 같은 칩을 다시 누르면 '전체'로 돌아갑니다 */
   const changeVisitFilter = useCallback((next) => {
     const value = normalizeVisitFilter(next);
@@ -887,9 +924,43 @@ export default function MapScreen({
           focusAnchorY={placePoint ? 0.15 : 0.5}
         />
 
-        {/* 상단 오버레이(지도 보기): 분류 필터 칩 → (공유받은 지도 · 위치 오류) */}
+        {/* v2.35.0 — 검색 드롭다운이 열려 있을 때 지도(검색창 바깥)을 누르면 깜끔하게 닫고 지도 보기로.
+            검색창·결과 카드는 topOverlay 가 이 위에 그려지므로 그대로 둘 수 있습니다. */}
+        {mapSearchOpen && (
+          <Pressable
+            style={styles.searchBackdrop}
+            onPress={clearSearch}
+            accessibilityRole="button"
+            accessibilityLabel="검색 닫기"
+            testID="map-search-backdrop"
+          />
+        )}
+
+        {/* 상단 오버레이(지도 보기): 통합 검색창 → 분류 필터 칩 → (공유받은 지도 · 위치 오류) */}
         {view === 'map' && (
         <View style={styles.topOverlay} pointerEvents="box-none">
+          {/* v2.35.0 — 분류 칩 **바로 위** 얇은 알약형 통합 검색창 (헤더 🔍 는 없어졌습니다).
+              입력하는 즉시 아래에 내 핀 결과 + [‘검색어’ 네이버/카카오에서 새 장소 찾기]. */}
+          <MapSearchBar
+            value={query}
+            onChange={setQuery}
+            onClear={clearSearch}
+            onSubmit={() => {
+              // 키보드의 [검색] — 결과가 있으면 목록 보기로 펴서 전체를 보여 줍니다.
+              if (mapSearchQuery(query) && filtered.length) toggleView();
+            }}
+          />
+          {mapSearchOpen && (
+            <MapSearchPanel
+              pins={filtered}
+              query={query}
+              categories={categories}
+              myCoords={myCoords}
+              onOpenPin={openPinFromList}
+              onShowAll={toggleView}
+              onSearchNewPlace={searchNewPlace}
+            />
+          )}
           {/* v2.16 — 헤더 바로 아래는 호갱노노처럼 **필터 칩 바 하나**만 둡니다. */}
           {/* v2.17 — 2번째 줄(전체 / ○ 미방문 / ✓ 가봤어요) 은 없어졌습니다.
               방문 필터는 왼쪽 하단 펼침 메뉴의 `가본 곳만 보기` Y/N 하나로 → 지도가 한 줄 더 넓어졌습니다. */}
@@ -1265,6 +1336,11 @@ const styles = StyleSheet.create({
     top: 8,
     left: 0,
     right: 0,
+  },
+  // v2.35.0 — 통합 검색 드롭다운이 열려 있을 때 지도 영역을 덮는 투명 막.
+  //   검색창·결과 카드는 topOverlay 가 이 위에 그려지므로, 지도나 빈 곳을 누르면 닫힙니다.
+  searchBackdrop: {
+    ...StyleSheet.absoluteFillObject,
   },
   // v2.28.0 — 반경 500m 알림 토스트 자리: 분류 칩 줄 **바로 아래**, 가운데 정렬.
   //   좌하단 🎛(12,~724) · 우하단 `내 위치` FAB 와 멀어진 상단이라 지도 버튼과 겹치지 않습니다.

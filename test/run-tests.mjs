@@ -263,6 +263,17 @@ if (!only || only === 'sheet') {
   });
 }
 
+if (!only || only === 'mapsearch') {
+  // v2.35.0 — 🔍 지도 상단 통합 검색창(내 핀 + 새 장소 찾기): 배치·드롭다운 규칙·저장 탭 auto 실행
+  failed += await runSuite({
+    name: '지도 통합 검색창(내 핀 + 새 장소 찾기) 테스트',
+    entry: 'map-search-test.mjs',
+    out: 'map-search-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

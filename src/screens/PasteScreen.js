@@ -119,13 +119,20 @@ export default function PasteScreen({
     requestRef.current = request.id;
     if (request.mode === 'photo' && !canUsePhoto) setMode('link');
     else setMode(request.mode === 'search' ? 'search' : 'link');
-    setQuery(String(request.query == null ? '' : request.query));
+    const wantedQuery = String(request.query == null ? '' : request.query);
+    setQuery(wantedQuery);
     setError('');
     setCandidates([]);
     setSelectedIds([]);
     setMeta(null);
     // v2.33.4 — 새 검색 요청이면 ✅ 가봤어요도 미체크로 시작합니다.
     setVisited(false);
+    /**
+     * v2.35.0 — 지도 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]:
+     *   저장 탭을 열기만 하던 예전 팝업 흐름과 달리, **넘기자마자 그 검색어로 조회를 실행**합니다.
+     *   (v2.34.0 의 정확도 → 가까운 순 정렬 · 거리 배지를 그대로 탑니다)
+     */
+    if (request.auto && request.mode === 'search' && wantedQuery.trim()) runSearch(wantedQuery);
   }, [request, canUsePhoto]);
   /**
    * v2.14 — 분석이 도는 동안 다른 탭으로 옮겨 갈 수 있습니다(탭은 잠그지 않습니다).

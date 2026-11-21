@@ -28,8 +28,9 @@ export const SEARCH_RESULT_MAX = 4;
 /**
  * 검색 결과 여러 곳을 한 화면에 담을 때 지도 여백(px).
  * 위쪽은 배너·검색창·분류 칩이 덮고, 아래쪽은 버튼 스택이 덮어서 넉넉히 비웁니다.
+ * v2.35.0 — 지도 위에 통합 검색창(42px + 8px)이 생겨 위 여백을 210 → 260 으로 늘렸습니다.
  */
-export const SEARCH_RESULT_PADDING = { top: 210, right: 56, bottom: 150, left: 56 };
+export const SEARCH_RESULT_PADDING = { top: 260, right: 56, bottom: 150, left: 56 };
 
 /** 핀에서 지도 좌표만 뽑기 (숫자가 아니면 null) */
 export function pinMapCoords(pin) {

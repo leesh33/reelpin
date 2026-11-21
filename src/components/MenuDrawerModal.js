@@ -35,7 +35,7 @@ import { colors } from '../theme';
 import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.34.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.35.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];

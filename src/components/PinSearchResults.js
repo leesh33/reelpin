@@ -8,6 +8,10 @@
  *   · 한 번에 최대 SEARCH_RESULT_MAX(4)행 — 분류 색 점 · 가게 이름 · 거리/지역
  *   · 행을 누르면 지도로 그 핀을 보여 주고 상세 시트가 열립니다 (MapScreen.openPinFromList)
  *   · [전체 N곳] 을 누르면 목록 보기(PinListView)로 전환 — 거리순/최신순 전체 목록
+ *
+ * v2.35.0 — 지도 상단 통합 검색창의 결과 목록(MapSearchPanel)도 이 컴포넌트를 그대로 씁니다.
+ *   · `emptyHint` … 내 핀 0곳일 때 헤더 아래 한 줄 안내
+ *   · `footer`    … 행 아래에 붙는 버튼 묶음 (지도에서는 [‘검색어’ 네이버/카카오에서 새 장소 찾기])
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -26,6 +30,8 @@ export default function PinSearchResults({
   onOpenPin,
   onShowAll,
   max = SEARCH_RESULT_MAX,
+  emptyHint = '',
+  footer = null,
 }) {
   const rows = (Array.isArray(pins) ? pins : []).filter(Boolean);
   const keyword = String(query || '').trim();
@@ -93,6 +99,15 @@ export default function PinSearchResults({
       {total > shown.length && (
         <Text style={styles.more}>{'외 ' + (total - shown.length) + '곳 더 있어요 · [전체 ' + total + '곳]'}</Text>
       )}
+
+      {/* v2.35.0 — 내 핀 0곳이어도 아래 [새 장소 찾기]로 이어지게 한 줄 안내 */}
+      {total === 0 && !!emptyHint && (
+        <Text style={styles.emptyHint} numberOfLines={2} testID="pin-results-empty-hint">
+          {emptyHint}
+        </Text>
+      )}
+
+      {footer ? <View style={styles.footer}>{footer}</View> : null}
     </View>
   );
 }
@@ -181,5 +196,18 @@ const styles = StyleSheet.create({
     paddingTop: 4,
     paddingBottom: 6,
     paddingHorizontal: 2,
+  },
+  emptyHint: {
+    ...typography.tiny,
+    fontSize: 10.5,
+    paddingTop: 2,
+    paddingBottom: 6,
+    paddingHorizontal: 2,
+  },
+  footer: {
+    paddingTop: 4,
+    paddingBottom: 6,
+    borderTopWidth: 1,
+    borderTopColor: colors.lineSoft,
   },
 });

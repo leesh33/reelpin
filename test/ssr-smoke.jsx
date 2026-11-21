@@ -21,6 +21,15 @@ import MapToolsMenu, { TOOLS_ANIM_MS, TOOLS_TOGGLE_SIZE, toolsSummary } from '..
 import CategoryPicker from '../src/components/CategoryPicker';
 // v2.5 — 🔍 내 핀 검색 · 📋 목록 보기
 import PinSearchBar from '../src/components/PinSearchBar';
+// v2.35.0 — 지도 상단 통합 검색창(내 핀 + 새 장소 찾기) + 결과 드롭다운
+import MapSearchBar, { MAP_SEARCH_BAR_HEIGHT, MAP_SEARCH_PLACEHOLDER } from '../src/components/MapSearchBar';
+import MapSearchPanel from '../src/components/MapSearchPanel';
+import {
+  MAP_SEARCH_EMPTY_HINT,
+  newPlaceSearchLabel,
+  pasteSearchRequest,
+  shouldShowMapSearchPanel,
+} from '../src/utils/mapSearch';
 import PinListView from '../src/components/PinListView';
 import PinSearchResults from '../src/components/PinSearchResults';
 import TabBar from '../src/components/TabBar';
@@ -221,6 +230,12 @@ const cases = [
   // v2.6 — 검색 결과 2곳 이상이면 지도 위 콤팩트 결과 목록
   ['PinSearchResults(검색 결과 2곳)', <PinSearchResults pins={SEARCH_PINS} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} />],
   ['PinSearchResults(최대 4행만)', <PinSearchResults pins={SEARCH_PINS} query="" max={1} onOpenPin={noop} onShowAll={noop} />],
+  // v2.35.0 — 지도 상단 통합 검색창 + 결과 드롭다운
+  ['MapSearchBar(빈 입력)', <MapSearchBar value="" onChange={noop} />],
+  ['MapSearchBar(검색어 있음 · ✕)', <MapSearchBar value="한성" onChange={noop} onClear={noop} />],
+  ['MapSearchPanel(내 핀 2곳 + 새 장소 찾기)', <MapSearchPanel pins={SEARCH_PINS.slice(0, 2)} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} onSearchNewPlace={noop} />],
+  ['MapSearchPanel(0곳 → 안내 + 새 장소 찾기)', <MapSearchPanel pins={[]} query="없는가게" onOpenPin={noop} onSearchNewPlace={noop} />],
+  ['MapSearchPanel(검색어 없음 → 미노출)', <MapSearchPanel pins={SEARCH_PINS} query="   " onSearchNewPlace={noop} />, true],
 ];
 
 let failed = 0;
@@ -299,6 +314,11 @@ const contentCases = [
   // v2.6 — 검색 결과 2곳 이상 → 지도 위 결과 목록
   ['PinSearchResults: 검색어 + N곳 + [전체 N곳]', <PinSearchResults pins={SEARCH_PINS.slice(0, 2)} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} />, ['‘한성’ 검색 · 2곳', '한성치킨', '한성돈까스', '전체 2곳']],
   ['PinSearchResults: 4행까지만 + 남은 개수 안내', <PinSearchResults pins={SEARCH_PINS} query="한성" myCoords={null} onOpenPin={noop} onShowAll={noop} />, ['전체 5곳', '한성냉면', '외 1곳 더 있어요']],
+  // v2.35.0 — 지도 상단 통합 검색창
+  ['MapSearchBar: 알약(아이콘·안내문구·✕)', <MapSearchBar value="한성" onChange={noop} onClear={noop} />, ['map-search-bar', 'map-search-input', '검색어 지우기', '한성']],
+  ['MapSearchPanel: 내 핀 결과 + [전체 N곳] + 새 장소 찾기', <MapSearchPanel pins={SEARCH_PINS.slice(0, 2)} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} onSearchNewPlace={noop} />, ['‘한성’ 검색 · 2곳', '한성치킨', '네이버/카카오에서 새 장소 찾기', 'map-search-new-place']],
+  ['MapSearchPanel: 내 핀 0곳이어도 새 장소 찾기 버튼', <MapSearchPanel pins={[]} query="없는가게" onOpenPin={noop} onSearchNewPlace={noop} />, [MAP_SEARCH_EMPTY_HINT, '네이버/카카오에서 새 장소 찾기']],
+  ['MapScreen(v2.35): 지도 상단 통합 검색창이 분류 칩 위에', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onSearchNewPlace={noop} />, ['map-search-input', MAP_SEARCH_PLACEHOLDER, '전체', '맛집']],
 ];
 
 for (const [label, element, needles] of contentCases) {
@@ -683,8 +703,8 @@ const assetChecks = [
   ['manifest: standalone + 세로', manifest.display === 'standalone' && manifest.orientation === 'portrait', manifest.display],
   ['manifest: 192 · 512 · maskable 아이콘', manifestIcons.indexOf('/icon-192.png@192x192') >= 0 && manifestIcons.indexOf('/icon-512.png@512x512') >= 0 && (manifest.icons || []).some((i) => i.purpose === 'maskable'), manifestIcons.join(', ')],
   ['manifest: start_url·scope', manifest.start_url.indexOf('/') === 0 && manifest.scope === '/', manifest.start_url],
-  ['버전: package.json 2.20.1', pkg.version === '2.34.0', pkg.version],
-  ['버전: app.json 2.20.1', expoConfig.version === '2.34.0', expoConfig.version],
+  ['버전: package.json 2.20.1', pkg.version === '2.35.0', pkg.version],
+  ['버전: app.json 2.20.1', expoConfig.version === '2.35.0', expoConfig.version],
   ['의존성: @supabase/supabase-js 설치됨', !!((pkg.dependencies || {})['@supabase/supabase-js']), JSON.stringify((pkg.dependencies || {})['@supabase/supabase-js'])],
   ['배포: export:web 이 PWA 메타까지 주입', String(pkg.scripts['export:web']).indexOf('patch-web-html') > 0, String(pkg.scripts['export:web'])],
   ['아이콘: app.json 이 assets/icon.png 사용', expoConfig.icon === './assets/icon.png', String(expoConfig.icon)],
@@ -1043,7 +1063,7 @@ const v213PhotoChecks = [
   ['서버: 큰 사진 413 image-too-large', /status: 413/.test(geminiSource) && geminiSource.indexOf('image-too-large') > 0],
   ['서버: 사진 지시문(스크린샷·위치 태그)', geminiSource.indexOf('IMAGE_SYSTEM_INSTRUCTION') > 0 && geminiSource.indexOf('위치 태그') > 0],
   ['서버: 사진 모드는 kind=image 로 응답', /kind: isImage \? 'image' : 'video'/.test(geminiSource)],
-  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.34.0") > 0],
+  ['프로필: 버전 표기 v2.19.3', fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.35.0") > 0],
   ['핀 시트: 사진으로 저장한 핀은 링크 대신 출처 한 줄', pinDetailSource.indexOf("pin.platform === 'photo'") > 0 && pinDetailSource.indexOf('pin-photo-source') > 0],
 ];
 for (const [label, ok, extra] of v213PhotoChecks) {
@@ -1318,9 +1338,10 @@ const v215Checks = [
   // ② 공통 헤더 (컴포넌트)
   ['공통 헤더: Reelspin + 지금 탭 뱃지', headerAlertsHtml.indexOf('reelspin') > 0 && headerAlertsHtml.indexOf('지도') > 0],
   ['공통 헤더: 🔔 알림 모음 버튼 + 숫자 뱃지', headerAlertsHtml.indexOf('알림모음') > 0 && headerSource215.indexOf('testID="header-alert-badge"') > 0 && headerSource215.indexOf('colors.brand') > 0],
-  ['공통 헤더: 비로그인에도 🔍 · 🔔 · ☰ 세 아이콘', headerAlertsHtml.indexOf('장소검색') > 0 && headerAlertsHtml.indexOf('알림모음') > 0 && headerAlertsHtml.indexOf('메뉴') > 0 && headerSource215.indexOf('loginBtn') < 0],
+  ['공통 헤더: 비로그인에도 🔔 · ☰ 두 아이콘', headerAlertsHtml.indexOf('알림모음') > 0 && headerAlertsHtml.indexOf('메뉴') > 0 && headerSource215.indexOf('loginBtn') < 0],
   ['공통 헤더: 👤 알약/아바타는 헤더에서 사라짐(☰ 메뉴로 통합)', headerAlertsHtml.indexOf('로그인') < 0 && headerSource215.indexOf('header-account') < 0 && headerSource215.indexOf('accountDot') < 0],
-  ['공통 헤더: 오른쪽 순서 = 🔍 → 🔔 → ☰', HEADER_ACTIONS.join('|') === 'search|alerts|menu' && HEADER_ACTIONS.length === 3, HEADER_ACTIONS.join('|')],
+  // v2.35.0 — 🔍 는 지도 화면 통합 검색창으로 옮겨 헤더에서 빠졌습니다(중복 방지).
+  ['공통 헤더: 오른쪽 순서 = 🔔 → ☰ (🔍 없음)', HEADER_ACTIONS.join('|') === 'alerts|menu' && HEADER_ACTIONS.length === 2, HEADER_ACTIONS.join('|')],
   ['공통 헤더: 로그인 상태 = ☰ 초록 점', headerSignedHtml.indexOf('header-menu-dot') > 0 && headerSource215.indexOf('colors.visit') > 0],
   ['공통 헤더: 뱃지 없으면 숫자 안 그림', stripSpaces(renderToString(<AppHeader badge="저장" alertCount={0} />)).indexOf('header-alert-badge') < 0],
   ['공통 헤더: ✕ 는 넘긴 화면에만', headerSource215.indexOf('{onPressClose ?') > 0 && headerAlertsHtml.indexOf('✕') < 0],
@@ -1448,15 +1469,15 @@ const pops216 = popularPlaceRows(PIN_216, POPULAR_PLACES);
 const popBetong216 = pops216.find((row) => row.place.id === 'betong');
 
 const v216Checks = [
-  // ① 헤더 — 🔍 · 🔔 · ☰ (호갱노노처럼)
-  ['헤더: 오른쪽은 🔍 · 🔔 · ☰ 세 아이콘만', headerSource215.indexOf('testID="header-search"') > 0 && headerSource215.indexOf('testID="header-alerts"') > 0 && headerSource215.indexOf('testID="header-menu"') > 0],
+  // ① 헤더 — 🔔 · ☰ (v2.35.0: 🔍 는 지도 통합 검색창으로)
+  ['헤더: 오른쪽은 🔔 · ☰ 두 아이콘 (🔍 제거)', headerSource215.indexOf('testID="header-search"') < 0 && headerSource215.indexOf('testID="header-alerts"') > 0 && headerSource215.indexOf('testID="header-menu"') > 0],
   ['헤더: ☰ 에 로그인 초록 점(작은 점)', headerSource215.indexOf('testID="header-menu-dot"') > 0 && /menuDot: \{[\s\S]{0,200}?colors\.visit/.test(headerSource215)],
-  ['헤더: 흰색 라인 아이콘(search·notifications-outline·menu)', headerSource215.indexOf('name="search"') > 0 && headerSource215.indexOf('name="notifications-outline"') > 0 && headerSource215.indexOf('name="menu"') > 0],
-  ['헤더: 저장 탭은 ✕ 포함 4개까지 그린다', headerSource215.indexOf('{onPressClose ? (') > 0 && headerSource215.indexOf('iconBtn') > 0],
-  // ② 지도 탭 — 검색창 제거 + 칩 바만
-  ['지도 탭: 지도 위 검색창 제거(헤더 🔍 로)', mapSource216.indexOf('<PinSearchBar') < 0 && mapSource216.indexOf('styles.searchWrap') < 0],
-  ['지도 탭: 필터 칩 바가 헤더 바로 아래(알림 토스트보다 위)', mapSource216.indexOf('styles.chipWrap') > 0 && mapSource216.indexOf('styles.chipWrap') < mapSource216.indexOf('<GeofenceToast')],
-  ['지도 탭: 그려진 화면에 검색 인풋 없음', mapHtml216.indexOf('pin-search-input') < 0],
+  ['헤더: 흰색 라인 아이콘(notifications-outline·menu)', headerSource215.indexOf('name="notifications-outline"') > 0 && headerSource215.indexOf('name="menu"') > 0 && headerSource215.indexOf('name="search"') < 0],
+  ['헤더: 저장 탭은 ✕ 포함 3개까지 그린다', headerSource215.indexOf('{onPressClose ? (') > 0 && headerSource215.indexOf('iconBtn') > 0],
+  // ② 지도 탭 — v2.35.0 통합 검색창(분류 칩 바로 위) + 칩 바
+  ['지도 탭: 지도 위 통합 검색창(MapSearchBar)이 칩 바로 위', mapSource216.indexOf('<MapSearchBar') > 0 && mapSource216.indexOf('<MapSearchBar') < mapSource216.indexOf('<FilterChips') && mapSource216.indexOf('styles.searchWrap') < 0],
+  ['지도 탭: 필터 칩 바가 알림 토스트보다 위', mapSource216.indexOf('styles.chipWrap') > 0 && mapSource216.indexOf('styles.chipWrap') < mapSource216.indexOf('<GeofenceToast')],
+  ['지도 탭: 그려진 화면에 검색 인풋 있음(내 핀·새 장소 검색)', mapHtml216.indexOf('map-search-input') > 0 && stripSpaces(mapHtml216).indexOf('내핀·새장소검색') > 0],
   ['지도 탭: 분류 칩 한 줄만 (방문 칩 2번째 줄 없음)', mapHtml216.indexOf('맛집') > 0 && mapHtml216.indexOf('미방문') < 0],
   // ③ 🔍 검색 레이어 팝업
   // v2.19.1 — 검색 팝업도 내 정보와 **같은 레이어 팝업 틀**(LayerSheet)을 씁니다
@@ -1470,9 +1491,9 @@ const v216Checks = [
   ['검색 팝업: 검색 결과 — 메뉴·메모까지 매칭', resSalt216.total === 2 && resSalt216.items[0].pin.id === 's-0' && resMemo216.total === 1 && resMemo216.items[0].pin.id === 's-1', resSalt216.total + '/' + resMemo216.total],
   ['검색 팝업: 빈 검색어면 결과 0(추천·인기 먼저)', resNone216.total === 0 && resNone216.items.length === 0],
   ['검색 팝업: 결과는 6행까지 + truncate 표기', resLimit216.items.length === 1 && resLimit216.total === 2 && resLimit216.truncated === true && OVERLAY_RESULT_MAX === 6],
-  ['검색 팝업: 추천 행을 누르면 그 핀으로(onOpenPin)', searchOverlaySource216.indexOf('onPress={() => openPin(item.pin)}') > 0 && appSource215.indexOf('onOpenPin={openPinFromSearch}') > 0],
-  ['검색 팝업: 핀을 고르면 닫고 지도 탭 + 상세 시트', appSource215.indexOf('setSearchOpen(false)') > 0 && appSource215.indexOf('setTab(\'map\')') > 0 && appSource215.indexOf('setPinFocus({ id: pin.id, key: pinFocusId.current })') > 0],
-  ['검색 팝업: 내 핀에 없으면 저장 탭 가게명 찾기로 이어짐', searchOverlaySource216.indexOf('search-overlay-go-paste') > 0 && appSource215.indexOf('mode: \'search\'') > 0 && pasteSource215.indexOf('request.mode') > 0 && pasteSource215.indexOf('setQuery(String(request.query') > 0],
+  ['검색 팝업: 추천 행을 누르면 그 핀으로(onOpenPin)', searchOverlaySource216.indexOf('onPress={() => openPin(item.pin)}') > 0 && mapSource216.indexOf('onOpenPin={openPinFromList}') > 0],
+  ['검색 팝업: 핀을 고르면 닫고 지도 탭 + 상세 시트', /const openPinFromList = useCallback\([\s\S]{0,500}?setView\('map'\)[\s\S]{0,200}?onSelectPin\(pin.id\)/.test(mapSource216) && mapSource216.indexOf('onOpenPin={openPinFromList}') > 0],
+  ['검색 팝업: 내 핀에 없으면 저장 탭 가게명 찾기로 이어짐(auto)', searchOverlaySource216.indexOf('search-overlay-go-paste') > 0 && appSource215.indexOf('pasteSearchRequest(query)') > 0 && pasteSource215.indexOf('request.mode') > 0 && pasteSource215.indexOf('request.auto') > 0 && pasteSource215.indexOf('runSearch(wantedQuery)') > 0],
   ['검색 팝업: 저장한 핀이 없으면 안내', overlayEmptyHtml216.indexOf('아직 저장한 장소가 없어요') > 0],
   ['검색 팝업: 위치를 모르면 [내 위치] 칩', stripSpaces(overlayNoLocationHtml216).indexOf('내위치') > 0],
   // ④ 인기 검색 장소
@@ -1490,11 +1511,11 @@ const v216Checks = [
   // v2.18 — ☰ 메뉴의 [분류 관리] 는 내 정보 탭의 **분류 관리 서브 페이지**를 엽니다.
   ['메뉴(v2.19): 분류 관리 → 시트 안 서브 페이지', appSource215.indexOf('setCategoriesFocus(') < 0 && profileSource215.indexOf("openSub('categories')") > 0 && menuSource216.indexOf('onOpenSub={setSub}') > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
   ['메뉴(v2.19): 저장된 핀 N곳 / 가본 곳 M곳 요약', menuHtml216.indexOf('저장된 핀') > 0 && menuHtml216.indexOf('가본 곳') > 0 && menuHtml216.indexOf('안 가본 곳') > 0 && profileSource215.indexOf('visited === true') > 0],
-  ['메뉴: 릴스핀 v2.25.0 표기', menuHtml216.indexOf('릴스핀 v2.34.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.34.0', APP_VERSION_LABEL],
+  ['메뉴: 릴스핀 v2.25.0 표기', menuHtml216.indexOf('릴스핀 v2.35.0') > 0 && APP_VERSION_LABEL === '릴스핀 v2.35.0', APP_VERSION_LABEL],
   ['메뉴: 닫힌 상태에서는 안 그림', renderToString(<MenuDrawerModal visible={false} pins={PIN_216} />) === ''],
   // ⑥ 앱 배선 · 순수 계산
-  ['앱: 세 탭 헤더에 🔍 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressSearch: openSearch') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
-  ['앱: 검색 팝업·메뉴를 최상위에 한 번만', appSource215.indexOf('<SearchOverlayModal') > 0 && appSource215.indexOf('<MenuDrawerModal') > 0],
+  ['앱: 세 탭 헤더에 🔔 · ☰ 핸들러를 넘깁니다', appSource215.indexOf('onPressAlerts: openAlerts') > 0 && appSource215.indexOf('onPressMenu: openMenu') > 0 && appSource215.indexOf('onPressSearch') < 0 && (appSource215.match(/header=\{headerProps\}/g) || []).length === 3],
+  ['앱: ☰ 메뉴를 최상위에 한 번만 (검색 레이어는 v2.35.0 지도 검색창으로 이동)', appSource215.indexOf('<MenuDrawerModal') > 0 && appSource215.indexOf('<SearchOverlayModal') < 0 && appSource215.indexOf('onSearchNewPlace={goPasteSearch}') > 0],
   ['순수 계산: 검색 팝업 유틸은 화면을 import 하지 않음', overlayUtilSource216.indexOf('react') < 0 && overlayUtilSource216.indexOf('react-native') < 0],
 ];
 for (const [label, ok, extra] of v216Checks) {
@@ -1604,7 +1625,7 @@ const v217Checks = [
   ['지도 공유: 메뉴를 닫고 공유 시트/클립보드로', /onShare=\{\(\) => \{\s*\n\s*setToolsOpen\(false\);\s*\n\s*shareMyMap\(\);/.test(mapSource217)],
   // ⑦ 상태·버전
   ['지도: 도구 펼친 상태는 기본적으로 접힘', /const \[toolsOpen, setToolsOpen\] = useState\(false\)/.test(mapSource217)],
-  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.34.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.34.0") > 0],
+  ['버전: 메뉴·프로필 모두 v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.35.0' && fs.readFileSync(path.join(process.cwd(), 'src/screens/ProfileScreen.js'), 'utf8').indexOf("릴스핀 v2.35.0") > 0],
   // ⑧ 펌찄 카드와 지도 안내 알약(폴백 지도 안내)이 겹치지 않게
   [
     '지도: 펌찄 메뉴가 열리면 지도 안내 알약을 감춤',
@@ -1685,7 +1706,7 @@ const v2171Checks = [
   ['가본 곳만 보기: 스위치 켜짐 문구는 가본 곳 N곳만 보는 중', toolsOpenHtml217.indexOf('가본곳2곳만보는중') > 0],
   ['도구 메뉴: 펼치면 반경 500m 패널을 먼저 닫음(겹침 방지)', /onToggleOpen=\{\(\) => \{[\s\S]{0,320}?if \(next\) setNearbyOpen\(false\);/.test(mapSource2171)],
   // ④ 버전
-  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.34.0'],
+  ['버전: v2.19.3', APP_VERSION_LABEL === '릴스핀 v2.35.0'],
 ];
 for (const [label, ok, extra] of v2171Checks) {
   if (ok) console.log('OK   ' + label);
@@ -1743,7 +1764,7 @@ const v218Checks = [
   ['v2.18 내 정보: 설정 3행(분류 관리 · 지오펜스 반경 · 앱 정보)', ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => profileHtml218.indexOf(id) > 0)],
   ['v2.18 내 정보: 본문에는 분류·반경·앱 정보 상세가 없음(서브 페이지로 이동)', profileHtml218.indexOf('새 분류 이름') < 0 && profileHtml218.indexOf('번들 ID') < 0 && profileHtml218.indexOf('radius-option-300') < 0],
   ['v2.18 내 정보: 지오펜스 반경 서브 페이지(‹ 뒤로 + 3개 반경)', radiusHtml218.indexOf('profile-sub-radius') > 0 && radiusHtml218.indexOf('profile-sub-back') > 0 && radiusHtml218.indexOf('radius-option-300') > 0 && radiusHtml218.indexOf('radius-option-1000') > 0],
-  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.34.0') > 0],
+  ['v2.18 내 정보: 앱 정보 서브 페이지(버전·번들 ID)', aboutHtml218.indexOf('profile-sub-about') > 0 && aboutHtml218.indexOf(APP_INFO_BUNDLE) > 0 && aboutHtml218.indexOf('릴스핀 v2.35.0') > 0],
   ['v2.19: ☰ 시트가 분류 관리 서브 페이지를 직접 연다', profileSource218.indexOf("openSub('categories')") > 0 && menuSource216.indexOf("sub === 'categories'") > 0],
 ];
 for (const [label, ok, extra] of v218Checks) {
@@ -1864,7 +1885,7 @@ const v219Checks = [
   ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
-  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.34.0') > 0],
+  ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.35.0') > 0],
   ['v2.19 앱: 내 정보 탭 제거 · ☰ 시트가 ProfileScreen(panel) 사용', appSource219.indexOf("tab !== 'profile'") < 0 && appSource219.indexOf('<MenuDrawerModal') > 0 && appSource219.indexOf('panel') < 0 && menuSource219.indexOf('panel') > 0],
   // ③ 📂 컬렉션 탭
   // v2.32.0 — 상훈 님 요청: `2곳 담김` 은 빼고 `2개 컬렉션` 만
@@ -1880,7 +1901,7 @@ const v219Checks = [
   ['v2.19 저장: 컬렉션은 기기에 저장(reelpin.collections.v1)', storageSource219.indexOf("'reelpin.collections.v1'") > 0 && appSource219.indexOf('saveCollections(collections)') > 0],
   ['v2.19 저장: 핀을 지우면 컬렉션에서도 정리(prune)', appSource219.indexOf('pruneCollections(prev, pins)') > 0],
   ['v2.19: 하단바 탭은 App 이 collections 를 그림', appSource219.indexOf('<CollectionsScreen') > 0 && appSource219.indexOf("tab !== 'collections'") > 0],
-  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.34.0' && profileSource219.indexOf("'릴스핀 v2.34.0'") > 0 && pkg.version === '2.34.0'],
+  ['v2.19 버전: 메뉴·앱 정보·패키지 모두 2.20.1', APP_VERSION_LABEL === '릴스핀 v2.35.0' && profileSource219.indexOf("'릴스핀 v2.35.0'") > 0 && pkg.version === '2.35.0'],
 ];
 for (const [label, ok, extra] of v219Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2037,7 +2058,7 @@ const v2191Checks = [
   ['시군구동: 검색 팝업 추천 카드에 그대로 보임', areaOverlayHtml191.indexOf('인천 서구 당하동') > 0 && areaOverlayHtml191.indexOf('서울 강남구 역삼동') > 0 && areaOverlayHtml191.indexOf('경기 고양시 일산서구 일산동') < 0],
   ['시군구동: `분류 · 지역` 한 줄 표기', placeMetaLabel(AREA_PINS_191[0]) === '맛집 · 인천 서구 당하동' && placeMetaLabel({ name: 'x' }) === '내 지도'],
   // ⑥ 버전
-  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0'],
 ];
 for (const [label, ok, extra] of v2191Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2185,7 +2206,7 @@ const v2192Checks = [
     mapControls.rightInset === 12 && mapSource2192.indexOf('right: mapControls.rightInset') > 0 && webMapSource2192.indexOf('right: mapControls.rightInset') > 0,
   ],
   // ④ 버전
-  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0'],
+  ['v2.20.1 버전: 메뉴 · 앱 정보 · package · app.json', APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0'],
 ];
 for (const [label, ok, extra] of v2192Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2491,7 +2512,7 @@ const v2202Checks = [
   // ⑤ 버전
   [
     'v2.21.0 버전: 메뉴 · 앱 정보 · package · app.json',
-    APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0',
+    APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0',
   ],
 ];
 for (const [label, ok, extra] of v2202Checks) {
@@ -2573,7 +2594,7 @@ const v223Checks = [
   // ④ DB
   ['v2.23 DB: feedback.sql — 테이블·RLS·공감·어드민 RPC', feedbackSql223.indexOf('create table if not exists public.reelpin_feedback') > 0 && feedbackSql223.indexOf('increment_reelpin_feedback_like') > 0 && feedbackSql223.indexOf('reelpin_admin_feedback') > 0],
   // ⑤ 버전
-  ['v2.23 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+  ['v2.23 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
 ];
 for (const [label, ok, extra] of v223Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2655,10 +2676,10 @@ const v225Checks = [
   ['v2.25 지도: 상세 시트를 닫고 결과를 알림(onSelectPin(null) · 토스트)', showPinOnMapBody225.indexOf('onSelectPin(null)') > 0 && showPinOnMapBody225.indexOf('showToast(') > 0],
   ['v2.25 지도: 필터에 가려진 핀이면 그 핀만 지도에 함께(revealPinId)', mapSource225.indexOf('revealPinId') > 0 && /const mapPins = useMemo\(\(\) => \{[\s\S]{0,260}revealPin/.test(mapSource225) && showPinOnMapBody225.indexOf('setRevealPinId(target.id)') > 0],
   // ③ App — 검색·알림·메뉴·제보 레이어를 모두 닫고 지도 탭으로
-  ['v2.25 App: 레이어 닫기 콜백이 네 레이어를 모두 닫음', ['setSearchOpen(false)', 'setAlertOpen(false)', 'setMenuOpen(false)', 'setFeedbackOpen(false)', "setTab('map')"].every((t) => dismissOverlaysBody225.indexOf(t) > 0), dismissOverlaysBody225.slice(0, 160)],
+  ['v2.25 App: 레이어 닫기 콜백이 세 레이어를 모두 닫음', ['setAlertOpen(false)', 'setMenuOpen(false)', 'setFeedbackOpen(false)', "setTab('map')"].every((t) => dismissOverlaysBody225.indexOf(t) > 0), dismissOverlaysBody225.slice(0, 160)],
   ['v2.25 App: 지도 화면에 onDismissOverlays 를 넘김', appSource225.indexOf('onDismissOverlays={dismissOverlaysForMap}') > 0],
   // ④ 버전
-  ['v2.25 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+  ['v2.25 버전: 메뉴 · 앱 정보 · package · app.json · 제보 첨부값', APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
 ];
 for (const [label, ok, extra] of v225Checks) {
   if (ok) console.log('OK   ' + label);
@@ -2685,8 +2706,8 @@ const v228Checks = [
   // ② App 배선 — 한 곳에서 판단하고 조건부로 그립니다
   ['v2.28 App: 판단 규칙 모듈을 씀', appSource228.indexOf("from './src/utils/tabBarVisibility'") > 0 && appSource228.indexOf('tabBarVisibility({') > 0],
   ['v2.28 App: 탭바는 조건부 렌더(숨김이면 DOM 에 없음)', appSource228.indexOf('{tabBarState.visible ? <TabBar active={tab} onChange={setTab} /> : null}') > 0],
-  ['v2.28 App: 모든 레이어 상태를 규칙에 넘김',
-    /tabBarVisibility\(\{[\s\S]{0,420}?pinDetail: Boolean\(selectedPinId\)[\s\S]{0,420}?search: searchOpen[\s\S]{0,240}?feedback: feedbackOpen/.test(appSource228)],
+  ['v2.28 App: 모든 레이어 상태를 규칙에 넘김 (v2.35.0: 검색 레이어 제거)',
+    /tabBarVisibility\(\{[\s\S]{0,420}?pinDetail: Boolean\(selectedPinId\)[\s\S]{0,420}?alerts: alertOpen[\s\S]{0,240}?feedback: feedbackOpen/.test(appSource228) && appSource228.indexOf('search: searchOpen') < 0],
   ['v2.28 App: 지도·컬렉션이 바닥 레이어를 위로 알림', appSource228.indexOf('onListSheetChange={setMapListSheet}') > 0 && appSource228.indexOf('onCreateSheetChange={setCollectionSheet}') > 0],
   ['v2.28 지도: 목록 보기 상태를 위로 전달', /onListSheetChange\(view === 'list'\)/.test(mapSource228)],
   ['v2.28 컬렉션: 새 컬렉션 시트 상태를 위로 전달', /onCreateSheetChange\(creating\)/.test(collectionsSource228)],
@@ -3304,7 +3325,7 @@ const v2322Checks = [
   ['v2.32.2 광고: 슬롯은 기획전 스위치와 무관(숨김 상태에서도 보임)', emptyBannerHtml2322.indexOf('collections-ad-slot') > 0 && emptyBannerHtml2322.indexOf('collections-curated') < 0 && emptyBannerHtml2322.indexOf('collections-theme-chips') < 0],
   ['v2.32.2 광고: 배너 링크는 http(s)만 열기(그대로)', collectionsSource2321.indexOf('const hasLink = /^https?:\\/\\//i.test(String(banner.linkUrl') > 0],
   ['v2.32.2 토스트: 반경 500m 알림이 화면에 6초 머묾', GEOFENCE_TOAST_MS === 6000 && geofenceToastHtml.indexOf('반경 500m 안에 2곳 있어요') > 0],
-  ['v2.32.2 버전: 2.32.2 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)', APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+  ['v2.32.2 버전: 2.32.2 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)', APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
 ];
 for (const [label, ok, extra] of v2322Checks) {
   if (ok) console.log('OK   ' + label);
@@ -3464,7 +3485,7 @@ const v233Checks = [
       mapSource233.indexOf('getProjection().fromOffsetToCoord(new api.Point') < 0 &&
       mapSource233.indexOf('map.getSize()') > 0],
   ['v2.33.2 버전: 2.33.2 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)',
-    APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+    APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
   // ── v2.33.2 ✅ 가봤어요 토글 ─────────────────────────────
   ['v2.33.2 시트: `가봤어요` 토글 카드가 있고 기본은 미체크(빈 체크박스 · aria-checked=false)',
     placeSheetHtml233.indexOf('longpress-visited-toggle') > 0 &&
@@ -3522,7 +3543,7 @@ const v233Checks = [
       fs.readFileSync(path.join(process.cwd(), 'src/services/cloudSync.js'), 'utf8').indexOf('visited: pin.visited === true') > 0],
   // ── v2.33.3 ✅ 가봤어요 카드와 `분류` 사이 여백 ─────────────
   ['v2.33.3 버전: 2.33.3 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)',
-    APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+    APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
   ['v2.33.3 시트: 가봤어요 카드 아래 여백이 다른 구역과 같은 14px(`분류` 라벨이 바짝 붙지 않음)',
     (() => {
       const src = fs.readFileSync(path.join(process.cwd(), 'src/components/LongPressPlaceSheet.js'), 'utf8');
@@ -3623,7 +3644,7 @@ const v2334Checks = [
       appSource233.indexOf('item.pin.visited === true && existing.visited !== true') > 0 &&
       appSource233.indexOf('handleTogglePinVisited(existing.id, true)') > 0],
   ['v2.33.4 버전: 2.33.4 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)',
-    APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+    APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
 ];
 for (const [label, ok, extra] of v2334Checks) {
   if (ok) console.log('OK   ' + label);
@@ -3667,9 +3688,77 @@ const v234Checks = [
   ['v2.34.0 검색: App 이 지도 탭 현재 위치를 저장 화면에 넘긴다',
     /myCoords=\{alertCoords\}/.test(appSource234)],
   ['v2.34.0 버전: 2.34.0 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)',
-    APP_VERSION_LABEL === '릴스핀 v2.34.0' && APP_INFO_VERSION === '릴스핀 v2.34.0' && pkg.version === '2.34.0' && expoConfig.version === '2.34.0' && FEEDBACK_APP_VERSION === '2.34.0'],
+    APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
 ];
 for (const [label, ok, extra] of v234Checks) {
+  if (ok) console.log('OK   ' + label);
+  else {
+    failed += 1;
+    console.log('FAIL ' + label + (extra !== undefined && extra !== '' ? '  -> ' + extra : ''));
+  }
+}
+
+// ── v2.35.0: 지도 상단 통합 검색창(내 핀 + 새 장소 찾기) ─────────────
+//   상훈 님: "써보다보니 바로 검색하고 싶으면 몇 단계 찾아 들어가는 게 좀 불편하긴 하네"
+const mapSource235 = fs.readFileSync(path.join(process.cwd(), 'src/screens/MapScreen.js'), 'utf8');
+const headerSource235 = fs.readFileSync(path.join(process.cwd(), 'src/components/AppHeader.js'), 'utf8');
+const appSource235 = fs.readFileSync(path.join(process.cwd(), 'App.js'), 'utf8');
+const pasteSource235 = fs.readFileSync(path.join(process.cwd(), 'src/screens/PasteScreen.js'), 'utf8');
+const barSource235 = fs.readFileSync(path.join(process.cwd(), 'src/components/MapSearchBar.js'), 'utf8');
+const panelSource235 = fs.readFileSync(path.join(process.cwd(), 'src/components/MapSearchPanel.js'), 'utf8');
+const resultsSource235 = fs.readFileSync(path.join(process.cwd(), 'src/components/PinSearchResults.js'), 'utf8');
+const mapHtml235 = stripSpaces(
+  renderToString(
+    <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onSearchNewPlace={noop} />
+  )
+);
+
+const v235Checks = [
+  // ① 검색창 모양·문구
+  ['v2.35.0 검색창: 알약 높이 40~44px 안(42px) · 안내문구 `내 핀 · 새 장소 검색`',
+    MAP_SEARCH_BAR_HEIGHT >= 40 && MAP_SEARCH_BAR_HEIGHT <= 44 && MAP_SEARCH_PLACEHOLDER === '내 핀 · 새 장소 검색' && barSource235.indexOf('height: MAP_SEARCH_BAR_HEIGHT') > 0],
+  ['v2.35.0 검색창: 반투명 흰색 · 그림자 · 좌우 16px',
+    barSource235.indexOf('rgba(255,255,255,0.96)') > 0 && barSource235.indexOf('shadowOpacity') > 0 && barSource235.indexOf('marginHorizontal: 16') > 0],
+  ['v2.35.0 검색창: 입력이 있을 때만 ✕ 지우기',
+    barSource235.indexOf('hasValue &&') > 0 && barSource235.indexOf('testID="map-search-clear"') > 0 && barSource235.indexOf('accessibilityLabel="검색어 지우기"') > 0],
+  // ② 배치 — 헤더 🔍 제거 + 분류 칩 바로 위
+  ['v2.35.0 헤더: 🔍 돋보기 제거 · 🔔 ☰ 유지',
+    headerSource235.indexOf('header-search') < 0 && headerSource235.indexOf('testID="header-alerts"') > 0 && headerSource235.indexOf('testID="header-menu"') > 0],
+  ['v2.35.0 지도: 검색창이 분류 칩 바로 위(같은 오버레이)',
+    mapSource235.indexOf('<MapSearchBar') > 0 && mapSource235.indexOf('<MapSearchBar') < mapSource235.indexOf('<FilterChips') && mapSource235.indexOf('styles.topOverlay') < mapSource235.indexOf('<MapSearchBar')],
+  ['v2.35.0 지도: 그린 화면에 검색 인풋 + 안내문구',
+    mapHtml235.indexOf('map-search-input') > 0 && mapHtml235.indexOf(stripSpaces(MAP_SEARCH_PLACEHOLDER)) > 0],
+  // ③ 통합 검색 동작
+  ['v2.35.0 검색: 입력하면 내 핀 결과 드롭다운(지도·상세 시트 상태 규칙)',
+    shouldShowMapSearchPanel({ view: 'map', query: '한성', selected: false }) === true &&
+      shouldShowMapSearchPanel({ view: 'map', query: '   ', selected: false }) === false &&
+      shouldShowMapSearchPanel({ view: 'list', query: '한성', selected: false }) === false &&
+      shouldShowMapSearchPanel({ view: 'map', query: '한성', selected: true }) === false],
+  ['v2.35.0 검색: 결과 목록은 기존 PinSearchResults 재사용',
+    panelSource235.indexOf("from './PinSearchResults'") > 0 && resultsSource235.indexOf('testID="pin-search-results"') > 0 && resultsSource235.indexOf('pin-result-row-') > 0],
+  ['v2.35.0 검색: 행을 누르면 그 핀으로 지도 이동 + 상세 시트',
+    mapSource235.indexOf('onOpenPin={openPinFromList}') > 0 && /const openPinFromList = useCallback\([\s\S]{0,500}?onSelectPin\(pin.id\)/.test(mapSource235)],
+  ['v2.35.0 검색: 결과 아래(0곳일 때도) `‘검색어’ 네이버/카카오에서 새 장소 찾기`',
+    newPlaceSearchLabel('한성') === '‘한성’ 네이버/카카오에서 새 장소 찾기' &&
+      panelSource235.indexOf('네이버/카카오에서 새 장소 찾기') > 0 &&
+      panelSource235.indexOf('emptyHint') > 0 &&
+      resultsSource235.indexOf('{footer ? <View style={styles.footer}>{footer}</View> : null}') > 0],
+  ['v2.35.0 검색: 새 장소 찾기 → 저장 탭 가게명 찾기 즉시 실행(auto)',
+    JSON.stringify(pasteSearchRequest('  한성 ')) === JSON.stringify({ mode: 'search', query: '한성', auto: true }) &&
+      pasteSearchRequest('   ') === null &&
+      appSource235.indexOf('pasteSearchRequest(query)') > 0 &&
+      mapSource235.indexOf('onSearchNewPlace={searchNewPlace}') > 0 &&
+      pasteSource235.indexOf('request.auto') > 0 &&
+      pasteSource235.indexOf('runSearch(wantedQuery)') > 0],
+  ['v2.35.0 검색: 바깥 탭·✕ → 검색어 비우고 지도로 복귀',
+    mapSource235.indexOf('map-search-backdrop') > 0 && mapSource235.indexOf('onPress={clearSearch}') > 0 && mapSource235.indexOf('onClear={clearSearch}') > 0],
+  ['v2.35.0 지도: 검색 결과가 지도 여백(SEARCH_RESULT_PADDING.top)을 넘지 않게',
+    fs.readFileSync(path.join(process.cwd(), 'src/utils/searchNav.js'), 'utf8').indexOf('top: 260') > 0],
+  // ④ 버전
+  ['v2.35.0 버전: 2.35.0 (메뉴 · 앱 정보 · package · app.json · 제보 첨부값)',
+    APP_VERSION_LABEL === '릴스핀 v2.35.0' && APP_INFO_VERSION === '릴스핀 v2.35.0' && pkg.version === '2.35.0' && expoConfig.version === '2.35.0' && FEEDBACK_APP_VERSION === '2.35.0'],
+];
+for (const [label, ok, extra] of v235Checks) {
   if (ok) console.log('OK   ' + label);
   else {
     failed += 1;
@@ -3739,6 +3828,8 @@ const total =
   v2334Checks.length +
   // v2.34.0 — 가게명 찾기 정확도·거리순 · 상세 시트 아래로 쓸어내려 닫기
   v234Checks.length +
+  // v2.35.0 — 지도 상단 통합 검색창(내 핀 + 새 장소 찾기)
+  v235Checks.length +
   2;
 if (failed) { console.log('SMOKE_FAILED=' + failed); process.exit(1); }
 console.log('SMOKE_OK ' + total + '/' + total);
