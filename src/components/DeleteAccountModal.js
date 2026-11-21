@@ -65,10 +65,14 @@ export default function DeleteAccountModal({
               마지막 확인이에요. 탈퇴하면 같은 계정으로 다시 로그인할 수 없고, 지운 데이터는 되돌릴 수 없어요.
             </Text>
             <View style={styles.warnBox}>
-              <Ionicons name="alert-circle" size={14} color="#B91C1C" />
-              <Text style={styles.warnText}>
-                지금 탈퇴하면 계정 「{account}」 이 사라집니다.
-              </Text>
+              <Ionicons name="alert-circle" size={14} color="#B91C1C" style={styles.warnIcon} />
+              {/* 긴 이메일이 상자 밖으로 넘치지 않게 계정은 자기 줄에서 말줄임(…) 처리 */}
+              <View style={styles.warnBody}>
+                <Text style={styles.warnText}>지금 탈퇴하면 아래 계정이 사라집니다.</Text>
+                <Text style={styles.warnAccount} numberOfLines={1} testID="delete-account-final-email">
+                  {account}
+                </Text>
+              </View>
             </View>
           </>
         ) : (
@@ -80,7 +84,7 @@ export default function DeleteAccountModal({
               <Row icon="person-outline" label="계정" value={account} />
               <Row icon="pin-outline" label="클라우드에 저장한 핀" value={pinCount > 0 ? pinCount + '개' : '없음'} />
               <Row icon="chatbubble-ellipses-outline" label="제안 · 버그 제보" value="내 이메일로 남긴 글" />
-              <Row icon="link-outline" label="공유한 컬렉션 링크" value="받은 사람도 열 수 없게 됩니다" />
+              <Row icon="link-outline" label="공유한 컬렉션 링크" value="받는 사람도 못 엽니다" />
             </View>
             <View style={styles.noteRow}>
               <Ionicons name="information-circle-outline" size={13} color={colors.textMuted} />
@@ -150,6 +154,7 @@ function Row({ icon, label, value }) {
   return (
     <View style={styles.row}>
       <Ionicons name={icon} size={14} color={colors.textSub} />
+      {/* 라벨은 줄이지 않고(잘리면 무슨 항목인지 모름), 값만 남는 폭에서 말줄임 */}
       <Text style={styles.rowLabel} numberOfLines={1}>
         {label}
       </Text>
@@ -201,8 +206,8 @@ const styles = StyleSheet.create({
   lead: { marginTop: 8, fontSize: 13, lineHeight: 19, fontWeight: '500', color: colors.textSub },
   list: { marginTop: 14, backgroundColor: colors.bg, borderRadius: radius.md, paddingVertical: 4, paddingHorizontal: 12 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 },
-  rowLabel: { fontSize: 12, fontWeight: '600', color: colors.textSub },
-  rowValue: { marginLeft: 'auto', flexShrink: 1, fontSize: 12, fontWeight: '600', color: colors.text },
+  rowLabel: { flexShrink: 0, fontSize: 12, fontWeight: '600', color: colors.textSub },
+  rowValue: { flex: 1, minWidth: 0, textAlign: 'right', fontSize: 12, fontWeight: '600', color: colors.text },
   noteRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 12 },
   note: { flex: 1, fontSize: 11, lineHeight: 16, fontWeight: '500', color: colors.textMuted },
   warnBox: {
@@ -217,7 +222,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
-  warnText: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: '700', color: '#B91C1C' },
+  warnIcon: { marginTop: 2 },
+  warnBody: { flex: 1, minWidth: 0 },
+  warnText: { fontSize: 12, lineHeight: 17, fontWeight: '700', color: '#B91C1C' },
+  warnAccount: { marginTop: 2, fontSize: 12, lineHeight: 17, fontWeight: '800', color: '#B91C1C' },
   error: { marginTop: 12, fontSize: 12, lineHeight: 17, fontWeight: '600', color: '#B91C1C' },
   btnRow: { flexDirection: 'row', gap: 8, marginTop: 18 },
   btn: { flex: 1, height: 46, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },

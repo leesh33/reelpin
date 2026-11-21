@@ -245,6 +245,11 @@ check('배선: App 이 deleteMyAccount 로 지우고 세션을 비운다',
 check('배선: 확인 창은 두 단계 상태(warn → final)로만 진행된다',
   modalSrc.indexOf("useState(initialStep === 'final' ? 'final' : 'warn')") > 0 &&
     modalSrc.indexOf("setStep('final')") > 0 && modalSrc.indexOf('onConfirm()') > 0);
+// 390px 폭에서 긴 이메일이 창 밖으로 넘치지 않게 (v2.40.0 라이브 실측에서 발견 → 수정)
+check('레이아웃: 목록 라벨은 줄이지 않고 값만 말줄임 (라벨이 `계⋯` 로 잘리지 않음)',
+  modalSrc.indexOf('rowLabel: { flexShrink: 0') > 0 && modalSrc.indexOf('rowValue: { flex: 1, minWidth: 0') > 0);
+check('레이아웃: 2단계 계정은 자기 줄에서 말줄임 (상자 밖으로 넘치지 않음)',
+  modalSrc.indexOf('warnAccount') > 0 && modalSrc.indexOf('testID="delete-account-final-email"') > 0);
 check('배선: 버전도 함께 올렸다 (앱 정보 = 2.40.0)', APP_INFO_VERSION === '릴스핀 v2.40.0', APP_INFO_VERSION);
 
   await cloudChecks();
