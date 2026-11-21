@@ -37,7 +37,8 @@
     "test:layersheet": "node test/run-tests.mjs layersheet",
     "test:color": "node test/run-tests.mjs color",
     "test:legal": "node test/run-tests.mjs legal",
-    "test:menu": "node test/run-tests.mjs menu"
+    "test:menu": "node test/run-tests.mjs menu",
+    "test:procard": "node test/run-tests.mjs procard"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

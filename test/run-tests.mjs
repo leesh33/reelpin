@@ -307,6 +307,17 @@ if (!only || only === 'menu') {
   });
 }
 
+if (!only || only === 'procard') {
+  // 2026-11-21 — 🙈 `내 정보` 릴스핀 프로(PRO) 카드 숨김: 스위치 · 실화면(DOM) 미노출 · 나머지 레이아웃 유지
+  failed += await runSuite({
+    name: '내 정보 프로 카드 숨김 테스트',
+    entry: 'pro-card-hidden-test.jsx',
+    out: 'pro-card-hidden-test.cjs',
+    format: 'cjs',
+    alias: { 'react-native': 'react-native-web', ...STUBS },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

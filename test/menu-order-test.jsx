@@ -132,8 +132,9 @@ async function main() {
       !read('src/components/MenuDrawerModal.js').includes('footerBox')
   );
   check(
-    '푸터: 시트 내용이 끝난 뒤 고정 줄이 그려지지 않는다(마지막 행 다음은 프로 안내 카드)',
-    html.indexOf('profile-row-about') < html.indexOf('릴스핀 프로')
+    '푸터: 시트 내용이 끝난 뒤 고정 줄이 그려지지 않는다(마지막 행 다음은 `기획 이상훈 · 개발 오돌` · 2026-11-21 부터 프로 카드 없음)',
+    html.indexOf('profile-row-about') < html.indexOf('기획 이상훈 · 개발 오돌') &&
+      html.indexOf('릴스핀 프로') < 0
   );
 
   // ── 3) 클릭 배선 — 개인정보처리방침 → /privacy · 이용약관 → /terms ────────

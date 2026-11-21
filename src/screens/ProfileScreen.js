@@ -558,6 +558,16 @@ export const SUB_PAGES = {
 export const APP_INFO_VERSION = '릴스핀 v2.39.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
+/**
+ * 🙈 2026-11-21 — `내 정보` 맨 아래 **릴스핀 프로(PRO) 결제/업그레이드 카드** 노출 스위치.
+ *
+ * 상훈 님 요청(IMG_9294): 아직 결제가 붙지 않은 프로 안내 카드가 설정 목록 끝에 붙어 있어
+ * 지금은 화면에서 감춥니다. 카드를 지운 것이 아니라 **이 스위치로 감싼 것**이라,
+ * 결제(앱스토어 인앱결제)를 연결할 때 `true` 로 한 줄만 바꾸면 그대로 돌아옵니다.
+ * (`CollectionsScreen` 의 `SHOW_CURATED_FEED` 와 같은 방식 — 컴포넌트는 그대로 두고 그리지 않음)
+ */
+export const SHOW_PRO_CARD = false;
+
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
 export function SettingsRow({ icon, title, sub, onPress, testID }) {
   return (
@@ -1051,33 +1061,36 @@ export default function ProfileScreen({
           ) : null}
         </View>
 
-        {/* 프로 안내 */}
-        <View style={styles.proCard}>
-          <View style={styles.proHead}>
-            <View style={styles.proBadge}>
-              <Ionicons name="sparkles" size={12} color={colors.navy} />
-              <Text style={styles.proBadgeText}>PRO</Text>
+        {/* 프로 안내 — 2026-11-21 🙈 상훈 님 요청(IMG_9294): `SHOW_PRO_CARD = false` 동안 DOM 에 아예 없습니다.
+            (스위치를 true 로 되돌리면 아래 카드가 예전 그대로 다시 그려집니다) */}
+        {SHOW_PRO_CARD ? (
+          <View style={styles.proCard} testID="profile-pro-card">
+            <View style={styles.proHead}>
+              <View style={styles.proBadge}>
+                <Ionicons name="sparkles" size={12} color={colors.navy} />
+                <Text style={styles.proBadgeText}>PRO</Text>
+              </View>
+              <Text style={styles.proTitle}>릴스핀 프로</Text>
             </View>
-            <Text style={styles.proTitle}>릴스핀 프로</Text>
-          </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.price}>월 2,900원</Text>
-            <Text style={styles.priceSub}>연 24,900원 (28% 할인)</Text>
-          </View>
-          {PRO_FEATURES.map((f) => (
-            <View key={f} style={styles.featureRow}>
-              <Ionicons name="checkmark" size={15} color={colors.brand} />
-              <Text style={styles.featureText}>{f}</Text>
+            <View style={styles.priceRow}>
+              <Text style={styles.price}>월 2,900원</Text>
+              <Text style={styles.priceSub}>연 24,900원 (28% 할인)</Text>
             </View>
-          ))}
-          <Pressable
-            style={[styles.proBtn, isPro && styles.proBtnOn]}
-            onPress={onStartPro}
-            accessibilityRole="button"
-          >
-            <Text style={styles.proBtnText}>{isPro ? '프로 플랜 사용 중' : '프로 시작하기'}</Text>
-          </Pressable>
-        </View>
+            {PRO_FEATURES.map((f) => (
+              <View key={f} style={styles.featureRow}>
+                <Ionicons name="checkmark" size={15} color={colors.brand} />
+                <Text style={styles.featureText}>{f}</Text>
+              </View>
+            ))}
+            <Pressable
+              style={[styles.proBtn, isPro && styles.proBtnOn]}
+              onPress={onStartPro}
+              accessibilityRole="button"
+            >
+              <Text style={styles.proBtnText}>{isPro ? '프로 플랜 사용 중' : '프로 시작하기'}</Text>
+            </Pressable>
+          </View>
+        ) : null}
 
         <Text style={styles.footer}>기획 이상훈 · 개발 오돌</Text>
       </ScrollView>

@@ -808,7 +808,8 @@ const v213Checks = [
         at < html.indexOf('분류 관리') &&
         at < html.indexOf('저장한 장소') &&
         at < html.indexOf('지오펜스 알림 반경') &&
-        at < html.indexOf('프로 시작하기') &&
+        // 2026-11-21 프로 카드 숨김 — 🙈 프로 카드는 숨김(SHOW_PRO_CARD=false) — 계정 카드는 그 위에 그대로
+        html.indexOf('프로 시작하기') < 0 &&
         html.indexOf('무료 플랜') > 0 && html.indexOf('무료 플랜') < at
       );
     })()],
@@ -1942,7 +1943,7 @@ const v219Checks = [
   // ② ☰ = 내 정보 머지
   ['v2.19 ☰: 제목 `내 정보` (v2.32.2 — 헤더 부제 없음)', menuHtml219.indexOf('menu-title') > 0 && menuHtml219.indexOf('내 정보') > 0 && menuHtml219.indexOf('계정 · 동기화 · 설정') < 0],
   ['v2.19 ☰: 통합 계정 카드 + 설정 3행이 시트 안에', menuHtml219.indexOf('profile-account-card') > 0 && ['profile-row-categories', 'profile-row-radius', 'profile-row-about'].every((id) => menuHtml219.indexOf(id) > 0)],
-  ['v2.19 ☰: 저장 요약 + 내 지도 공유 + 프로 안내도 유지', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') > 0],
+  ['v2.19 ☰: 저장 요약 + 내 지도 공유는 유지 · 프로 카드는 2026-11-21 부터 숨김', menuHtml219.indexOf('저장된 핀') > 0 && menuHtml219.indexOf('menu-share') > 0 && menuHtml219.indexOf('릴스핀 프로') < 0],
   ['v2.19 ☰: 분류 관리 서브 페이지(‹ 뒤로 + 새 분류 + 기본 잠금)', menuCatHtml219.indexOf('menu-sub-categories') > 0 && menuCatHtml219.indexOf('menu-sub-back') > 0 && menuCatHtml219.indexOf('새 분류 이름') > 0 && menuCatHtml219.indexOf('기본') > 0],
   ['v2.19 ☰: 지오펜스 반경 서브 페이지(300/500/1km + 지금 반경)', menuRadiusHtml219.indexOf('menu-sub-radius') > 0 && menuRadiusHtml219.indexOf('radius-option-300') > 0 && menuRadiusHtml219.indexOf('radius-option-1000') > 0],
   ['v2.19 ☰: 앱 정보 서브 페이지(버전·번들 ID)', menuAboutHtml219.indexOf('menu-sub-about') > 0 && menuAboutHtml219.indexOf(APP_INFO_BUNDLE) > 0 && menuAboutHtml219.indexOf('릴스핀 v2.39.0') > 0],
