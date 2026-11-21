@@ -9,7 +9,7 @@
  *   ② 배치 (헤더 🔍 제거 · 분류 칩 바로 위 · 같은 상단 오버레이)
  *   ③ 통합 검색 동작
  *      · 입력하면 내 핀 결과 드롭다운 (지도 보기 + 검색어 + 상세 시트 닫힘)
- *      · 결과 아래 [‘검색어’ 네이버/카카오에서 새 장소 찾기] — 0곳일 때도
+ *      · 결과 아래 [‘검색어’ 가게명으로 찾아 등록하기] — 0곳일 때도
  *      · 저장 탭 `가게명 찾기`가 그 검색어로 **바로** 실행 (auto)
  *      · 바깥 탭 · ✕ → 검색어를 비우고 지도 보기로 복귀
  *   ④ 버전 2.35.0 일관성
@@ -119,8 +119,8 @@ check(
     shouldShowMapSearchPanel({ view: 'map', query: '한성', selected: true }) === false
 );
 check(
-  '규칙: 결과 아래 버튼 글씨 = `‘검색어’ 네이버/카카오에서 새 장소 찾기`',
-  newPlaceSearchLabel('  한성 ') === '‘한성’ 네이버/카카오에서 새 장소 찾기' && newPlaceSearchLabel('  ') === '',
+  '규칙: 결과 아래 버튼 글씨 = `‘검색어’ 가게명으로 찾아 등록하기`',
+  newPlaceSearchLabel('  한성 ') === '‘한성’ 가게명으로 찾아 등록하기' && newPlaceSearchLabel('  ') === '',
   newPlaceSearchLabel('한성')
 );
 check('규칙: 0곳 안내 문구가 따로 있음(아래 [새 장소 찾기]로 이어짐)', MAP_SEARCH_EMPTY_HINT === '내 핀에는 없어요', MAP_SEARCH_EMPTY_HINT);

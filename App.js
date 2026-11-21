@@ -1191,7 +1191,7 @@ export default function App() {
   }, []);
 
   /**
-   * v2.35.0 — 지도 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]
+   * v2.35.0 — 지도 통합 검색창의 [‘검색어’ 가게명으로 찾아 등록하기]
    *   저장 탭을 `가게명 찾기`로 열고 그 검색어로 **바로** 조회합니다(auto).
    */
   const goPasteSearch = useCallback((query) => {
@@ -1325,7 +1325,7 @@ export default function App() {
               onPlaceSheetChange={setMapPlaceSheet}
               collections={collections}
               onSavePlace={handleSavedPlace}
-              // v2.35.0 — 지도 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]
+              // v2.35.0 — 지도 통합 검색창의 [‘검색어’ 가게명으로 찾아 등록하기]
               onSearchNewPlace={goPasteSearch}
             />
           </View>

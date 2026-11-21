@@ -10,8 +10,8 @@ import FilterChips from '../components/FilterChips';
 // v2.16 — 지도 위 검색창은 상단 헤더 🔍(검색 레이어 팝업)로 올라갔습니다.
 //         지도 화면에는 분류 필터 칩만 남기고, 목록 보기의 검색은 그대로 둡니다.
 // v2.35.0 — 반대로 **헤더 🔍 를 없애고** 지도 화면에 **상시 노출 통합 검색창**(MapSearchBar)을
-//         분류 칩 바로 위에 둡니다. 입력하면 내 핀 결과(드롭다운) → ‘검색어’ 네이버/카카오에서
-//         새 장소 찾기(저장 탭 가게명 찾기 즉시 실행)로 이어집니다.
+//         분류 칩 바로 위에 둡니다. 입력하면 내 핀 결과(드롭다운) → ‘검색어’ 가게명으로
+//         찾아 등록하기(저장 탭 가게명 찾기 즉시 실행)로 이어집니다.
 // v2.17 — 지도 상단 2번째 줄(방문 필터 칩)과 오른쪽 `지도 공유` 를 없애고,
 //         **가본 곳만 보기 · 지도 공유하기** 를 왼쪽 하단 펼침 메뉴(MapToolsMenu)로 모았습니다.
 import PinListView from '../components/PinListView';
@@ -113,7 +113,7 @@ export default function MapScreen({
   onSavePlace,
   onPlaceSheetChange,
   collections = [],
-  // v2.35.0 — 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기]
+  // v2.35.0 — 통합 검색창의 [‘검색어’ 가게명으로 찾아 등록하기]
   //   저장 탭을 `가게명 찾기`로 열고 그 검색어로 **바로** 조회합니다(App.goPasteSearch).
   onSearchNewPlace,
 }) {
@@ -510,7 +510,7 @@ export default function MapScreen({
   }, []);
 
   /**
-   * v2.35.0 — 통합 검색창의 [‘검색어’ 네이버/카카오에서 새 장소 찾기].
+   * v2.35.0 — 통합 검색창의 [‘검색어’ 가게명으로 찾아 등록하기].
    *   드롭다운을 먼저 닫고(지도 보기로 복귀), 저장 탭의 `가게명 찾기`가 그 검색어로 즉시 조회합니다.
    *   (v2.34.0 의 정확도 → 가까운 순 정렬을 그대로 타므로, 넘기는 것은 검색어 하나면 충분합니다)
    */
@@ -940,7 +940,7 @@ export default function MapScreen({
         {view === 'map' && (
         <View style={styles.topOverlay} pointerEvents="box-none">
           {/* v2.35.0 — 분류 칩 **바로 위** 얇은 알약형 통합 검색창 (헤더 🔍 는 없어졌습니다).
-              입력하는 즉시 아래에 내 핀 결과 + [‘검색어’ 네이버/카카오에서 새 장소 찾기]. */}
+              입력하는 즉시 아래에 내 핀 결과 + [‘검색어’ 가게명으로 찾아 등록하기]. */}
           <MapSearchBar
             value={query}
             onChange={setQuery}

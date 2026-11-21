@@ -7,7 +7,7 @@
  * 상훈 님 요청(2026-11-21): "써보다보니 바로 검색하고 싶으면 몇 단계 찾아 들어가는 게
  * 좀 불편하긴 하네" → 지도 화면 **카테고리 칩 바로 위**에 검색 입력창 하나를 상시 두고,
  *   ① 입력하면 **내가 저장한 핀**을 먼저 보여 주고(드롭다운)
- *   ② 그 아래 **[‘검색어’ 네이버/카카오에서 새 장소 찾기]** 로 저장 탭의 `가게명 찾기`를
+ *   ② 그 아래 **[‘검색어’ 가게명으로 찾아 등록하기]** 로 저장 탭의 `가게명 찾기`를
  *      **그 검색어로 바로 실행**합니다.
  *
  *   · MAP_SEARCH_PLACEHOLDER … 입력창 안내 문구 (내 핀 + 새 장소 둘 다라는 걸 한 줄로)
@@ -44,11 +44,11 @@ export function shouldShowMapSearchPanel({ view, query, selected } = {}) {
   return mapSearchQuery(query).length > 0;
 }
 
-/** 결과 목록 아래 버튼 글씨 — `‘한성’ 네이버/카카오에서 새 장소 찾기` */
+/** 결과 목록 아래 버튼 글씨 — `‘한성’ 가게명으로 찾아 등록하기` */
 export function newPlaceSearchLabel(query) {
   const keyword = mapSearchQuery(query);
   if (!keyword) return '';
-  return '‘' + keyword + '’ 네이버/카카오에서 새 장소 찾기';
+  return '‘' + keyword + '’ 가게명으로 찾아 등록하기';
 }
 
 /** 결과 목록에 띄울 내 핀 — 지도와 같은 규칙(분류 칩 · 검색어 · 방문 상태 AND) */

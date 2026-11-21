@@ -11,7 +11,7 @@
  *
  * v2.35.0 — 지도 상단 통합 검색창의 결과 목록(MapSearchPanel)도 이 컴포넌트를 그대로 씁니다.
  *   · `emptyHint` … 내 핀 0곳일 때 헤더 아래 한 줄 안내
- *   · `footer`    … 행 아래에 붙는 버튼 묶음 (지도에서는 [‘검색어’ 네이버/카카오에서 새 장소 찾기])
+ *   · `footer`    … 행 아래에 붙는 버튼 묶음 (지도에서는 [‘검색어’ 가게명으로 찾아 등록하기])
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';

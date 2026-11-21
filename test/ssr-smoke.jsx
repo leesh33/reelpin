@@ -316,8 +316,8 @@ const contentCases = [
   ['PinSearchResults: 4행까지만 + 남은 개수 안내', <PinSearchResults pins={SEARCH_PINS} query="한성" myCoords={null} onOpenPin={noop} onShowAll={noop} />, ['전체 5곳', '한성냉면', '외 1곳 더 있어요']],
   // v2.35.0 — 지도 상단 통합 검색창
   ['MapSearchBar: 알약(아이콘·안내문구·✕)', <MapSearchBar value="한성" onChange={noop} onClear={noop} />, ['map-search-bar', 'map-search-input', '검색어 지우기', '한성']],
-  ['MapSearchPanel: 내 핀 결과 + [전체 N곳] + 새 장소 찾기', <MapSearchPanel pins={SEARCH_PINS.slice(0, 2)} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} onSearchNewPlace={noop} />, ['‘한성’ 검색 · 2곳', '한성치킨', '네이버/카카오에서 새 장소 찾기', 'map-search-new-place']],
-  ['MapSearchPanel: 내 핀 0곳이어도 새 장소 찾기 버튼', <MapSearchPanel pins={[]} query="없는가게" onOpenPin={noop} onSearchNewPlace={noop} />, [MAP_SEARCH_EMPTY_HINT, '네이버/카카오에서 새 장소 찾기']],
+  ['MapSearchPanel: 내 핀 결과 + [전체 N곳] + 새 장소 찾기', <MapSearchPanel pins={SEARCH_PINS.slice(0, 2)} query="한성" categories={['맛집', '카페']} myCoords={{ lat: 37.5828, lng: 126.7141 }} onOpenPin={noop} onShowAll={noop} onSearchNewPlace={noop} />, ['‘한성’ 검색 · 2곳', '한성치킨', '가게명으로 찾아 등록하기', 'map-search-new-place']],
+  ['MapSearchPanel: 내 핀 0곳이어도 새 장소 찾기 버튼', <MapSearchPanel pins={[]} query="없는가게" onOpenPin={noop} onSearchNewPlace={noop} />, [MAP_SEARCH_EMPTY_HINT, '가게명으로 찾아 등록하기']],
   ['MapScreen(v2.35): 지도 상단 통합 검색창이 분류 칩 위에', <MapScreen pins={SEED_PINS} selectedPinId={null} onSelectPin={noop} radiusMeters={300} onGoPaste={noop} onDeletePin={noop} onToast={noop} onSearchNewPlace={noop} />, ['map-search-input', MAP_SEARCH_PLACEHOLDER, '전체', '맛집']],
 ];
 
@@ -3738,9 +3738,9 @@ const v235Checks = [
     panelSource235.indexOf("from './PinSearchResults'") > 0 && resultsSource235.indexOf('testID="pin-search-results"') > 0 && resultsSource235.indexOf('pin-result-row-') > 0],
   ['v2.35.0 검색: 행을 누르면 그 핀으로 지도 이동 + 상세 시트',
     mapSource235.indexOf('onOpenPin={openPinFromList}') > 0 && /const openPinFromList = useCallback\([\s\S]{0,500}?onSelectPin\(pin.id\)/.test(mapSource235)],
-  ['v2.35.0 검색: 결과 아래(0곳일 때도) `‘검색어’ 네이버/카카오에서 새 장소 찾기`',
-    newPlaceSearchLabel('한성') === '‘한성’ 네이버/카카오에서 새 장소 찾기' &&
-      panelSource235.indexOf('네이버/카카오에서 새 장소 찾기') > 0 &&
+  ['v2.35.0 검색: 결과 아래(0곳일 때도) `‘검색어’ 가게명으로 찾아 등록하기`',
+    newPlaceSearchLabel('한성') === '‘한성’ 가게명으로 찾아 등록하기' &&
+      panelSource235.indexOf('newPlaceSearchLabel(keyword)') > 0 &&
       panelSource235.indexOf('emptyHint') > 0 &&
       resultsSource235.indexOf('{footer ? <View style={styles.footer}>{footer}</View> : null}') > 0],
   ['v2.35.0 검색: 새 장소 찾기 → 저장 탭 가게명 찾기 즉시 실행(auto)',
