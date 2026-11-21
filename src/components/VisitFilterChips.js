@@ -16,7 +16,8 @@
  *   그대로라 지도·목록·빈 상태 규칙은 예전과 같습니다.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { colors } from '../theme';
 import { VISIT_ALL, VISIT_DONE, VISIT_FILTERS, VISIT_TODO } from '../utils/searchPins';
 

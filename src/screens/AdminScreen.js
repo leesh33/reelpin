@@ -16,18 +16,8 @@
  *   (저장·삭제 요청은 보내지 않습니다 — 디자인 확인·스크린샷용)
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 // v2.32 — 기획전 편집 모달의 포스터 미리보기 (앱과 같은 규칙으로 그립니다)

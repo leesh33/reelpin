@@ -9,7 +9,8 @@
  *   · 지도 영역을 많이 가리지 않도록 높이 40px · 글자 13px
  */
 import React from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { AppTextInput as TextInput } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 

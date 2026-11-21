@@ -29,7 +29,8 @@
  *   지도(메뉴 밖)를 누르면 접힙니다. 접히면 카드는 아예 그리지 않습니다(빈 곳 탭 방지).
  */
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, typography } from '../theme';
 

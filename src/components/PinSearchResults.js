@@ -14,7 +14,8 @@
  *   · `footer`    … 행 아래에 붙는 버튼 묶음 (지도에서는 [‘검색어’ 가게명으로 찾아 등록하기])
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, cardShadow, radius, typography } from '../theme';
 import { getCategoryColor, mapLegacyCategory } from '../utils/categories';

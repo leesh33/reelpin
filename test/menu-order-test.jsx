@@ -1,5 +1,5 @@
 /**
- * test/menu-order-test.mjs — v2.39.0
+ * test/menu-order-test.mjs — v2.40.0
  * ─────────────────────────────────────────────────────────────
  * 📋 ☰ `내 정보` 시트의 설정 메뉴 순서 · 하단 고정 푸터 제거 · 법적 고지 행.
  *
@@ -164,7 +164,7 @@ async function main() {
   // ── 4) 서브 페이지(앱 정보)는 그대로 열린다 ───────────────────────────────
   const aboutHtml = renderToString(<MenuDrawerModal {...baseProps} initialSub="about" />);
   check('앱 정보: 서브 페이지가 열리고 버전·번들 ID 를 보여 준다', aboutHtml.indexOf('menu-sub-about') > 0 && aboutHtml.indexOf(APP_INFO_VERSION) > 0 && aboutHtml.indexOf('com.odol.reelpin') > 0);
-  check('버전: 메뉴·앱 정보 같은 v2.39.0', APP_VERSION_LABEL === '릴스핀 v2.39.0' && APP_INFO_VERSION === APP_VERSION_LABEL, APP_VERSION_LABEL + ' / ' + APP_INFO_VERSION);
+  check('버전: 메뉴·앱 정보 같은 v2.40.0', APP_VERSION_LABEL === '릴스핀 v2.40.0' && APP_INFO_VERSION === APP_VERSION_LABEL, APP_VERSION_LABEL + ' / ' + APP_INFO_VERSION);
 
   if (fails) {
     console.log('\nMENU_ORDER_TEST_FAILED=' + fails);

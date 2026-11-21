@@ -18,7 +18,8 @@
  * 동작은 화면(MapScreen)이 맡습니다 — 입력값 `value` · `onChange` · `onClear` · `onSubmit`.
  */
 import React from 'react';
-import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
+import { AppTextInput as TextInput } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import { MAP_SEARCH_BAR_HEIGHT, MAP_SEARCH_PLACEHOLDER } from '../utils/mapSearch';

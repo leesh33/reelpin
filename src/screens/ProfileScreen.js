@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/AppText';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
@@ -22,6 +23,8 @@ import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 // v2.36.0 — ☰ 내 정보 시트: 본문 스크롤이 맨 위일 때 헤더처럼 아래로 당겨 닫기
 import { useSheetBodyScroll } from '../components/useSheetSwipeDismiss';
 import CategoryColorPicker from '../components/CategoryColorPicker';
+// v2.40.0 — 🗑️ 회원탈퇴 2단계 확인 (App Store 5.1.1(v))
+import DeleteAccountModal from '../components/DeleteAccountModal';
 
 const RADIUS_OPTIONS = [
   { value: 300, label: '300m', hint: '골목 단위' },
@@ -42,7 +45,7 @@ const PRO_FEATURES = [
  *   · 로그인  : 이메일 · `클라우드 동기화 켜짐 · N개 저장됨` · [지금 동기화] · [로그아웃]
  *   · Supabase 설정이 없으면 입력은 그대로 보이되, 누르면 안내 토스트만 뜨고 아무 것도 보내지 않습니다.
  */
-function AccountCard({
+export function AccountCard({
   cloudConfigured,
   cloudUser,
   cloudPinCount,
@@ -57,6 +60,8 @@ function AccountCard({
   onSyncNow,
   onToast,
   embedded = false,
+  // v2.40.0 — Apple 스위치를 반영한 목록을 넘길 수 있습니다 (검사에서 켜짐/꺼짐 두 상태를 모두 확인)
+  providers = OAUTH_PROVIDERS,
 }) {
   const [mode, setMode] = useState('signin');
   const [email, setEmail] = useState('');
@@ -100,7 +105,7 @@ function AccountCard({
     if (busy) return;
     // v2.20.1 — Apple 은 준비 중: Supabase 오류 페이지로 넘기지 않고 안내만
     //   (Supabase 설정 여부와 상관없이 Apple 은 아직 쓸 수 없으므로 이 안내가 먼저입니다)
-    if (!oauthProviderReady(provider)) {
+    if (!oauthProviderReady(provider, providers)) {
       toast(OAUTH_PENDING_MESSAGE);
       return;
     }
@@ -236,7 +241,7 @@ function AccountCard({
           </View>
 
           <View style={styles.socialRow}>
-            {OAUTH_PROVIDERS.map((p) => {
+            {providers.map((p) => {
               const pending = p.pending === true;
               return (
                 <Pressable
@@ -271,7 +276,7 @@ function AccountCard({
           </View>
 
           {/* v2.20.1 — Apple 은 유료 개발자 계정 준비 후 열립니다 (준비 중) */}
-          {OAUTH_PROVIDERS.some((p) => p.pending === true) ? (
+          {providers.some((p) => p.pending === true) ? (
             <Text style={styles.socialPendingLine} testID="social-pending-line">
               Apple 로그인은 준비 중이에요 · 카카오나 구글로 로그인해 주세요
             </Text>
@@ -555,7 +560,10 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.39.0';
+/** v2.40.0 — 회원탈퇴처럼 되돌릴 수 없는 행의 색 */
+const DANGER = '#B91C1C';
+
+export const APP_INFO_VERSION = '릴스핀 v2.40.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /**
@@ -569,7 +577,7 @@ export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 export const SHOW_PRO_CARD = false;
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
-export function SettingsRow({ icon, title, sub, onPress, testID }) {
+export function SettingsRow({ icon, title, sub, onPress, testID, danger = false }) {
   return (
     <Pressable
       style={({ pressed }) => [styles.settingRow, pressed && styles.settingRowPressed]}
@@ -578,18 +586,19 @@ export function SettingsRow({ icon, title, sub, onPress, testID }) {
       accessibilityLabel={title}
       testID={testID}
     >
-      <View style={styles.settingIcon}>
-        <Ionicons name={icon} size={17} color={colors.brandDark} />
+      {/* v2.40.0 — danger: 회원탈퇴처럼 되돌릴 수 없는 행은 빨강 */}
+      <View style={[styles.settingIcon, danger && styles.settingIconDanger]}>
+        <Ionicons name={icon} size={17} color={danger ? DANGER : colors.brandDark} />
       </View>
       <View style={styles.settingText}>
-        <Text style={styles.settingTitle} numberOfLines={1}>
+        <Text style={[styles.settingTitle, danger && styles.settingTitleDanger]} numberOfLines={1}>
           {title}
         </Text>
         <Text style={styles.settingSub} numberOfLines={1}>
           {sub}
         </Text>
       </View>
-      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+      <Ionicons name="chevron-forward" size={16} color={danger ? DANGER : colors.textMuted} />
     </Pressable>
   );
 }
@@ -779,8 +788,14 @@ export default function ProfileScreen({
   onGoAdmin = null,
   // v2.23 💬 제안 · 버그 제보 게시판 — 설정 목록 맨 아래(앱 정보 다음)에서 엽니다.
   onOpenFeedback = null,
+  // v2.40.0 🗑️ 회원탈퇴 — 서버(Supabase delete_my_account)에 지우고 `{ ok, message }` 를 돌려줍니다.
+  onDeleteAccount = null,
 }) {
   const [copied, setCopied] = useState(false);
+  // v2.40.0 🗑️ 회원탈퇴 — 확인 창 열림 · 요청 중 · 실패 문구
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteDeleting, setDeleteDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   // v2.18 — 설정 서브 페이지: null | 'categories' | 'radius' | 'about'
   const [sub, setSub] = useState(() => (SUB_PAGES[initialSub] ? initialSub : null));
   const closeSub = () => setSub(null);
@@ -839,6 +854,27 @@ export default function ProfileScreen({
   }, [accountFocus]);
   // v2.10 — 무료 플랜 10개 한도를 없앴습니다. 이제 누구나 개수 제한 없이 저장합니다.
   const visitedCount = pins.filter((p) => p && p.visited === true).length;
+
+  // v2.40.0 — 로그인한 계정이 있을 때만 회원탈퇴 행을 보여 줍니다
+  const signedInAccount = !!(cloudUser && (cloudUser.id || cloudUser.email));
+
+  /**
+   * 회원탈퇴 실행 — 부모(App)의 핸들러가 서버 삭제 + 세션 정리를 맡고 결과를 돌려줍니다.
+   *   · 성공: 창을 닫습니다(부모가 토스트로 알려 줌)
+   *   · 실패: 창을 열어 둔 채 실패 문구를 안에 보여 줍니다 — 다시 누를 수 있습니다
+   */
+  const runDeleteAccount = async () => {
+    if (deleteDeleting || typeof onDeleteAccount !== 'function') return;
+    setDeleteDeleting(true);
+    setDeleteError('');
+    const res = await onDeleteAccount();
+    setDeleteDeleting(false);
+    if (res && res.ok) {
+      setDeleteOpen(false);
+      return;
+    }
+    setDeleteError((res && res.message) || '탈퇴하지 못했어요 · 잠시 뒤 다시 시도해 주세요');
+  };
 
   const shareMap = async () => {
     if (!pins.length) {
@@ -985,7 +1021,7 @@ export default function ProfileScreen({
         {/* ── 설정 목록 — 각각 별도 서브 페이지·페이지로 들어갑니다 ──────
             상훈 님 요청: "저장한 장소 · 내지도 공유하기는 분류 관리 상단으로
                           이동 · 내정보 화면 안에 알림 설정 추가"
-            v2.39.0 — 상훈 님 요청(IMG_9293): 제보 다음에 `개인정보처리방침` · `이용약관`을
+            v2.40.0 — 상훈 님 요청(IMG_9293): 제보 다음에 `개인정보처리방침` · `이용약관`을
             별도 행으로 두고, `앱 정보`는 그 아래로 내립니다. (시트 하단 고정 푸터는 없앴습니다) */}
         <View style={styles.card} testID="profile-settings-rows">
           <SettingsRow
@@ -1023,7 +1059,7 @@ export default function ProfileScreen({
             }}
             testID="profile-row-feedback"
           />
-          {/* ── v2.39.0 📄 개인정보처리방침 · 이용약관 — 제보 아래 별도 행 ──
+          {/* ── v2.40.0 📄 개인정보처리방침 · 이용약관 — 제보 아래 별도 행 ──
               상훈 님 요청(IMG_9293): 시트 발끝의 두 글자 링크 대신 메뉴 행으로.
               주소·이름은 `src/utils/legal.js` 한 곳(로그인 카드와 같은 값)에서 옵니다. */}
           {LEGAL_LINKS.map((item) => (
@@ -1056,6 +1092,24 @@ export default function ProfileScreen({
                 sub="회원 · 장소(핀) 관리 · 인기 장소 지표"
                 onPress={onGoAdmin}
                 testID="profile-row-admin"
+              />
+            </>
+          ) : null}
+          {/* ── v2.40.0 🗑️ 회원탈퇴 — App Store 5.1.1(v): 로그인한 계정은 앱 안에서 지울 수 있어야 합니다.
+              설정 목록 맨 끝(어드민 다음)에 두어, 평소에는 눈에 덜 띄고 필요할 때는 찾을 수 있게 했습니다. */}
+          {signedInAccount ? (
+            <>
+              <View style={styles.rowDivider} />
+              <SettingsRow
+                danger
+                icon="person-remove-outline"
+                title="회원탈퇴"
+                sub="계정과 클라우드에 저장한 데이터를 지웁니다"
+                onPress={() => {
+                  setDeleteError('');
+                  setDeleteOpen(true);
+                }}
+                testID="profile-row-delete-account"
               />
             </>
           ) : null}
@@ -1148,6 +1202,20 @@ export default function ProfileScreen({
           </ScrollView>
         </View>
       ) : null}
+
+      {/* ── v2.40.0 🗑️ 회원탈퇴 확인 창 — 두 단계(경고 → 최종)로 한 번 더 읽고 누릅니다 */}
+      <DeleteAccountModal
+        visible={deleteOpen}
+        email={cloudUser && cloudUser.email ? cloudUser.email : ''}
+        pinCount={cloudPinCount || 0}
+        busy={deleteDeleting}
+        error={deleteError}
+        onCancel={() => {
+          setDeleteOpen(false);
+          setDeleteError('');
+        }}
+        onConfirm={runDeleteAccount}
+      />
     </View>
   );
 }
@@ -1221,6 +1289,8 @@ const styles = StyleSheet.create({
     marginLeft: 42,
   },
   // ── v2.18 설정 목록 행 ──────────────────────────────────
+  settingIconDanger: { backgroundColor: '#FEE2E2' },
+  settingTitleDanger: { color: DANGER },
   settingRow: {
     flexDirection: 'row',
     alignItems: 'center',

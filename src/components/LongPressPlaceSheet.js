@@ -21,7 +21,8 @@
  * 높이는 70% — 시트 위로 꾹 누른 자리의 **떨어진 핀**이 보이도록 지도가 그만큼 남습니다.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import LayerSheet from './LayerSheet';
 import { useSheetBodyScroll } from './useSheetSwipeDismiss';

@@ -9,7 +9,8 @@
  * 바닥 버튼은 **`내 지도에 한 번에 담기`** 하나 — 중복 핀은 만들지 않습니다.
  */
 import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import LayerSheet from './LayerSheet';
 import { useSheetBodyScroll } from './useSheetSwipeDismiss';

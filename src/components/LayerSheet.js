@@ -38,7 +38,8 @@
  *     아무것도 바꾸지 않아도 됩니다.
  */
 import React from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow } from '../theme';
 import { SheetBodyScrollScope, useSheetSwipeDismiss } from './useSheetSwipeDismiss';

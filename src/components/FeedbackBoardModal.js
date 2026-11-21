@@ -16,15 +16,8 @@
  *              30초 쿨다운 · 빈 글/너무 긴 글 차단 (DB RLS 가 한 번 더 확인)
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import LayerSheet from './LayerSheet';

@@ -15,16 +15,8 @@
  * 데이터는 App 이 들고 있고(기기에 저장), 이 화면은 보여 주고 요청만 합니다.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Image,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Image, Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from '../components/AppText';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import AppHeader from '../components/AppHeader';

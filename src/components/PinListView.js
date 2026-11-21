@@ -17,7 +17,8 @@
  *     바로 지도로 돌아가므로 같은 일을 하는 버튼이 두 개였습니다.
  */
 import React, { useMemo } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import FilterChips from './FilterChips';
 import VisitFilterChips from './VisitFilterChips';

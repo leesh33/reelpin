@@ -15,7 +15,8 @@
  * 예전 `GeofenceBanner`(큰 카드 · 위로 스와이프 닫기 · 영업 상태 뱃지)는 v2.28.0 에서 지도에서 걷어냈습니다.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { NEARBY_RADIUS_M } from '../services/location';
 import { colors } from '../theme';
 

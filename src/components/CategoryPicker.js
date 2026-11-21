@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import CategoryColorPicker from './CategoryColorPicker';

@@ -203,6 +203,13 @@ export const sheetShadow = {
 };
 
 export const typography = {
+  /*
+   * v2.40.0 — 🔤 글꼴은 **굵기로** 고릅니다 (Gmarket Sans)
+   *   웹     : index.html 의 @font-face 가 `font-weight`(400~900)별 파일을 골라 줍니다.
+   *   네이티브: RN 은 굵기로 파일을 못 고르므로 `components/AppText` 가 아래 `fontWeight` 를
+   *            읽어 500·600 → `GmarketSansMedium`, 700 이상 → `GmarketSansBold` 를 붙입니다.
+   *   그래서 토큰에는 fontFamily 를 넣지 않습니다 — 한 곳(`utils/fonts.js`)에서만 정합니다.
+   */
   h1: { fontSize: 26, fontWeight: '800', letterSpacing: -0.6, color: colors.text },
   h2: { fontSize: 20, fontWeight: '800', letterSpacing: -0.4, color: colors.text },
   h3: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2, color: colors.text },
@@ -210,3 +217,6 @@ export const typography = {
   sub: { fontSize: 13, fontWeight: '500', color: colors.textSub },
   tiny: { fontSize: 11, fontWeight: '600', color: colors.textMuted },
 };
+
+// v2.40.0 — 네이티브 글꼴 이름·규칙 (테스트·화면이 같은 값을 쓰도록 theme 에서도 꺼냅니다)
+export { FONT_BOLD, FONT_FAMILY_WEB, FONT_MEDIUM, fontFamilyForWeight } from './utils/fonts';

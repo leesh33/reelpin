@@ -29,16 +29,8 @@
  * 화면(앱)은 이 컴포넌트를 **열려 있을 때만** 그립니다 — 닫혀 있으면 아무 것도 렌더하지 않습니다.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, typography } from '../theme';
 import { formatDistance } from '../services/location';

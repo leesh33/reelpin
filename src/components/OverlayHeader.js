@@ -13,7 +13,8 @@
  * 두 화면이 **같은 컴포넌트**를 쓰므로 색·높이·여백이 어긋날 수 없습니다.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme';
 

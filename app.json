@@ -2,7 +2,7 @@
   "expo": {
     "name": "릴스핀",
     "slug": "reelpin",
-    "version": "2.39.0",
+    "version": "2.40.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "reelpin",
@@ -15,18 +15,32 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "plugins": [
+      [
+        "expo-font",
+        {
+          "fonts": [
+            "./assets/fonts/GmarketSansMedium.otf",
+            "./assets/fonts/GmarketSansBold.otf"
+          ]
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.odol.reelpin",
-      "buildNumber": "15",
+      "buildNumber": "16",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "저장한 맛집 근처에 도착했을 때 알려드리기 위해 위치를 사용합니다.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "앱이 꺼져 있어도 저장한 맛집 근처에서 알려드리기 위해 위치를 사용합니다."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "앱이 꺼져 있어도 저장한 맛집 근처에서 알려드리기 위해 위치를 사용합니다.",
+        "NSCameraUsageDescription": "릴스·쇼츠 화면이나 가게 사진을 찍어 저장할 장소를 찾기 위해 카메라를 사용합니다.",
+        "NSPhotoLibraryUsageDescription": "사진 속 가게 이름을 읽어 저장할 장소를 찾기 위해 사진 보관함에서 사진을 고릅니다.",
+        "NSPhotoLibraryAddUsageDescription": "내 지도·핀을 사진으로 저장할 때 사진 보관함에 추가합니다."
       }
     },
     "android": {
       "package": "com.odol.reelpin",
-      "versionCode": 17,
+      "versionCode": 18,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0D9488"

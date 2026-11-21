@@ -9,7 +9,8 @@
  * (웹 버전 `InAppPlaceModal.web.js` 는 m.place.naver.com 을 iframe 으로 직접 띄웁니다.)
  */
 import React, { useCallback } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
 import { naverMapWebUrl, naverPlaceSearchUrl, openExternalUrl, openMap, openSource } from '../utils/links';

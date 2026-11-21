@@ -17,7 +17,8 @@
  *             ② 저장한 장소(저장 요약) & 내 지도 공유하기
  *             ③ 설정 목록 — 분류 관리 · 지오펜스 알림 반경 · 알림 설정 · 제안 · 버그 제보
  *                · 개인정보처리방침 · 이용약관 · 앱 정보 · (관리자면) 어드민
- *   · 발끝  : 없음 (v2.39.0 — 상훈 님 요청: 하단 고정 `버전 · 개인정보처리방침 · 이용약관` 푸터 제거.
+ *                · (로그인했으면) 회원탈퇴 — v2.40.0 · App Store 5.1.1(v)
+ *   · 발끝  : 없음 (v2.40.0 — 상훈 님 요청: 하단 고정 `버전 · 개인정보처리방침 · 이용약관` 푸터 제거.
  *             법적 고지는 메뉴 행으로, 버전은 `앱 정보` 행에서 보입니다)
  *
  * 서브 페이지는 **시트 안에서** 열리고 `‹ 뒤로` 로 원래 목록으로 돌아옵니다.
@@ -36,13 +37,13 @@ import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.39.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.40.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
 
 // 2026-11-20 — 법적 고지(개인정보처리방침 · 이용약관)는 `src/utils/legal.js` 한 곳에서 옵니다.
-// v2.39.0 — 시트 발끝 푸터를 없애고, 두 문서는 `내 정보` 설정 목록의 별도 행에서 열립니다
+// v2.40.0 — 시트 발끝 푸터를 없애고, 두 문서는 `내 정보` 설정 목록의 별도 행에서 열립니다
 //   (그 행은 ProfileScreen 이 그립니다 — 로그인 카드와 같은 주소·같은 문구).
 export { LEGAL_BASE_URL, LEGAL_LINKS, legalPageUrl, openLegalPage } from '../utils/legal';
 
@@ -66,6 +67,8 @@ export default function MenuDrawerModal({
   onGoAdmin = null,
   // v2.23 💬 제안 · 버그 제보 게시판 (내 정보 > 앱 정보 아래)
   onOpenFeedback = null,
+  // v2.40.0 🗑️ 회원탈퇴 (내 정보 맨 아래 · 로그인한 계정만)
+  onDeleteAccount = null,
   // v2.19.1 — 🔔 알림 설정 (반경 내 알림 ON/OFF)
   alertsOn = false,
   notifyPermission = 'default',
@@ -197,6 +200,7 @@ export default function MenuDrawerModal({
         isAdminAccount={isAdminAccount}
         onGoAdmin={onGoAdmin}
         onOpenFeedback={onOpenFeedback}
+        onDeleteAccount={onDeleteAccount}
         onSignIn={onSignIn}
         onSignUp={onSignUp}
         onMagicLink={onMagicLink}

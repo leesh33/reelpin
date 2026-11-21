@@ -1,5 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { colors } from '../theme';
 import { getCategoryColor, hexToRgba } from '../utils/categories';
 

@@ -20,7 +20,8 @@
  *   testID / boxTestID / labelTestID … 화면별 자동 검사용 이름
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { visitedToggleText } from '../utils/longPressPlace';
 import { colors, radius } from '../theme';

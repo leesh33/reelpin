@@ -27,22 +27,45 @@ import { isSamePin, normalizePin } from '../utils/pins';
 export const PIN_TABLE = 'pins';
 /** 한 번에 올리는 최대 행 수 (요청 본문이 너무 커지지 않게) */
 export const UPSERT_CHUNK = 100;
-/** 매직링크·로그인 안내에서 쓰는 소셜 로그인 목록
- *  v2.20.1 — Apple 은 유료 Apple Developer 계정(연 129,000원)이 필요해 **준비 중**입니다.
- *  `pending: true` 인 제공자는 Supabase 로 넘기지 않고 안내만 합니다(오류 페이지 방지). */
-export const OAUTH_PROVIDERS = [
+/** 카카오 · 구글 — 늘 켜져 있는 소셜 로그인 */
+const OAUTH_BASE = Object.freeze([
   { id: 'kakao', label: '카카오', icon: 'chatbubble-ellipses', color: '#FEE500' },
   { id: 'google', label: '구글', icon: 'logo-google', color: '#FFFFFF' },
-  { id: 'apple', label: 'Apple', icon: 'logo-apple', color: '#111111', pending: true },
-];
+]);
+
+/**
+ * 🍎 v2.40.0 — **Sign in with Apple 노출 스위치** (App Store 심사 지침 4.8)
+ *
+ *   `true`  … 로그인 카드에 Apple 버튼이 **활성**으로 나오고, 누르면 Supabase 의 `apple`
+ *             provider 로 넘깁니다. (Apple Developer 콘솔에서 Service ID · Key 를 만들고
+ *             Supabase → Authentication → Providers → Apple 을 켠 **뒤**에 true 로 바꿉니다)
+ *   `false` … 지금 상태. Apple 버튼은 `준비 중` 배지로 보이기만 하고, 눌러도 Supabase 를
+ *             부르지 않고 안내 토스트만 띄웁니다(깨진 버튼·오류 페이지 방지).
+ *
+ * 켜는 순서는 `README.md` 의 「🍎 Apple 로그인 켜기」 항목에 그대로 적어 두었습니다.
+ * (스위치 한 줄 + Supabase provider 활성화 + Apple Developer Service ID/Key)
+ */
+export const SHOW_APPLE_SIGNIN = false;
+
+/** 로그인 카드에 그릴 소셜 로그인 목록 — Apple 스위치를 반영해 만듭니다 (검사에서 두 상태 모두 확인) */
+export function buildOAuthProviders(showApple = SHOW_APPLE_SIGNIN) {
+  const apple = { id: 'apple', label: 'Apple', icon: 'logo-apple', color: '#111111' };
+  // 꺼져 있으면 `pending: true` — 화면이 `준비 중` 배지를 달고 Supabase 로 보내지 않습니다.
+  if (!showApple) apple.pending = true;
+  return [...OAUTH_BASE, apple];
+}
+
+/** 매직링크·로그인 안내에서 쓰는 소셜 로그인 목록 (카카오 · 구글 · Apple) */
+export const OAUTH_PROVIDERS = buildOAuthProviders();
 
 /** 준비 중인 소셜 로그인을 눌렀을 때의 안내 문구 (화면·토스트 공통) */
 export const OAUTH_PENDING_MESSAGE = 'Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.';
 
 /** 그 제공자로 지금 로그인할 수 있는가 — 준비 중(pending)이면 false */
-export function oauthProviderReady(provider) {
+export function oauthProviderReady(provider, providers = OAUTH_PROVIDERS) {
   const id = String(provider || '').toLowerCase();
-  const item = OAUTH_PROVIDERS.find((p) => p.id === id);
+  const list = Array.isArray(providers) ? providers : OAUTH_PROVIDERS;
+  const item = list.find((p) => p.id === id);
   return Boolean(item) && item.pending !== true;
 }
 /** 로그인·회원가입 최소 비밀번호 (Supabase 기본 6자와 맞춤) */
@@ -448,6 +471,46 @@ export async function signOut() {
     const { error } = await client.auth.signOut();
     if (error) return { ok: false, error: error.code || 'signout-error', message: friendlyAuthError(error) };
     return { ok: true };
+  } catch (e) {
+    return { ok: false, error: 'network', message: friendlyAuthError(e) };
+  }
+}
+
+/**
+ * 🗑️ v2.40.0 — **회원탈퇴(계정 삭제)** — App Store 심사 지침 5.1.1(v).
+ *
+ *   · DB 함수 `public.delete_my_account()` (supabase/account-deletion.sql) 를 부릅니다.
+ *     그 함수가 본인 핀 · 제보 · 공유 컬렉션 · auth.users 계정을 한 번에 지웁니다.
+ *   · 계정이 사라졌으니 기기 세션도 정리합니다(실패해도 탈퇴 자체는 끝난 것으로 봅니다).
+ *   · **기기에 저장된 핀은 그대로** 둡니다 — 로그아웃과 같은 원칙(기기 데이터는 사용자 것).
+ *
+ * 실패 문구는 사용자가 다음에 할 일이 분명한 말로 돌려줍니다.
+ */
+export async function deleteMyAccount() {
+  const client = guardClient();
+  if (!client) return { ...NOT_CONFIGURED };
+  try {
+    const { data, error } = await client.rpc('delete_my_account');
+    if (error) {
+      const text = String(error.message || '').toLowerCase();
+      const code = String(error.code || '');
+      // 28000 = 함수 안에서 '로그인이 필요해요' 로 던진 예외 (세션이 만료된 경우)
+      if (code === '28000' || text.indexOf('로그인이 필요해요') >= 0) {
+        return fail('not-signed-in', '로그인이 풀렸어요 · 다시 로그인한 뒤 탈퇴해 주세요');
+      }
+      // 함수가 아직 없는 DB (SQL 을 실행하지 않은 경우)
+      if (code === 'PGRST202' || text.indexOf('could not find the function') >= 0 || text.indexOf('does not exist') >= 0) {
+        return fail('function-missing', '회원탈퇴가 서버에 아직 준비되지 않았어요 · 잠시 뒤 다시 시도해 주세요');
+      }
+      return { ok: false, error: code || 'delete-account-error', message: friendlyAuthError(error) };
+    }
+    // 계정이 지워졌으므로 기기 세션 정리 (이미 만료됐을 수 있어 실패는 무시)
+    try {
+      await client.auth.signOut();
+    } catch (e) {
+      /* 세션 정리 실패는 탈퇴 결과에 영향을 주지 않습니다 */
+    }
+    return { ok: true, deleted: data || null, message: '탈퇴했어요 · 계정과 클라우드 데이터를 지웠습니다' };
   } catch (e) {
     return { ok: false, error: 'network', message: friendlyAuthError(e) };
   }

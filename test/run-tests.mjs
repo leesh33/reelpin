@@ -17,6 +17,9 @@
  *   npm run test:admin     … 🛡️ 어드민 인증(401·403)·화이트리스트·RPC 접근 테스트만 (v2.21)
  *   npm run test:curation  … 🗂️ 기획전·공유 링크·📌 배너 테스트만 (v2.31)
  *   npm run test:longpress … 📍 지도 꾹 눌러 장소 등록(꾹 누르기 판정·주변 조회·핀) 테스트만 (v2.33.0)
+ *   npm run test:account   … 🗑️ 회원탈퇴(계정 삭제 · 2단계 확인 · delete_my_account) 테스트만 (v2.40.0)
+ *   npm run test:apple     … 🍎 Sign in with Apple 스위치(꺼짐/켜짐 · Supabase 호출 가드) 테스트만 (v2.40.0)
+ *   npm run test:fonts     … 🔤 Gmarket Sans 네이티브(OTF · expo-font · AppText) 테스트만 (v2.40.0)
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -34,6 +37,8 @@ fs.mkdirSync(outDir, { recursive: true });
 const STUBS = {
   'expo-status-bar': './test/stubs/expo-status-bar.js',
   'expo-clipboard': './test/stubs/expo-clipboard.js',
+  // v2.40.0 — expo-font 는 네이티브에서만 실제로 쓰입니다(웹은 index.html 의 @font-face)
+  'expo-font': './test/stubs/expo-font.js',
   '@react-native-async-storage/async-storage': './test/stubs/async-storage.js',
   '@expo/vector-icons': './test/stubs/vector-icons.js',
 };
@@ -48,7 +53,8 @@ async function runSuite({ name, entry, out, format, alias }) {
     platform: 'node',
     format,
     alias,
-    loader: { '.js': 'jsx' },
+    // v2.40.0 — assets/fonts/*.otf 는 Metro 가 묶는 자산이라 node 테스트에서는 파일 경로로만 처리
+    loader: { '.js': 'jsx', '.otf': 'file' },
     logLevel: 'silent',
   });
   console.log('\n── ' + name + ' ──');
@@ -297,7 +303,7 @@ if (!only || only === 'color') {
 }
 
 if (!only || only === 'menu') {
-  // v2.39.0 — ☰ 내 정보 설정 메뉴 순서 · 하단 고정 푸터 제거 · 개인정보처리방침/이용약관 행(클릭 배선)
+  // v2.40.0 — ☰ 내 정보 설정 메뉴 순서 · 하단 고정 푸터 제거 · 개인정보처리방침/이용약관 행(클릭 배선)
   failed += await runSuite({
     name: '내 정보 메뉴 순서·푸터 제거 테스트',
     entry: 'menu-order-test.jsx',
@@ -315,6 +321,39 @@ if (!only || only === 'procard') {
     out: 'pro-card-hidden-test.cjs',
     format: 'cjs',
     alias: { 'react-native': 'react-native-web', ...STUBS },
+  });
+}
+
+if (!only || only === 'account') {
+  // v2.40.0 — 🗑️ 회원탈퇴(App Store 5.1.1(v)): SQL(security definer·본인 행만) · RPC 호출 · 2단계 확인 창 · 화면 배선
+  failed += await runSuite({
+    name: '회원탈퇴(계정 삭제) 테스트',
+    entry: 'account-deletion-test.jsx',
+    out: 'account-deletion-test.cjs',
+    format: 'cjs',
+    alias: { 'react-native': 'react-native-web', ...STUBS },
+  });
+}
+
+if (!only || only === 'apple') {
+  // v2.40.0 — 🍎 Sign in with Apple 스위치(4.8): 꺼짐/켜짐 두 상태 · Supabase 호출 가드 · README 순서
+  failed += await runSuite({
+    name: 'Apple 로그인 스위치 테스트',
+    entry: 'apple-signin-test.jsx',
+    out: 'apple-signin-test.cjs',
+    format: 'cjs',
+    alias: { 'react-native': 'react-native-web', ...STUBS },
+  });
+}
+
+if (!only || only === 'fonts') {
+  // v2.40.0 — 🔤 Gmarket Sans 네이티브: OTF 파일 · expo-font 플러그인 · AppText(굵기→글꼴) · 웹/아이콘 무영향
+  failed += await runSuite({
+    name: 'Gmarket Sans 네이티브 글꼴 테스트',
+    entry: 'fonts-test.mjs',
+    out: 'fonts-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
   });
 }
 

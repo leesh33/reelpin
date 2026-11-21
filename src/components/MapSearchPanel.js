@@ -12,7 +12,8 @@
  * 검색어가 비어 있으면 아무것도 그리지 않습니다(지도만 보임).
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import PinSearchResults from './PinSearchResults';

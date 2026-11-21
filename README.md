@@ -1,9 +1,11 @@
-# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.39.0
+# 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.40.0
 
 > **브랜드 표기** **릴스핀 · Reelspin** 으로 통일 (앱 로고·문서·패키지 설명). `reelpin.vercel.app`·`reelpin://`·`com.odol.reelpin`·`reelpin.*` 저장 키 같은 **기술 식별자는 그대로** 둡니다 (로그인·데이터 유지).
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
 > **스택** React Native + Expo SDK 51 · AsyncStorage · **Supabase(로그인·클라우드 동기화)** · expo-clipboard · React Native Web · Vercel Serverless Functions · **네이버 지도(NAVER Maps Dynamic Map v3)** + Leaflet 폴백
+> **v2.40.0 (2026-11-21)** **🚀 앱스토어 심사 전 최종 정비 — ① 앱 안 회원탈퇴 ② Apple 로그인 스위치 ③ 네이티브 Gmarket Sans · 사진/카메라 권한** — Apple App Store 심사에서 걸리는 세 곳을 한 번에 맞췄습니다. **① 🗑️ 회원탈퇴 (심사 지침 5.1.1(v))** — `내 정보` 설정 목록 **맨 끝(어드민 다음)** 에 `회원탈퇴` 행을 두고(로그인한 계정에만 보입니다), 누르면 **두 단계 확인 창**이 뜹니다: 1단계는 **무엇이 지워지는지**(계정 이메일 · `클라우드에 저장한 핀 N개` · `제안 · 버그 제보` · `공유한 컬렉션 링크`)를 숫자와 함께 보여 주고 `취소` / `탈퇴 계속`, 2단계는 **빨간 `탈퇴하기`** 하나로 마지막 확인을 받습니다(요청 중에는 `탈퇴 중…` 으로 잠금 · 실패 문구는 창 안에도 표시). 지우는 일은 서버가 합니다 — 새 파일 [`supabase/account-deletion.sql`](supabase/account-deletion.sql) 의 **`public.delete_my_account()`** (`security definer` · `search_path` 고정 · `auth.uid()` 가 **없으면 아무것도 지우지 않고 예외**)가 **본인 행만** 지웁니다: `pins`(user_id) → `reelpin_feedback`(내 이메일) → `reelpin_shared_collections`(owner_id) → **`auth.users`**(계정 자체). 실행 권한은 `authenticated` 에만 주고 `anon`·`public` 은 회수했습니다. 앱은 `cloudSync.deleteMyAccount()` 가 RPC 를 부른 뒤 기기 세션을 정리하고, **이 기기에 저장된 핀은 그대로** 둡니다(로그아웃과 같은 원칙 · 창에서 미리 안내). 실패 문구는 다음에 할 일이 분명하게 — `로그인이 풀렸어요 · 다시 로그인한 뒤 탈퇴해 주세요` / `회원탈퇴가 서버에 아직 준비되지 않았어요`(SQL 미실행) / 네트워크. **② 🍎 Sign in with Apple (심사 지침 4.8)** — Apple Developer 계정이 아직 없어 Provider(Service ID·Key)를 켤 수 없으므로, **깨진 버튼을 내보내지 않는 스위치** `SHOW_APPLE_SIGNIN`(`src/services/cloudSync.js`, 지금 **`false`**)을 두었습니다. 꺼져 있으면 Apple 버튼은 `준비 중` 배지로 보이고 눌러도 **Supabase 를 부르지 않고** 안내 토스트만(`provider-pending`), 켜면 같은 버튼이 활성으로 바뀌어 `signInWithOAuth({ provider: 'apple' })` 로 넘어갑니다 — 목록은 `buildOAuthProviders(showApple)` 하나로 만들어져 **두 상태 모두 테스트**합니다(`test/apple-signin-test.jsx`). 켜는 순서는 아래 **「6. 🍎 Apple 로그인 켜기」** 에 그대로 적었습니다. **③ 🔤 Gmarket Sans 네이티브** — v2.38.0 은 웹(PWA)만 바꿨고 Expo 빌드는 시스템 글꼴이었습니다. 이제 **`assets/fonts/GmarketSansMedium.otf`(1.2MB) · `GmarketSansBold.otf`(1.2MB)** 를 앱에 넣고(웹이 쓰는 woff2 와 **같은 원본**을 OTF 로 푼 것), `app.json` 의 **expo-font 플러그인**이 빌드에 넣으며, 앱이 켜질 때 `expo-font` `loadAsync` 로 한 번 더 확인합니다(실패해도 시스템 글꼴로 그대로 뜸). RN 은 `fontWeight` 로 글꼴 파일을 고르지 못해서 **`src/components/AppText.js`** 가 스타일의 굵기를 읽어 **700 이상 → Bold · 그 전 → Medium** 을 붙입니다 — 32개 파일의 `Text`·`TextInput` import 를 `AppText` 로 바꿔 **지도·시트·화면 글자가 모두 같은 글꼴**이고, **웹은 스타일을 하나도 더하지 않아 DOM 이 그대로**(@font-face 유지)이며 **아이콘(Ionicons)은 손대지 않아** 네모(□)가 생기지 않습니다. **④ 📷 iOS 권한 설명** — `app.json` `ios.infoPlist` 에 `NSCameraUsageDescription` · `NSPhotoLibraryUsageDescription` · `NSPhotoLibraryAddUsageDescription` 을 한국어로 추가(사진으로 찾기·지도 저장), `buildNumber` 15→**16** · Android `versionCode` 17→**18**. **검증** `npm test` **ALL_TESTS_OK**(스모크 868/868 · 신규 `account-deletion` 39 · `apple-signin` 17 · `fonts` 30) · `npm run export:web` 에러 0건 · 커밋 `TBD` → `main` push · **라이브 390×844 검증**은 아래 줄에.
+
 > **2026-11-21 🙈 `내 정보` 릴스핀 프로(PRO) 결제 카드 숨김** (버전 번호는 화면에서 카드 하나를 감춘 변경이라 **v2.39.0 그대로**) — 상훈 님이 스크린샷(`IMG_9294`)으로 요청하셨습니다: `내 정보` 맨 아래, `기획 이상훈 · 개발 오돌` 바로 위에 붙어 있던 **`PRO · 릴스핀 프로 / 월 2,900원 · 연 24,900원(28% 할인) / 친구와 함께 쓰는 공동 편집 지도 · 여러 기기 실시간 동기화 · 방문 기록 · 메모 백업 / [프로 시작하기]`** 카드를 감췄습니다. **① 지운 코드가 아니라 스위치** — `src/screens/ProfileScreen.js` 에 **`export const SHOW_PRO_CARD = false;`** 한 줄을 두고 카드 JSX 를 `{SHOW_PRO_CARD ? (…) : null}` 로 감쌌습니다(컬렉션 탭 `SHOW_CURATED_FEED` 와 같은 방식). 앱스토어 인앱결제를 붙일 때 **한 줄만 `true`** 로 바꾸면 카드가 예전 그대로(가격·혜택 3줄·버튼 포함) 돌아옵니다. **② 실화면에서 완전히 빠짐** — `false` 인 동안 DOM 에 카드 글자(`릴스핀 프로` · `월 2,900원` · `프로 시작하기`)와 `profile-pro-card` 자체가 없습니다(테스트가 글자·요소·소스 세 가지로 확인). **③ 다른 화면에도 없음** — 프로 카드를 그리는 곳은 `ProfileScreen` 한 곳뿐이고(☰ 내 정보 시트는 이 컴포넌트의 `panel` 모드), 설정 서브 페이지 4개(분류 관리 · 지오펜스 알림 반경 · 알림 설정 · 앱 정보) · 저장 · 컬렉션 · 어드민에는 카드가 없어 함께 숨길 곳은 없었습니다. **④ 그대로 둔 것** — 로그인 카드의 플랜 칩(`FREE`/`PRO`)과 `@odol · 무료 플랜` 줄은 **현재 플랜 표시**라 남겼고, 설정 행 7개 순서 · `내 지도 공유하기` · 저장 요약 · `기획 이상훈 · 개발 오돌` 푸터도 그대로입니다. 카드가 빠진 자리는 **마지막 행(`앱 정보`) → 푸터 34px** 로, 빈 구멍 없이 자연스럽게 이어집니다. **검증** `npm test` **ALL_TESTS_OK**(스모크 **868/868** — 카드 존재를 기대하던 3개 검사를 `없음`으로 갱신 · 신규 `test/pro-card-hidden-test.jsx` **23/23**, `npm run test:procard` — 스위치 값·카드 JSX 보존·패널/시트 양쪽 DOM 미노출·`isPro` 사용자도 미노출·행 7개·푸터·서브 페이지 4개·카드 문구가 `ProfileScreen.js` 한 곳에만 있는지) · `npm run export:web` **에러 0건**.
 > **2026-11-21 라이브 검증 (배포 후)** 커밋 `3618d5c` → Vercel 프로덕션 반영 확인(`AppEntry-12538f04…js`, 이전 `b5cd8400…js` 는 교체). **390×844 · iPhone UA · `https://reelpin.vercel.app`**: ☰ `내 정보` 시트에 **`profile-pro-card` 요소 없음**, 화면 글자에 **`릴스핀 프로` · `월 2,900원` · `연 24,900원` · `프로 시작하기` 0건** · 설정 행 **7개 순서 그대로**(`profile-row-categories` → `-radius` → `-alerts` → `-feedback` → `-privacy` → `-terms` → `-about`) · 시트를 끝까지 스크롤하면 마지막이 `앱 정보`(`릴스핀 v2.39.0 · com.odol.reelpin`) → **`기획 이상훈 · 개발 오돌`** 이고 그 사이 카드·빈 여백 없음(행 바닥 → 푸터 **34px**) · 서브 페이지 4개(분류 관리 · 지오펜스 알림 반경 · 알림 설정 · 앱 정보)에도 프로 카드 **0** · 콘솔·페이지 오류 **0** · 저장·삭제 등 데이터 변경 없음 · 브라우저 세션 종료. (스크린샷 `reelpin-verify-pro-card-hidden/` — `live-01-profile-top-390x844.png` · `live-02-profile-bottom-390x844.png` · `live-03-sub-{categories,radius,alerts,about}-390x844.png` · `live-report.json` · 검증 스크립트 `live-check.mjs`)
 > **v2.39.0 (2026-11-21)** **📋 ☰ `내 정보` 시트 메뉴 정리** — 상훈 님이 스크린샷(`IMG_9293`)으로 두 가지를 요청하셨습니다. **① 하단 고정 푸터 제거** — 시트 맨 아래에 늘 붙어 있던 `릴스핀 v2.38.0` / `개인정보처리방침 · 이용약관` 줄을 없앴습니다(`LayerSheet` 의 `footer` 슬롯을 비우고 전용 스타일 5개 삭제). **② 메뉴 순서** — 분류 관리 → 지오펜스 알림 반경 → 알림 설정 → **제안 · 버그 제보** → **개인정보처리방침** → **이용약관** → **앱 정보** → (관리자면) 어드민. 법적 고지 두 문서는 발끝의 작은 글자 링크 대신 **다른 설정 행과 똑같은 메뉴 행**이 되어(아이콘 · 이름 · 한 줄 설명 · `›`), 누르면 각각 `/privacy` · `/terms` 가 열립니다 — 주소·이름은 로그인 카드와 같은 `src/utils/legal.js` 한 곳에서 오고(v2.39.0 에서 한 줄 설명 `desc` 추가), `앱 정보` 는 그 아래로 내려가 버전(`릴스핀 v2.39.0 · com.odol.reelpin`)을 계속 보여 줍니다. **검증** `npm test` **ALL_TESTS_OK**(스모크 **868/868**, 신규 `test/menu-order-test.jsx` 17건 — 행 순서·행 이름·`menu-version`/`menu-legal` 부재·개인정보처리방침→`/privacy`·이용약관→`/terms` 주소·관리자 행 맨 끝·일반 사용자에게 어드민 없음, legal·feedback·ssr 스모크의 순서 검사도 새 순서로 갱신) · `npm run export:web` 에러 0건 · 버전 v2.39.0 동기화(메뉴·앱 정보·제보·package·app.json).
@@ -198,7 +200,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 3. **Authentication → Providers**
    - **Email**: 그대로 사용(비밀번호 로그인 + 매직링크). 'Confirm email' 을 켜 두면 가입 후 메일함에서 링크를 눌러야 로그인됩니다.
    - **카카오 / 구글**: 각 콘솔에서 OAuth 앱을 만들고 Client ID·Secret 을 넣어 켜면 앱의 소셜 버튼이 동작합니다. (안 켜져 있으면 버튼을 눌렀을 때 '아직 서버에서 켜지지 않았어요' 안내가 뜨고, 앱은 그대로 쓸 수 있습니다)
-   - **Apple**: v2.20.1 기준 **준비 중**입니다 — 유료 Apple Developer 계정(연 129,000원)이 필요해 앱의 Apple 버튼은 `준비 중` 으로 잠겨 있고, 켜더라도 `OAUTH_PROVIDERS` 의 `pending: true` 를 지워야 동작합니다 (카카오·구글은 그대로)
+   - **Apple**: **준비 중**입니다 — 유료 Apple Developer 계정(연 129,000원)이 필요해 앱의 Apple 버튼은 `준비 중` 배지로 잠겨 있고, 눌러도 Supabase 를 부르지 않습니다. 가입 후 켜는 방법은 아래 **「6. 🍎 Apple 로그인 켜기」** 참고 (v2.40.0 — 스위치 `SHOW_APPLE_SIGNIN` 한 줄)
    - **Authentication → URL Configuration → Redirect URLs** 에 `https://reelpin.vercel.app/` 와 앱용 `reelpin://auth-callback` 을 추가 (매직링크·소셜 로그인이 돌아올 주소)
 4. **Vercel → Project → Settings → Environment Variables**
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (접미 없는 이름 — `/api/auth-config` 가 읽어 웹 앱에 전달합니다)
@@ -208,6 +210,45 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 
 > **보안**: `anon` key 는 공개 값이고, 실제 문은 **RLS**가 지킵니다(내 핀만 읽고/쓰고/지움).
 > 앱과 `/api/auth-config` 는 **service_role 키를 쓰지 않습니다.**
+
+## 6. 🍎 Apple 로그인 켜기 (Apple Developer 가입 후 · 심사 지침 4.8)
+
+다른 소셜 로그인(카카오·구글)을 제공하는 앱은 **Apple 로그인도 함께** 제공해야 합니다(심사 지침 4.8).
+지금은 Apple Developer 계정(연 129,000원)이 없어 **Provider 가 꺼져 있고**, 앱의 Apple 버튼은 `준비 중` 으로
+잠겨 있습니다 — **깨진 버튼이 나가지 않도록** 스위치 하나로 관리합니다.
+
+1. **Apple Developer** → Certificates, Identifiers & Profiles
+   - **App ID**(`com.odol.reelpin`) 에 **Sign in with Apple** capability 추가
+   - **Services ID** 새로 만들기(예: `com.odol.reelpin.web`) → **Sign in with Apple** 켜고
+     **Return URLs** 에 `https://zdcdvjlssncsawpqsjwe.supabase.co/auth/v1/callback` 추가
+     (Supabase 대시보드 → Authentication → Providers → Apple 이 보여 주는 주소 그대로)
+   - **Keys** → `+` → **Sign in with Apple** → `.p8` 내려받기 (한 번만 받을 수 있음) · **Key ID** · **Team ID** 기록
+2. **Supabase** → Authentication → Providers → **Apple** → Enable
+   - **Service ID** · **Team ID** · **Key ID** · **.p8 내용** 을 넣고 Save
+3. **앱 스위치를 켭니다** — `src/services/cloudSync.js` 의 한 줄
+   ```js
+   export const SHOW_APPLE_SIGNIN = false;   // → true
+   ```
+   그러면 로그인 카드의 Apple 버튼이 `준비 중` 배지 없이 활성으로 나오고, 누르면
+   `supabase.auth.signInWithOAuth({ provider: 'apple' })` 로 넘어갑니다.
+4. **확인** — `npm run test:apple` (꺼짐/켜짐 두 상태) → `npm run export:web` → `main` push → 라이브에서
+   Apple 버튼을 눌러 Apple 로그인 화면이 뜨는지 확인합니다.
+   ※ iOS **네이티브 빌드**에서는 `app.json` 에 `expo-apple-authentication` 을 쓰지 않고
+     **OAuth(브라우저) 방식**이라 별도 네이티브 모듈이 필요 없습니다.
+
+## 7. 🗑️ 회원탈퇴 — DB 설치 (한 번만)
+
+`내 정보` › `회원탈퇴` 는 Supabase 함수 `delete_my_account()` 를 부릅니다. 운영 프로젝트
+(`zdcdvjlssncsawpqsjwe`)에 **한 번** 아래를 실행해 두면 됩니다(다시 실행해도 안전).
+
+1. Supabase 대시보드 → **SQL Editor** → [`supabase/account-deletion.sql`](supabase/account-deletion.sql) 붙여넣고 **Run**
+   → `Success. No rows returned`
+2. 확인 — `select proname, prosecdef from pg_proc where proname = 'delete_my_account';` (`prosecdef = true`)
+3. 앱에서 **테스트 계정**으로 로그인 → `회원탈퇴` → 두 단계 확인 → 계정이 사라지고 다시 로그인되지 않는지 확인
+   (⚠️ 되돌릴 수 없습니다 — **반드시 테스트 계정**으로)
+
+> SQL 을 실행하지 않은 채 앱에서 탈퇴를 누르면 창 안에
+> `회원탈퇴가 서버에 아직 준비되지 않았어요 · 잠시 뒤 다시 시도해 주세요` 가 뜨고 아무 것도 지워지지 않습니다.
 
 ## v2.30.0에서 달라진 점 (2026-11-18) — 📍 상단 `카카오` · `네이버` 배지 = 지도 링크 (하단 칩 삭제)
 

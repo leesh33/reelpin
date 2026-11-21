@@ -207,12 +207,12 @@ check(
 );
 
 // ── 5. 버전 ────────────────────────────────────────────────
-check('버전: package.json · app.json = 2.37.0', pkg.version === '2.39.0' && expo.version === '2.39.0', pkg.version + '/' + expo.version);
+check('버전: package.json · app.json = 2.37.0', pkg.version === '2.40.0' && expo.version === '2.40.0', pkg.version + '/' + expo.version);
 check(
   '버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.37.0',
-  read('src/components/MenuDrawerModal.js').indexOf("APP_VERSION_LABEL = '릴스핀 v2.39.0'") > 0 &&
-    read('src/screens/ProfileScreen.js').indexOf("APP_INFO_VERSION = '릴스핀 v2.39.0'") > 0 &&
-    read('src/services/feedback.js').indexOf("APP_VERSION_NAME = '2.39.0'") > 0
+  read('src/components/MenuDrawerModal.js').indexOf("APP_VERSION_LABEL = '릴스핀 v2.40.0'") > 0 &&
+    read('src/screens/ProfileScreen.js').indexOf("APP_INFO_VERSION = '릴스핀 v2.40.0'") > 0 &&
+    read('src/services/feedback.js').indexOf("APP_VERSION_NAME = '2.40.0'") > 0
 );
 check('버전: 예전 2.34.0 표기가 남아 있지 않다', !/릴스핀 v2\.34\.0/.test(read('src/components/MenuDrawerModal.js')));
 

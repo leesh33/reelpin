@@ -1,15 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  SafeAreaView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Platform, SafeAreaView, StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { AppText as Text } from './src/components/AppText';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
+// v2.40.0 — 🔤 Gmarket Sans 네이티브 로딩 (웹은 index.html 의 @font-face 가 맡습니다)
+import { loadAppFonts } from './src/services/fontLoader';
 import * as Clipboard from 'expo-clipboard';
 import MapScreen from './src/screens/MapScreen';
 import PasteScreen from './src/screens/PasteScreen';
@@ -97,6 +91,7 @@ import {
   OAUTH_PROVIDERS,
   oauthProviderReady,
   deleteCloudPin,
+  deleteMyAccount,
   fetchCloudPins,
   getSession,
   onAuthStateChange,
@@ -114,6 +109,8 @@ const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 
 export default function App() {
   const [ready, setReady] = useState(false);
+  // v2.40.0 — 네이티브 글꼴이 준비되면 한 번 다시 그립니다(웹은 처음부터 true)
+  const [, setFontsReady] = useState(Platform.OS === 'web');
   const [tab, setTab] = useState('map');
   const [pins, setPins] = useState([]);
   const [radius, setRadius] = useState(300);
@@ -484,6 +481,19 @@ export default function App() {
     setCloudMessage('');
   }, []);
 
+  // v2.40.0 — 🔤 앱이 켜지면 Gmarket Sans 를 네이티브에 올립니다(웹은 CSS 라 건너뜀).
+  //   · 로딩이 끝나면 `fontsReady` 를 true 로 바꿔 글자를 한 번 다시 그립니다.
+  //   · 실패해도 앱은 그대로 — `AppText` 가 시스템 글꼴로 그립니다.
+  useEffect(() => {
+    let alive = true;
+    loadAppFonts().then((res) => {
+      if (alive && res.ok) setFontsReady(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // 앱이 준비된 뒤: 설정 조회(웹은 /api/auth-config) → 세션 복원 → 로그인 변화 구독
   useEffect(() => {
     if (!ready) return;
@@ -610,6 +620,25 @@ export default function App() {
     clearCloudSession();
     showToast('로그아웃했어요 · 핀은 기기에 그대로 있어요');
   }, [clearCloudSession, showToast]);
+
+  /**
+   * v2.40.0 🗑️ 회원탈퇴 — Supabase `delete_my_account` 로 계정·클라우드 데이터를 지웁니다.
+   *   확인 창(ProfileScreen)이 결과를 받아 열림/닫힘을 정하므로 `{ ok, message }` 를 돌려줍니다.
+   *   기기에 저장된 핀은 그대로 둡니다(로그아웃과 같은 원칙).
+   */
+  const handleDeleteAccount = useCallback(async () => {
+    if (cloudBusy) return { ok: false, message: '잠시만 기다려 주세요' };
+    setCloudBusy(true);
+    const res = await deleteMyAccount();
+    setCloudBusy(false);
+    if (!res.ok) {
+      showToast(res.message || '탈퇴하지 못했어요');
+      return res;
+    }
+    clearCloudSession();
+    showToast(res.message || '탈퇴했어요 · 계정과 클라우드 데이터를 지웠습니다');
+    return res;
+  }, [clearCloudSession, cloudBusy, showToast]);
 
   const handleSyncNow = useCallback(() => {
     if (cloudSyncing) return;
@@ -1449,6 +1478,7 @@ export default function App() {
             if (Platform.OS === 'web' && typeof window !== 'undefined') window.location.href = '/admin';
           }}
           onOpenFeedback={() => setFeedbackOpen(true)}
+          onDeleteAccount={handleDeleteAccount}
           onSignIn={handleSignIn}
           onSignUp={handleSignUp}
           onMagicLink={handleMagicLink}

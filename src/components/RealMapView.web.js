@@ -41,7 +41,8 @@
  * (NCP 콘솔에 등록한 도메인에서만 동작하도록 제한하는 용도 — Client Secret 과 다릅니다.)
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, tabBar, typography } from '../theme';
 import { getCategoryColor, hexToRgba } from '../utils/categories';
