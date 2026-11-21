@@ -27,6 +27,7 @@
     "test:collections": "node test/run-tests.mjs collections",
     "test:hours": "node test/run-tests.mjs hours",
     "test:admin": "node test/run-tests.mjs admin",
+    "test:visits": "node test/run-tests.mjs visits",
     "test:feedback": "node test/run-tests.mjs feedback",
     "test:curation": "node test/run-tests.mjs curation",
     "test:longpress": "node test/run-tests.mjs longpress",

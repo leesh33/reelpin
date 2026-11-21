@@ -5,6 +5,7 @@
  *
  *   GET  /api/admin?view=session                     … 지금 토큰이 어드민인지 확인
  *   GET  /api/admin?view=overview                    … 대시보드 요약(회원·핀·인기 장소 TOP 10)
+ *   GET  /api/admin?view=visits&days=14              … 📊 오늘/전체 접속자 · 일별 추이 (v2.41 · 7·14·30일)
  *   GET  /api/admin?view=members&q=<이메일|이름>       … 회원 목록
  *   GET  /api/admin?view=pins&q=<검색>&category=<분류>  … 장소(핀) 목록
  *   GET  /api/admin?view=feedback&kind=<idea|bug>&status=<open|applied|fixed>  … 💬 제보 목록 (v2.23)
@@ -137,6 +138,22 @@ async function handleGet(req, res, ctx) {
     const result = await adminDb.curated(ctx.db);
     if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
     return sendJson(res, 200, { ok: true, data: Array.isArray(result.data) ? result.data : [] });
+  }
+
+  // v2.41 — 📊 접속자 통계: 오늘/전체 접속자 + 최근 7·14·30일 일별 추이
+  if (view === 'visits') {
+    const raw = clean(queryParam(req, 'days', 4), 4);
+    const days = raw === '' ? 14 : Number(raw);
+    if (adminDb.VISIT_DAYS.indexOf(days) < 0) {
+      return sendJson(res, 400, {
+        ok: false,
+        error: 'bad-request',
+        message: '추이는 7 · 14 · 30일 중에서 고를 수 있어요.',
+      });
+    }
+    const result = await adminDb.visits(days, ctx.db);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error, message: result.message });
+    return sendJson(res, 200, { ok: true, data: result.data || null, days });
   }
 
   return sendJson(res, 400, { ok: false, error: 'unknown-view', message: '알 수 없는 요청이에요.' });

@@ -2644,6 +2644,12 @@ const v221Checks = [
   ['v2.21 어드민: 인기 장소 TOP 10 목록', adminPreviewHtml.indexOf('인기 장소 TOP 10') > 0 && adminPreviewHtml.indexOf('베통 성수') > 0],
   ['v2.21 어드민: 서버 API 경로만 사용(키 없음)', adminScreenSource221.indexOf("'/api/admin'") > 0 && adminScreenSource221.indexOf('SUPABASE_SERVICE') < 0],
   ['v2.21 어드민: 삭제 확인 모달 · 플랜 변경 버튼', adminScreenSource221.indexOf('되돌릴 수 없어요') > 0 && adminScreenSource221.indexOf('프로로') > 0],
+  // v2.41 — 📊 접속자 통계 (오늘 · 전체 · 일별 막대 그래프 · 14/30일)
+  ['v2.41 어드민: 미리보기에 접속자 절', adminPreviewHtml.indexOf('>접속자<') > 0 || adminPreviewHtml.indexOf('접속자') > 0],
+  ['v2.41 어드민: 오늘·전체 접속자 카드', adminPreviewHtml.indexOf('오늘 접속자') > 0 && adminPreviewHtml.indexOf('전체 접속자') > 0],
+  ['v2.41 어드민: 일별 추이 막대 그래프 렌더', adminPreviewHtml.indexOf('data-testid="visit-chart"') > 0 && adminPreviewHtml.indexOf('순 방문자') > 0],
+  ['v2.41 어드민: 14일·30일 전환 버튼', adminPreviewHtml.indexOf('14일') > 0 && adminPreviewHtml.indexOf('30일') > 0],
+  ['v2.41 어드민: 방문 통계는 서버 API 로만', adminScreenSource221.indexOf("view: 'visits'") > 0],
 ];
 for (const [label, ok, extra] of v221Checks) {
   if (ok) console.log('OK   ' + label);

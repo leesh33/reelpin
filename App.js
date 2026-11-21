@@ -86,6 +86,7 @@ import {
   readCollectionShareFromLocation,
 } from './src/utils/curation';
 import { isSupabaseConfigured, loadSupabaseConfig } from './src/services/supabase';
+import { trackVisit } from './src/services/visits';
 import {
   OAUTH_PENDING_MESSAGE,
   OAUTH_PROVIDERS,
@@ -313,6 +314,14 @@ export default function App() {
     loadCuration();
     return undefined;
   }, [ready, loadCuration]);
+
+  // v2.41 — 📊 익명 접속자 기록 (앱을 열 때 한 번 · 어드민 통계에만 쓰입니다)
+  //   visitor_id 는 이 기기가 만든 임의 UUID 이고, 실패해도 조용히 넘어갑니다.
+  useEffect(() => {
+    if (!ready) return undefined;
+    trackVisit();
+    return undefined;
+  }, [ready]);
 
   // 컬렉션 탭에 들어올 때마다 새로고침 — 운영자가 방금 올린 배너가 바로 보이게.
   useEffect(() => {

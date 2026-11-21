@@ -15,6 +15,7 @@
  *   npm run test:collections … 📂 컬렉션 만들기·담기·공유·정리 테스트만 (v2.19)
  *   npm run test:hours     … 🕒 영업 상태 배지 · 📝 한줄 메모 초안 테스트만 (v2.20)
  *   npm run test:admin     … 🛡️ 어드민 인증(401·403)·화이트리스트·RPC 접근 테스트만 (v2.21)
+ *   npm run test:visits    … 📊 어드민 접속자 통계(SQL·방문자 id·방문 1회·API) 테스트만 (v2.41)
  *   npm run test:curation  … 🗂️ 기획전·공유 링크·📌 배너 테스트만 (v2.31)
  *   npm run test:longpress … 📍 지도 꾹 눌러 장소 등록(꾹 누르기 판정·주변 조회·핀) 테스트만 (v2.33.0)
  *   npm run test:account   … 🗑️ 회원탈퇴(계정 삭제 · 2단계 확인 · delete_my_account) 테스트만 (v2.40.0)
@@ -189,6 +190,18 @@ if (!only || only === 'admin') {
     entry: 'admin-test.mjs',
     out: 'admin-test.bundle.mjs',
     format: 'esm',
+  });
+}
+
+if (!only || only === 'visits') {
+  // v2.41 — 📊 어드민 접속자 통계: SQL(RLS·anon 기록·관리자만 통계) · 방문자 id(UUID·재사용) ·
+  //         앱 실행당 1회 · /api/admin?view=visits · 미리보기 화면
+  failed += await runSuite({
+    name: '어드민 접속자 통계 테스트',
+    entry: 'visits-test.mjs',
+    out: 'visits-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
   });
 }
 

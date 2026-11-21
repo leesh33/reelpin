@@ -26,7 +26,7 @@ function errorInfo(status, body) {
       status: 503,
       error: 'admin-schema-missing',
       message:
-        '어드민 DB 함수가 아직 없어요. Supabase SQL Editor 에서 supabase/admin.sql (제보 탭은 supabase/feedback.sql, 기획전·배너 탭은 supabase/curation.sql)을 실행해 주세요.',
+        '어드민 DB 함수가 아직 없어요. Supabase SQL Editor 에서 supabase/admin.sql (제보 탭은 supabase/feedback.sql, 기획전·배너 탭은 supabase/curation.sql, 접속자 통계는 supabase/app_visits.sql)을 실행해 주세요.',
     };
   }
   if (code === '42501' || /forbidden|권한/i.test(message)) {
@@ -238,6 +238,20 @@ function deleteCurated(id, options) {
   return rpcCall('reelpin_admin_delete_curated', { p_id: id }, options);
 }
 
+// ── v2.41 📊 접속자 통계 ─────────────────────────────────────
+/** 화면이 고를 수 있는 추이 길이 — 그 밖의 값은 14일로 맞춥니다. */
+const VISIT_DAYS = [7, 14, 30];
+
+/**
+ * 📊 오늘/전체 접속자 · 일별 추이 (supabase/app_visits.sql 의 `app_visit_stats`)
+ *   관리자 본인 토큰으로만 호출되고, 함수가 `auth.jwt()` 로 한 번 더 확인합니다.
+ */
+function visits(days, options) {
+  const value = Number(days);
+  const pDays = VISIT_DAYS.indexOf(value) >= 0 ? value : 14;
+  return rpcCall('app_visit_stats', { p_app_id: 'reelpin', p_days: pDays }, options);
+}
+
 module.exports = {
   RPC_TIMEOUT_MS,
   rpcCall,
@@ -258,4 +272,6 @@ module.exports = {
   curated,
   saveCurated,
   deleteCurated,
+  VISIT_DAYS,
+  visits,
 };

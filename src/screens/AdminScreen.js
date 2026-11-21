@@ -59,6 +59,56 @@ const FEEDBACK_STATUS_LABEL = { open: '접수됨', applied: '반영됨', fixed: 
 const FEEDBACK_KIND_LABEL = { idea: '제안', bug: '버그' };
 const FEEDBACK_STATUS_TONE = { open: 'muted', applied: 'brand', fixed: 'visit' };
 
+/** v2.41 — 📊 접속자 통계 (7·14·30일 추이)
+ *  · 앱이 부르는 RPC 는 `app_visit_track('reelpin', …)` (supabase/app_visits.sql)
+ *  · 어드민 화면은 `/api/admin?view=visits` 로 오늘/전체 접속자와 일별 추이를 받습니다.
+ */
+const VISIT_DAY_OPTIONS = [14, 30];
+const VISIT_PREVIEW_BASE = [
+  3, 5, 4, 8, 11, 7, 6, 9, 13, 10, 12, 15, 18, 21,
+  14, 17, 12, 9, 11, 16, 19, 22, 18, 15, 13, 17, 20, 24, 26, 23,
+];
+
+/** `YYYY-MM-DD` (로컬 기준 — 미리보기용) */
+function isoDay(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** 차트 아래 날짜 라벨 `11.22` */
+function shortDay(value) {
+  const raw = String(value || '');
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
+  return m ? `${m[2]}.${m[3]}` : raw.slice(-5).replace('-', '.');
+}
+
+/** 미리보기용 접속자 통계 — 오늘까지 14·30일 (실제 값이 아닙니다). */
+function previewVisitStats(days) {
+  const count = days === 30 ? 30 : 14;
+  const today = new Date();
+  const daily = [];
+  let total = 0;
+  for (let i = count - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const visitors = VISIT_PREVIEW_BASE[(count - 1 - i) % VISIT_PREVIEW_BASE.length];
+    total += visitors;
+    daily.push({ date: isoDay(d), visitors, views: visitors * 2 + 4 });
+  }
+  const todayRow = daily[daily.length - 1] || { visitors: 0, views: 0 };
+  return {
+    app_id: 'reelpin',
+    today_visitors: todayRow.visitors,
+    today_views: todayRow.views,
+    total_visitors: total,
+    total_views: total * 2 + count * 4,
+    days: count,
+    daily,
+    preview: true,
+  };
+}
+
 /** 미리보기용 모의 데이터 — 실제 회원·핀이 아닙니다. */
 const PREVIEW_DATA = {
   overview: {
@@ -85,6 +135,8 @@ const PREVIEW_DATA = {
       { name: '술집', count: 18 },
     ],
   },
+  // v2.41 — 📊 접속자 통계 미리보기 (실제 값이 아닙니다)
+  visits: previewVisitStats(14),
   members: [
     { userId: 'u-1', email: 'andy.leesh33@gmail.com', nickname: '이상훈', provider: 'google', createdAt: '2026-11-14T10:12:00+09:00', lastSignInAt: '2026-11-17T06:40:00+09:00', pinCount: 42, plan: 'pro' },
     { userId: 'u-2', email: 'hyeyeon.kim@gmail.com', nickname: '희연', provider: 'google', createdAt: '2026-11-15T21:04:00+09:00', lastSignInAt: '2026-11-16T22:18:00+09:00', pinCount: 17, plan: 'free' },
@@ -251,6 +303,53 @@ function StatCard({ label, value, sub, accent }) {
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={[styles.statValue, accent ? { color: accent } : null]}>{value}</Text>
       {sub ? <Text style={styles.statSub}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * v2.41 — 📊 일별 접속자 추이 막대 그래프.
+ *   외부 차트 라이브러리 없이 View 높이로만 그립니다(웹·앱 같은 코드).
+ *   막대 = 그날의 순 방문자(visitors) 수. 값은 막대 위에, 날짜는 아래에 조금씩만 씁니다.
+ */
+function VisitChart({ daily, days }) {
+  const list = Array.isArray(daily) ? daily : [];
+  if (list.length === 0) return null;
+  const max = Math.max(1, ...list.map((d) => Number(d.visitors) || 0));
+  const labelEvery = days > 20 ? 5 : days > 10 ? 3 : 1;
+  return (
+    <View style={styles.chartBox} testID="visit-chart">
+      <View style={styles.chartRow}>
+        {list.map((d, i) => {
+          const value = Number(d.visitors) || 0;
+          const height = Math.round((value / max) * 84);
+          const showLabel = i === list.length - 1 || i % labelEvery === 0;
+          return (
+            <View
+              key={String(d.date || i)}
+              style={styles.chartCol}
+              accessibilityLabel={`${shortDay(d.date)} 접속자 ${value}명·조회 ${Number(d.views) || 0}회`}
+            >
+              <Text style={styles.chartValue} numberOfLines={1}>
+                {value > 0 ? value : ''}
+              </Text>
+              <View style={styles.chartTrack}>
+                <View
+                  style={[
+                    styles.chartBar,
+                    { height: Math.max(value > 0 ? 3 : 1, height) },
+                    value === 0 && styles.chartBarZero,
+                  ]}
+                />
+              </View>
+              <Text style={styles.chartDay} numberOfLines={1}>
+                {showLabel ? shortDay(d.date) : ''}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+      <Text style={styles.chartHint}>막대 = 그날 접속한 사람 수(순 방문자) · 한국 시간 기준</Text>
     </View>
   );
 }
@@ -1007,6 +1106,10 @@ export default function AdminScreen({ preview = false }) {
   const toastTimer = useRef(null);
 
   const [overview, setOverview] = useState(preview ? PREVIEW_DATA.overview : null);
+  // v2.41 — 📊 접속자 통계 (오늘/전체 접속자 · 14·30일 추이)
+  const [visits, setVisits] = useState(preview ? PREVIEW_DATA.visits : null);
+  const [visitDays, setVisitDays] = useState(14);
+  const [visitError, setVisitError] = useState('');
   const [members, setMembers] = useState(preview ? PREVIEW_DATA.members : []);
   const [pins, setPins] = useState(preview ? PREVIEW_DATA.pins : []);
   const [memberQuery, setMemberQuery] = useState('');
@@ -1100,6 +1203,10 @@ export default function AdminScreen({ preview = false }) {
           setBanners(PREVIEW_DATA.banners);
           setCurated(PREVIEW_DATA.curated);
         }
+        if (which === 'dashboard') {
+          const dv = o.days !== undefined ? o.days : visitDays;
+          setVisits(previewVisitStats(dv));
+        }
         return;
       }
       const token = await currentToken();
@@ -1110,10 +1217,22 @@ export default function AdminScreen({ preview = false }) {
       setLoading(true);
       try {
         if (which === 'dashboard') {
-          const res = await callAdmin({ view: 'overview', token });
+          const dv = o.days !== undefined ? o.days : visitDays;
+          // 접속자 통계는 대시보드를 막지 않습니다 — 실패해도 나머지 요약은 그대로 보입니다.
+          const [res, visitRes] = await Promise.all([
+            callAdmin({ view: 'overview', token }),
+            callAdmin({ view: 'visits', query: { days: dv }, token }),
+          ]);
           if (!res.ok) throw res;
           setSchemaMissing('');
           setOverview(res.data || null);
+          if (visitRes.ok) {
+            setVisits(visitRes.data || null);
+            setVisitError('');
+          } else {
+            setVisits(null);
+            setVisitError(visitRes.message || '접속자 통계를 불러오지 못했어요.');
+          }
         } else if (which === 'members') {
           const res = await callAdmin({ view: 'members', query: { q: memberQuery }, token });
           if (!res.ok) throw res;
@@ -1169,7 +1288,7 @@ export default function AdminScreen({ preview = false }) {
         setLoading(false);
       }
     },
-    [preview, currentToken, memberQuery, pinQuery, pinCategory, feedbackKind, feedbackStatus, showToast]
+    [preview, currentToken, memberQuery, pinQuery, pinCategory, feedbackKind, feedbackStatus, visitDays, showToast]
   );
 
   useEffect(() => {
@@ -1638,6 +1757,50 @@ export default function AdminScreen({ preview = false }) {
             sub="한국 시간 기준"
             accent={colors.visitDark}
           />
+        </View>
+
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>접속자</Text>
+          <View style={styles.rangeRow}>
+            {VISIT_DAY_OPTIONS.map((d) => (
+              <Pressable
+                key={d}
+                onPress={() => {
+                  if (d === visitDays) return;
+                  setVisitDays(d);
+                  loadTab('dashboard', { days: d });
+                }}
+                style={[styles.rangeChip, visitDays === d && styles.rangeChipOn]}
+                accessibilityRole="button"
+                accessibilityLabel={`최근 ${d}일 추이`}
+                accessibilityState={{ selected: visitDays === d }}
+              >
+                <Text style={[styles.rangeChipText, visitDays === d && styles.rangeChipTextOn]}>{d}일</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <View style={styles.statGrid}>
+          <StatCard
+            label="오늘 접속자"
+            value={visits && visits.today_visitors != null ? visits.today_visitors : '—'}
+            sub="한국 시간 기준 · 순 방문자"
+            accent={colors.brandDark}
+          />
+          <StatCard
+            label="전체 접속자"
+            value={visits && visits.total_visitors != null ? visits.total_visitors : '—'}
+            sub="누적 순 방문자"
+            accent={colors.visitDark}
+          />
+        </View>
+        {visitError ? <Text style={styles.visitError}>{visitError}</Text> : null}
+        <View style={[styles.card, styles.chartCard]}>
+          {visits && Array.isArray(visits.daily) && visits.daily.length ? (
+            <VisitChart daily={visits.daily} days={visitDays} />
+          ) : (
+            <Text style={styles.emptyText}>{loading ? '불러오는 중…' : '접속자 추이가 아직 없어요.'}</Text>
+          )}
         </View>
 
         <View style={styles.sectionHead}>
@@ -2430,6 +2593,31 @@ const styles = StyleSheet.create({
 
   card: { backgroundColor: colors.white, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
   rowLast: { borderBottomWidth: 0 },
+
+  // v2.41 — 📊 접속자 통계 (14·30일 선택 · 막대 그래프)
+  rangeRow: { flexDirection: 'row', gap: 6 },
+  rangeChip: {
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.white,
+  },
+  rangeChipOn: { backgroundColor: colors.brand, borderColor: colors.brand },
+  rangeChipText: { fontSize: 11, fontWeight: '700', color: colors.textMuted },
+  rangeChipTextOn: { color: colors.white },
+  visitError: { fontSize: 11, color: '#B42318', marginTop: 8 },
+  chartCard: { marginTop: 10 },
+  chartBox: { paddingHorizontal: 10, paddingTop: 12, paddingBottom: 10 },
+  chartRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 2 },
+  chartCol: { flexGrow: 1, flexBasis: 0, minWidth: 6, alignItems: 'center' },
+  chartValue: { fontSize: 8, lineHeight: 10, height: 10, color: colors.textMuted, fontWeight: '700' },
+  chartTrack: { height: 84, width: '100%', justifyContent: 'flex-end', alignItems: 'center' },
+  chartBar: { width: '70%', maxWidth: 22, minWidth: 3, borderRadius: 4, backgroundColor: colors.brand },
+  chartBarZero: { backgroundColor: colors.line },
+  chartDay: { fontSize: 8, lineHeight: 12, height: 12, color: colors.textMuted, marginTop: 4 },
+  chartHint: { fontSize: 10, color: colors.textMuted, marginTop: 8 },
 
   rankRow: {
     flexDirection: 'row',
