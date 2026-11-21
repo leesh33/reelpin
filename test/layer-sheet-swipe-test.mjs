@@ -1,18 +1,20 @@
 /**
- * test/layer-sheet-swipe-test.mjs — v2.36.0
+ * test/layer-sheet-swipe-test.mjs — v2.36.0 · v2.36.1
  * ─────────────────────────────────────────────────────────────
  * 레이어 팝업(**목록 보기 · 알림 모음 · 내 정보**)을 **헤더 아래로 쓸어내려 닫기**
  *
  * 상훈 님 요청 (2026-11-21)
  *   "목록 보기 알림 내 정보는 레이어팝업 형태로 띄우는 거니까
  *    헤더를 아래로 스와이프 했을 때 아래로 접히는 걸로 하자"
+ *   "레이어 팝업 상단에도 핸들바(그립 막대)를 넣어 달라" (v2.36.1)
  *
  *   ① 판정 규칙 — 헤더 6px / 본문 12px · 세로 우선 · 본문은 스크롤 맨 위에서만
  *   ② 닫힘 판정·애니메이션은 장소 상세 시트와 같은 규칙(96px · 빠른 플릭 · 높이 40%)
  *   ③ 공통 훅 배선 — translateY · 스프링 복귀 · 접힘 애니메이션 뒤 onClose
  *   ④ LayerSheet 헤더·본문 제스처 + 웹 touch-action · ✕·바깥 탭은 그대로
  *   ⑤ 세 팝업이 모두 LayerSheet + 본문 스크롤 보고(useSheetBodyScroll)
- *   ⑥ 버전 2.36.0 일관성
+ *   ⑥ 상단 그립 막대 — 장소 상세 시트와 같은 모양 · 헤더 판 안에서 같이 끌린다
+ *   ⑦ 버전 2.36.1 일관성
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -114,13 +116,61 @@ check(
 );
 
 // ═════════════════════════════════════════════════════════════
-// 6. 버전 2.36.0 일관성
+// 6. 상단 그립 막대 (v2.36.1) — 장소 상세 시트와 같은 모양
+// ═════════════════════════════════════════════════════════════
+const detailSheet = read('src/components/PinDetailSheet.js');
+
+/** StyleSheet.create 안의 `name: { ... },` 블록을 그대로 떼어 옵니다 */
+const styleBlock = (src, name) => {
+  const start = src.indexOf('\n  ' + name + ': {');
+  if (start < 0) return '';
+  const end = src.indexOf('\n  },', start);
+  return src.slice(start, end < 0 ? src.length : end);
+};
+/** 주석 줄을 빼고 `키: 값` 만 "키:값|키:값" 으로 정리 — 두 파일의 스타일 값을 그대로 비교합니다 */
+const stylePairs = (block) =>
+  block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('//') && line.indexOf(':') > 0)
+    .map((line) => line.replace(/,$/, '').replace(/\s+/g, ' '))
+    .filter((line) => line !== 'handle: {')
+    .join(' | ');
+const layerHandle = styleBlock(layer, 'handle');
+const detailHandle = styleBlock(detailSheet, 'handle');
+const layerHead = styleBlock(layer, 'sheetHead');
+const layerHeadRow = styleBlock(layer, 'headRow');
+
+check('막대: 레이어 팝업에도 handle 스타일이 있다', layerHandle.length > 0);
+check('[핵심] 막대: 상세 시트와 같은 값 — 42×4 · 둥글기 2 · 반투명 흰색 · 아래 여백 12',
+  /width:\s*42/.test(layerHandle) && /height:\s*4\b/.test(layerHandle) && /borderRadius:\s*2\b/.test(layerHandle) &&
+    /rgba\(255,255,255,0\.45\)/.test(layerHandle) && /marginBottom:\s*12/.test(layerHandle),
+  layerHandle.replace(/\s+/g, ' '));
+check('막대: 색·여백이 상세 시트 handle 과 완전히 같다(두 시트가 같은 손맛으로 보임)',
+  stylePairs(layerHandle) === stylePairs(detailHandle), stylePairs(layerHandle) + '  vs  ' + stylePairs(detailHandle));
+check('막대: 가운데 정렬(alignSelf center)', /alignSelf:\s*'center'/.test(layerHandle));
+check('[핵심] 막대: 헤더 줄(아이콘·제목·✕) **바로 위**에 그려진다',
+  layer.indexOf('<View style={styles.handle}') > 0 &&
+    layer.indexOf('<View style={styles.handle}') < layer.indexOf('<View style={styles.headRow}>'));
+check('막대: 검사·딥링크용 testID(<testID>-handle)가 있다', layer.indexOf("testID={testID + '-handle'}") > 0);
+check('[핵심] 막대: 헤더 판(headerPanHandlers) 안이라 막대를 잡고 끌어도 그대로 닫힌다',
+  layer.indexOf('style={styles.handle}') > layer.indexOf('{...dismiss.headerPanHandlers}') &&
+    layer.indexOf('style={styles.handle}') < layer.indexOf('{...dismiss.bodyPanHandlers}'));
+check('막대: 웹 touch-action none · cursor grab 이 막대까지 덮는다(sheetHead 에 있음)',
+  /touchAction:\s*'none'/.test(layerHead) && /cursor:\s*'grab'/.test(layerHead));
+check('헤더 줄: 아이콘·제목·✕ 는 예전 그대로 한 줄(flexDirection row · gap 9)',
+  /flexDirection:\s*'row'/.test(layerHeadRow) && /gap:\s*9\b/.test(layerHeadRow));
+check('헤더 판: 다크 차콜 배경이 막대까지 이어진다', /backgroundColor:\s*colors\.charcoal/.test(layerHead));
+check('헤더 판: 막대가 들어간 만큼 위 여백을 줄여 헤더가 툭 튀지 않는다(paddingTop 8)', /paddingTop:\s*8\b/.test(layerHead));
+
+// ═════════════════════════════════════════════════════════════
+// 7. 버전 2.36.1 일관성
 // ═════════════════════════════════════════════════════════════
 const pkg = JSON.parse(read('package.json'));
 const expo = JSON.parse(read('app.json')).expo;
 const feedback = read('src/services/feedback.js');
-check('버전: package.json · app.json = 2.36.0', pkg.version === '2.36.0' && expo.version === '2.36.0', pkg.version + '/' + expo.version);
-check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.36.0', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.36.0'") > 0 && profileScreen.indexOf("APP_INFO_VERSION = '릴스핀 v2.36.0'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.36.0'") > 0);
+check('버전: package.json · app.json = 2.36.1', pkg.version === '2.36.1' && expo.version === '2.36.1', pkg.version + '/' + expo.version);
+check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.36.1', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.36.1'") > 0 && profileScreen.indexOf("APP_INFO_VERSION = '릴스핀 v2.36.1'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.36.1'") > 0);
 
 if (fails) {
   console.log('\nLAYER_SHEET_SWIPE_TEST_FAILED (' + fails + ')');

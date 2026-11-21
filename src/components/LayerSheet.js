@@ -29,6 +29,13 @@
  *     접혀 닫힙니다. 본문도 **스크롤 맨 위**에서 당기면 같은 방식으로 닫힙니다.
  *     판정 규칙·손맛은 장소 상세 시트와 같은 `utils/sheetDismiss.js` · `useSheetSwipeDismiss.js`.
  *     ✕ 버튼 탭·본문 스크롤·탭은 예전 그대로입니다.
+ *
+ * v2.36.1 — 상훈 님 요청: "레이어 팝업 상단에도 핸들바(그립 막대)를 넣어 달라"
+ *   → 헤더 줄(아이콘 + 제목 + ✕) **바로 위**에 장소 상세 시트(`PinDetailSheet`)와 같은 그립 막대를
+ *     넣었습니다 — 42×4 · 둥글기 2 · 반투명 흰색(`rgba(255,255,255,0.45)`) · 아래 여백 12.
+ *     막대는 헤더와 **같은 다크 차콜 판** 안에 있어서, 막대를 잡고 아래로 끌어도 그대로 닫힙니다
+ *     (`headerPanHandlers` 가 막대까지 덮습니다). 쓰는 화면(목록 보기·알림 모음·내 정보 등)은
+ *     아무것도 바꾸지 않아도 됩니다.
  */
 import React from 'react';
 import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -97,39 +104,43 @@ export default function LayerSheet({
           accessibilityHint="아래로 쓸어내리면 닫혀요"
           {...dismiss.headerPanHandlers}
         >
-          {typeof onBack === 'function' ? (
-            <Pressable
-              style={styles.backBtn}
-              onPress={onBack}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel={backLabel}
-              testID={backTestID || testID + '-back'}
-            >
-              <Ionicons name="chevron-back" size={20} color={colors.white} />
-            </Pressable>
-          ) : (
-            <View style={styles.headIcon}>
-              <Ionicons name={icon} size={iconSize} color={colors.white} />
+          {/* v2.36.1 — 쓸어내려 닫히는 시트임을 보여 주는 그립 막대 (장소 상세 시트와 같은 모양) */}
+          <View style={styles.handle} testID={testID + '-handle'} />
+          <View style={styles.headRow}>
+            {typeof onBack === 'function' ? (
+              <Pressable
+                style={styles.backBtn}
+                onPress={onBack}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={backLabel}
+                testID={backTestID || testID + '-back'}
+              >
+                <Ionicons name="chevron-back" size={20} color={colors.white} />
+              </Pressable>
+            ) : (
+              <View style={styles.headIcon}>
+                <Ionicons name={icon} size={iconSize} color={colors.white} />
+              </View>
+            )}
+
+            <View style={styles.headText}>
+              <Text style={styles.title} numberOfLines={1} testID={titleTestID || undefined}>
+                {title}
+              </Text>
             </View>
-          )}
 
-          <View style={styles.headText}>
-            <Text style={styles.title} numberOfLines={1} testID={titleTestID || undefined}>
-              {title}
-            </Text>
+            <Pressable
+              style={styles.closeBtn}
+              onPress={onClose}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={closeLabel}
+              testID={closeTestID || testID + '-close'}
+            >
+              <Ionicons name="close" size={18} color={colors.white} />
+            </Pressable>
           </View>
-
-          <Pressable
-            style={styles.closeBtn}
-            onPress={onClose}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={closeLabel}
-            testID={closeTestID || testID + '-close'}
-          >
-            <Ionicons name="close" size={18} color={colors.white} />
-          </Pressable>
         </View>
 
         <SheetBodyScrollScope reportScrollY={dismiss.reportBodyScroll}>
@@ -162,15 +173,28 @@ const styles = StyleSheet.create({
     ...sheetShadow,
   },
   sheetHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
     backgroundColor: colors.charcoal,
     paddingHorizontal: 16,
-    paddingTop: 14,
+    // v2.36.1 — 막대(10) + 막대 아래 여백(12) 만큼 위를 줄여 헤더 전체 높이는 예전과 비슷하게
+    paddingTop: 8,
     paddingBottom: 13,
     // v2.36.0 — 헤더를 잡고 아래로 끌 때 브라우저 스크롤·줌이 먼저 가로채지 않게 (웹 아이폰 사파리)
     ...(Platform.OS === 'web' ? { cursor: 'grab', touchAction: 'none' } : null),
+  },
+  // v2.36.1 — 그립 막대: 장소 상세 시트(PinDetailSheet)의 handle 과 같은 값
+  //           (42×4 · 둥글기 2 · 반투명 흰색 · 아래 여백 12) — 두 시트가 같은 손맛으로 보입니다.
+  handle: {
+    alignSelf: 'center',
+    width: 42,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.45)',
+    marginBottom: 12,
+  },
+  headRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
   },
   headIcon: {
     width: 28,
