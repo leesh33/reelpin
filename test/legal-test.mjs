@@ -118,9 +118,22 @@ check('약관: 면책', has(terms, '면책') && has(terms, '틀릴 수 있습니
 check('약관: 개인정보처리방침 연결', has(terms, 'href="/privacy"'));
 check('약관: 문의처 절', has(terms, '문의처'));
 
-// ── 6) 앱 안 링크 — ☰ 내 정보 발끝 · 로그인 카드 ────────────────────────
-check('앱: ☰ 시트가 legal 유틸에서 링크를 가져온다', has(menu, "from '../utils/legal'") && has(menu, 'LEGAL_LINKS.map'));
-check('앱: ☰ 시트 링크 이름·testID', has(menu, "testID={'menu-legal-' + item.key}") && has(menu, 'openLegalPage(item.path)'));
+// ── 6) 앱 안 링크 — ☰ 내 정보 메뉴 행 · 로그인 카드 ────────────────────
+//   v2.39.0 — ☰ 시트 발끝의 두 글자 링크·버전 푸터를 없애고, `내 정보` 설정 목록의
+//   별도 메뉴 행으로 옮겼습니다(상훈 님 요청 · IMG_9293).
+check('앱: 내 정보 메뉴가 legal 유틸에서 링크를 가져온다', has(profile, "from '../utils/legal'") && has(profile, 'LEGAL_LINKS.map'));
+check(
+  '앱: 내 정보 메뉴 행 이름·testID·열기',
+  has(profile, "testID={'profile-row-' + item.key}") &&
+    has(profile, 'openLegalPage(item.path)') &&
+    has(profile, 'title={item.label}'),
+  ''
+);
+check(
+  '앱: ☰ 시트 하단 고정 푸터가 없다(버전·법적 고지 줄)',
+  !has(menu, 'footer={') && !has(menu, 'menu-version') && !has(menu, 'menu-legal') && !has(menu, 'footerBox'),
+  ''
+);
 check('앱: 로그인 카드에 동의 안내 + 두 링크', has(profile, 'login-legal-consent') && has(profile, 'login-legal-terms') && has(profile, 'login-legal-privacy'));
 check('앱: 로그인 카드도 같은 유틸을 쓴다', has(profile, "from '../utils/legal'") && has(profile, 'openLegalPage(LEGAL_LINKS[1].path)'));
 

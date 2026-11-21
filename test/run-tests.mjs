@@ -296,6 +296,17 @@ if (!only || only === 'color') {
   });
 }
 
+if (!only || only === 'menu') {
+  // v2.39.0 — ☰ 내 정보 설정 메뉴 순서 · 하단 고정 푸터 제거 · 개인정보처리방침/이용약관 행(클릭 배선)
+  failed += await runSuite({
+    name: '내 정보 메뉴 순서·푸터 제거 테스트',
+    entry: 'menu-order-test.jsx',
+    out: 'menu-order-test.cjs',
+    format: 'cjs',
+    alias: { 'react-native': 'react-native-web', ...STUBS },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

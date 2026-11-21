@@ -18,10 +18,11 @@ import { Linking, Platform } from 'react-native';
 /** 배포 도메인 — 정적 페이지의 기준 주소 */
 export const LEGAL_BASE_URL = 'https://reelpin.vercel.app';
 
-/** 링크 순서·이름·경로 (화면과 검사가 함께 씁니다) */
+/** 링크 순서·이름·경로 (화면과 검사가 함께 씁니다)
+ *  v2.39.0 — ☰ 내 정보 메뉴에 별도 행으로 서면서 한 줄 설명(`desc`)도 함께 씁니다. */
 export const LEGAL_LINKS = [
-  { key: 'privacy', label: '개인정보처리방침', path: '/privacy' },
-  { key: 'terms', label: '이용약관', path: '/terms' },
+  { key: 'privacy', label: '개인정보처리방침', path: '/privacy', desc: '수집 항목 · 이용 목적 · 보관과 파기' },
+  { key: 'terms', label: '이용약관', path: '/terms', desc: '서비스 이용 조건과 책임 범위' },
 ];
 
 /** `/privacy` 같은 경로를 실제 배포 주소로 */

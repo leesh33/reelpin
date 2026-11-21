@@ -169,8 +169,8 @@ check('헤더 판: 막대가 들어간 만큼 위 여백을 줄여 헤더가 툭
 const pkg = JSON.parse(read('package.json'));
 const expo = JSON.parse(read('app.json')).expo;
 const feedback = read('src/services/feedback.js');
-check('버전: package.json · app.json = 2.37.0', pkg.version === '2.38.0' && expo.version === '2.38.0', pkg.version + '/' + expo.version);
-check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.37.0', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.38.0'") > 0 && profileScreen.indexOf("APP_INFO_VERSION = '릴스핀 v2.38.0'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.38.0'") > 0);
+check('버전: package.json · app.json = 2.37.0', pkg.version === '2.39.0' && expo.version === '2.39.0', pkg.version + '/' + expo.version);
+check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.37.0', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.39.0'") > 0 && profileScreen.indexOf("APP_INFO_VERSION = '릴스핀 v2.39.0'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.39.0'") > 0);
 
 if (fails) {
   console.log('\nLAYER_SHEET_SWIPE_TEST_FAILED (' + fails + ')');

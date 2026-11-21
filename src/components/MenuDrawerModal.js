@@ -15,36 +15,36 @@
  *   · 본문  : ProfileScreen(panel)
  *             ① 통합 계정·클라우드 동기화 카드
  *             ② 저장한 장소(저장 요약) & 내 지도 공유하기
- *             ③ 설정 4행(`분류 관리` · `지오펜스 알림 반경` · `알림 설정` · `앱 정보`)
- *   · 발끝  : 릴스핀 v2.19.1
+ *             ③ 설정 목록 — 분류 관리 · 지오펜스 알림 반경 · 알림 설정 · 제안 · 버그 제보
+ *                · 개인정보처리방침 · 이용약관 · 앱 정보 · (관리자면) 어드민
+ *   · 발끝  : 없음 (v2.39.0 — 상훈 님 요청: 하단 고정 `버전 · 개인정보처리방침 · 이용약관` 푸터 제거.
+ *             법적 고지는 메뉴 행으로, 버전은 `앱 정보` 행에서 보입니다)
  *
  * 서브 페이지는 **시트 안에서** 열리고 `‹ 뒤로` 로 원래 목록으로 돌아옵니다.
  */
 import React, { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import ProfileScreen, {
-  APP_INFO_VERSION,
   AlertsSetting,
   AppInfoCard,
   CategoryManager,
   RadiusSetting,
   SUB_PAGES,
 } from '../screens/ProfileScreen';
-import { colors } from '../theme';
 // v2.20.1 — 로그아웃 상태에 '이상훈 / @odol' 이 뜨지 않도록 이름은 계정에서만 가져옵니다
 import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.38.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.39.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
 
 // 2026-11-20 — 법적 고지(개인정보처리방침 · 이용약관)는 `src/utils/legal.js` 한 곳에서 옵니다.
-//   시트 발끝의 버전 줄 아래에 조용한 두 글자 링크만 둡니다.
+// v2.39.0 — 시트 발끝 푸터를 없애고, 두 문서는 `내 정보` 설정 목록의 별도 행에서 열립니다
+//   (그 행은 ProfileScreen 이 그립니다 — 로그인 카드와 같은 주소·같은 문구).
 export { LEGAL_BASE_URL, LEGAL_LINKS, legalPageUrl, openLegalPage } from '../utils/legal';
-import { LEGAL_LINKS, openLegalPage } from '../utils/legal';
 
 export default function MenuDrawerModal({
   visible,
@@ -224,31 +224,6 @@ export default function MenuDrawerModal({
       closeTestID="menu-drawer-close"
       backTestID="menu-sub-back"
       zIndex={45}
-      footer={
-        <View style={styles.footerBox}>
-          <Text style={styles.version} testID="menu-version">
-            {APP_VERSION_LABEL}
-            {APP_INFO_VERSION === APP_VERSION_LABEL ? '' : ' · ' + APP_INFO_VERSION}
-          </Text>
-          {/* 2026-11-20 — 개인정보처리방침 · 이용약관 (조용한 두 글자 링크) */}
-          <View style={styles.legalRow} testID="menu-legal">
-            {LEGAL_LINKS.map((item, index) => (
-              <React.Fragment key={item.key}>
-                {index > 0 ? <Text style={styles.legalDot}>·</Text> : null}
-                <Pressable
-                  onPress={() => openLegalPage(item.path)}
-                  hitSlop={8}
-                  accessibilityRole="link"
-                  accessibilityLabel={item.label + ' 열기'}
-                  testID={'menu-legal-' + item.key}
-                >
-                  <Text style={styles.legalLink}>{item.label}</Text>
-                </Pressable>
-              </React.Fragment>
-            ))}
-          </View>
-        </View>
-      }
     >
       {subPage ? (
         body
@@ -269,34 +244,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 28,
-  },
-  version: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.textMuted,
-    textAlign: 'center',
-    paddingVertical: 8,
-    backgroundColor: colors.card,
-  },
-  footerBox: {
-    backgroundColor: colors.card,
-    paddingBottom: 4,
-  },
-  legalRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 7,
-    paddingBottom: 8,
-  },
-  legalLink: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.textSub,
-    textDecorationLine: 'underline',
-  },
-  legalDot: {
-    fontSize: 10,
-    color: colors.textMuted,
   },
 });

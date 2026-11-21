@@ -143,8 +143,8 @@ const pkg = JSON.parse(read('package.json'));
 const expo = JSON.parse(read('app.json')).expo;
 const menuDrawer = read('src/components/MenuDrawerModal.js');
 const feedback = read('src/services/feedback.js');
-check('버전: package.json · app.json = 2.37.0', pkg.version === '2.38.0' && expo.version === '2.38.0', pkg.version + '/' + expo.version);
-check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.37.0', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.38.0'") > 0 && profile.indexOf("APP_INFO_VERSION = '릴스핀 v2.38.0'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.38.0'") > 0);
+check('버전: package.json · app.json = 2.37.0', pkg.version === '2.39.0' && expo.version === '2.39.0', pkg.version + '/' + expo.version);
+check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.37.0', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.39.0'") > 0 && profile.indexOf("APP_INFO_VERSION = '릴스핀 v2.39.0'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.39.0'") > 0);
 
 check('utils: 팔레트·색 표가 categories.js 한 곳에 있다(색 규칙 단일 출처)', palette.indexOf('CATEGORY_COLOR_PALETTE') > 0 && palette.indexOf('export function getCategoryColor') > 0);
 

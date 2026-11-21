@@ -555,7 +555,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.38.0';
+export const APP_INFO_VERSION = '릴스핀 v2.39.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -972,9 +972,11 @@ export default function ProfileScreen({
           <Ionicons name="copy-outline" size={17} color={colors.textMuted} />
         </Pressable>
 
-        {/* ── v2.19.1 설정 4행 — 각각 별도 서브 페이지로 들어갑니다 ──────
+        {/* ── 설정 목록 — 각각 별도 서브 페이지·페이지로 들어갑니다 ──────
             상훈 님 요청: "저장한 장소 · 내지도 공유하기는 분류 관리 상단으로
-                          이동 · 내정보 화면 안에 알림 설정 추가" */}
+                          이동 · 내정보 화면 안에 알림 설정 추가"
+            v2.39.0 — 상훈 님 요청(IMG_9293): 제보 다음에 `개인정보처리방침` · `이용약관`을
+            별도 행으로 두고, `앱 정보`는 그 아래로 내립니다. (시트 하단 고정 푸터는 없앴습니다) */}
         <View style={styles.card} testID="profile-settings-rows">
           <SettingsRow
             icon="pricetags-outline"
@@ -1000,17 +1002,8 @@ export default function ProfileScreen({
             testID="profile-row-alerts"
           />
           <View style={styles.rowDivider} />
-          <SettingsRow
-            icon="information-circle-outline"
-            title="앱 정보"
-            sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
-            onPress={() => openSub('about')}
-            testID="profile-row-about"
-          />
           {/* ── v2.23 💬 제안 · 버그 제보 ─────────────────────────────────
-              상훈 님 요청: "제안/버그 제보 게시판 있으면 좋겠다"
-              앱 정보 바로 아래(버전 근처)에 두어 설정 끝에서 자연스럽게 이어집니다. */}
-          <View style={styles.rowDivider} />
+              상훈 님 요청: "제안/버그 제보 게시판 있으면 좋겠다" */}
           <SettingsRow
             icon="chatbubble-ellipses-outline"
             title="제안 · 버그 제보"
@@ -1019,6 +1012,29 @@ export default function ProfileScreen({
               if (typeof onOpenFeedback === 'function') onOpenFeedback();
             }}
             testID="profile-row-feedback"
+          />
+          {/* ── v2.39.0 📄 개인정보처리방침 · 이용약관 — 제보 아래 별도 행 ──
+              상훈 님 요청(IMG_9293): 시트 발끝의 두 글자 링크 대신 메뉴 행으로.
+              주소·이름은 `src/utils/legal.js` 한 곳(로그인 카드와 같은 값)에서 옵니다. */}
+          {LEGAL_LINKS.map((item) => (
+            <React.Fragment key={item.key}>
+              <View style={styles.rowDivider} />
+              <SettingsRow
+                icon={item.key === 'privacy' ? 'document-text-outline' : 'reader-outline'}
+                title={item.label}
+                sub={item.desc}
+                onPress={() => openLegalPage(item.path)}
+                testID={'profile-row-' + item.key}
+              />
+            </React.Fragment>
+          ))}
+          <View style={styles.rowDivider} />
+          <SettingsRow
+            icon="information-circle-outline"
+            title="앱 정보"
+            sub={APP_INFO_VERSION + ' · ' + APP_INFO_BUNDLE}
+            onPress={() => openSub('about')}
+            testID="profile-row-about"
           />
           {/* v2.21 — 관리자 계정에만 보이는 어드민 진입점 (일반 사용자 화면에는 노출하지 않음) */}
           {isAdminAccount && typeof onGoAdmin === 'function' ? (
