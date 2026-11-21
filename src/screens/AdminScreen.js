@@ -323,7 +323,9 @@ function VisitChart({ daily, days }) {
         {list.map((d, i) => {
           const value = Number(d.visitors) || 0;
           const height = Math.round((value / max) * 84);
-          const showLabel = i === list.length - 1 || i % labelEvery === 0;
+          const lastIndex = list.length - 1;
+          // 마지막 라벨과 붙어 버리는 주기 라벨은 건너뜁니다(11.21 11.22 처럼 겹쳐 보이지 않게).
+          const showLabel = i === lastIndex || (i % labelEvery === 0 && i < lastIndex - 1);
           return (
             <View
               key={String(d.date || i)}
