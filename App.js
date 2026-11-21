@@ -38,12 +38,14 @@ import { notificationPermission, requestNotificationPermission } from './src/ser
 import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
   loadCategories,
+  loadCategoryColors,
   loadCollections,
   loadPins,
   loadPro,
   loadRadius,
   loadAlerts,
   saveCategories,
+  saveCategoryColors,
   saveCollections,
   savePins,
   savePro,
@@ -58,11 +60,17 @@ import {
   applyCategoryRename,
   mapLegacyCategory,
   mergeCategoryNames,
+  normalizeCategoryColors,
   normalizeCategoryName,
   normalizeCustomCategories,
   removeCategory,
+  removeCategoryColor,
   renameCategory,
+  renameCategoryColor,
   sameCategory,
+  setActiveCategoryColors,
+  setCategoryColor,
+  suggestCategoryColor,
 } from './src/utils/categories';
 import { clearShareFromLocation, readShareFromLocation, buildShareUrl, canNativeShare, nativeShare, shareMessage } from './src/utils/shareMap';
 import {
@@ -113,6 +121,14 @@ export default function App() {
   const [selectedPinId, setSelectedPinId] = useState(null);
   // v2.2 — 내가 만든 분류 (기본 3개는 여기 저장하지 않습니다) + 마지막 분류 변경(지도 필터 되돌림용)
   const [customCategories, setCustomCategories] = useState([]);
+  // v2.36.2 — 내가 고른 분류 색 {'아이랑': '#8B5CF6'} · 지도 핀·칩·배지가 함께 쓰는 표
+  const [categoryColors, setCategoryColors] = useState({});
+  const categoryColorsRef = useRef(null);
+  if (categoryColorsRef.current !== categoryColors) {
+    // 화면이 그려지기 **전에** 색 표를 반영 — 첫 프레임부터 내가 고른 색으로 보입니다.
+    categoryColorsRef.current = categoryColors;
+    setActiveCategoryColors(categoryColors);
+  }
   const [categoryChange, setCategoryChange] = useState(null);
   const categoryChangeId = useRef(0);
   const categories = useMemo(() => allCategories(customCategories), [customCategories]);
@@ -191,13 +207,14 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections, storedAlerts] = await Promise.all([
+      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections, storedAlerts, storedCategoryColors] = await Promise.all([
         loadPins(),
         loadRadius(),
         loadPro(),
         loadCategories(),
         loadCollections(),
         loadAlerts(),
+        loadCategoryColors(),
       ]);
       if (cancelled) return;
       // v1.0에서 저장된 핀에 없던 필드(placeUrl·providers)를 채워 넣습니다.
@@ -205,6 +222,7 @@ export default function App() {
       setRadius(storedRadius);
       setIsPro(storedPro);
       setCustomCategories(normalizeCustomCategories(storedCategories));
+      setCategoryColors(normalizeCategoryColors(storedCategoryColors));
       setCollections(normalizeCollections(storedCollections));
       setAlertsEnabled(storedAlerts === true);
       setNotifyPermission(notificationPermission());
@@ -236,6 +254,11 @@ export default function App() {
   useEffect(() => {
     if (ready) saveCategories(customCategories);
   }, [customCategories, ready]);
+
+  // v2.36.2 — 고른 분류 색도 기기에 저장합니다 (웹=localStorage · 앱=AsyncStorage 같은 코드)
+  useEffect(() => {
+    if (ready) saveCategoryColors(categoryColors);
+  }, [categoryColors, ready]);
 
   // v2.19 — 컬렉션을 기기에 저장하고, 핀이 지워지면 컬렉션에서도 그 id 를 정리합니다.
   useEffect(() => {
@@ -595,14 +618,17 @@ export default function App() {
 
 
   // ── v2.2 · 분류 만들기 · 이름 바꾸기 · 지우기 ────────────────
-  /** 새 분류 만들기 — 저장 화면·핀 상세·내 정보가 함께 씁니다. 실패하면 안내 문구를 돌려줍니다. */
+  /** 새 분류 만들기 — 저장 화면·핀 상세·내 정보가 함께 씁니다. 실패하면 안내 문구를 돌려줍니다.
+   *  v2.36.2 — 두 번째 인자로 **고른 색**을 받습니다. 없으면 예전 자동 배정색 그대로입니다. */
   const handleAddCategory = useCallback(
-    (raw) => {
+    (raw, color) => {
       const result = addCategory(customCategories, raw);
       if (!result.ok) return result;
       setCustomCategories(result.custom);
+      const picked = color || suggestCategoryColor(customCategories);
+      setCategoryColors((prev) => setCategoryColor(prev, result.name, picked));
       showToast('분류를 추가했어요 · ' + result.name, 'pro');
-      return result;
+      return { ...result, color: picked };
     },
     [customCategories, showToast]
   );
@@ -616,6 +642,8 @@ export default function App() {
       const result = renameCategory(customCategories, oldName, newName);
       if (!result.ok || !result.changed) return result;
       setCustomCategories(result.custom);
+      // v2.36.2 — 고른 색도 새 이름으로 따라갑니다
+      setCategoryColors((prev) => renameCategoryColor(prev, result.previous, result.name));
       const { pins: nextPins, changed } = applyCategoryRename(pinsRef.current, result.previous, result.name);
       if (changed.length) {
         pinsRef.current = nextPins;
@@ -647,6 +675,8 @@ export default function App() {
       const result = removeCategory(customCategories, name);
       if (!result.ok) return result;
       setCustomCategories(result.custom);
+      // v2.36.2 — 지운 분류의 색도 함께 지웁니다
+      setCategoryColors((prev) => removeCategoryColor(prev, result.name));
       const { pins: nextPins, changed, fallback } = applyCategoryRemoval(pinsRef.current, result.name);
       if (changed.length) {
         pinsRef.current = nextPins;

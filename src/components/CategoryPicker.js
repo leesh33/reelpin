@@ -2,12 +2,15 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
+import CategoryColorPicker from './CategoryColorPicker';
 import {
   CATEGORY_MAX_LENGTH,
   DEFAULT_CATEGORIES,
   allCategories,
   getCategoryColor,
+  normalizeHexColor,
   sameCategory,
+  suggestCategoryColor,
 } from '../utils/categories';
 
 /**
@@ -19,6 +22,11 @@ import {
  *     이 컴포넌트는 돌려받은 안내 문구를 칩 아래에 그대로 보여 줍니다
  *   · v2.4 — 칩마다 그 분류의 **고유 색 점**을 붙이고, 선택되면 **그 분류 색 배경 + 흰 글씨**
  *     (지도 핀·상단 필터 칩과 같은 색 — getCategoryColor 하나를 씁니다)
+ *
+ * v2.36.2 — 상훈 님 요청: "분류 추가할 때 색상도 지정하게"
+ *   → [+ 분류 추가] 를 열면 이름 입력 아래에 **색 팔레트 10색**(`CategoryColorPicker`)이 함께 나오고,
+ *     처음 열 때는 예전 자동 배정 색이 미리 골라져 있습니다. 고른 색은 `onAddCategory(이름, 색)` 로
+ *     그대로 넘겨, 저장·지도 칩·핀 마커·배지가 모두 같은 색을 씁니다.
  */
 export default function CategoryPicker({
   value,
@@ -31,12 +39,24 @@ export default function CategoryPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState('');
+  const [draftColor, setDraftColor] = useState('');
   const [error, setError] = useState('');
   const options = allCategories(categories);
+
+  /** v2.36.2 — 열 때마다 예전 자동 배정 색을 미리 골라 둡니다(그냥 추가해도 예전과 똑같음) */
+  const openAdd = () => {
+    if (open) {
+      close();
+      return;
+    }
+    setDraftColor(suggestCategoryColor(categories));
+    setOpen(true);
+  };
 
   const close = () => {
     setOpen(false);
     setDraft('');
+    setDraftColor('');
     setError('');
   };
 
@@ -45,7 +65,9 @@ export default function CategoryPicker({
       close();
       return;
     }
-    const result = onAddCategory(draft);
+    // 고른 색(없으면 자동 배정색)을 이름과 함께 넘깁니다
+    const picked = normalizeHexColor(draftColor) || suggestCategoryColor(categories);
+    const result = onAddCategory(draft, picked);
     if (!result || !result.ok) {
       setError((result && result.message) || '분류를 추가하지 못했어요');
       return;
@@ -97,7 +119,7 @@ export default function CategoryPicker({
 
         <Pressable
           style={[styles.addChip, open && styles.addChipOn]}
-          onPress={() => (open ? close() : setOpen(true))}
+          onPress={openAdd}
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
           accessibilityLabel="분류 추가"
@@ -108,33 +130,42 @@ export default function CategoryPicker({
       </View>
 
       {open && (
-        <View style={styles.addBox}>
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={(t) => {
-              setDraft(t);
-              setError('');
-            }}
-            placeholder="새 분류 이름 (예: 아이랑)"
-            placeholderTextColor={colors.textMuted}
-            maxLength={CATEGORY_MAX_LENGTH}
-            autoCorrect={false}
-            returnKeyType="done"
-            onSubmitEditing={submit}
-            accessibilityLabel="새 분류 이름"
+        <View style={styles.addWrap}>
+          <View style={styles.addBox}>
+            <TextInput
+              style={styles.input}
+              value={draft}
+              onChangeText={(t) => {
+                setDraft(t);
+                setError('');
+              }}
+              placeholder="새 분류 이름 (예: 아이랑)"
+              placeholderTextColor={colors.textMuted}
+              maxLength={CATEGORY_MAX_LENGTH}
+              autoCorrect={false}
+              returnKeyType="done"
+              onSubmitEditing={submit}
+              accessibilityLabel="새 분류 이름"
+            />
+            <Pressable
+              style={styles.addBtn}
+              onPress={submit}
+              accessibilityRole="button"
+              accessibilityLabel="새 분류 저장"
+            >
+              <Text style={styles.addBtnText}>추가</Text>
+            </Pressable>
+            <Pressable onPress={close} hitSlop={8} accessibilityLabel="분류 추가 취소">
+              <Ionicons name="close" size={16} color={colors.textMuted} />
+            </Pressable>
+          </View>
+          {/* v2.36.2 — 이름과 함께 고르는 분류 색 (10색 · 처음엔 자동 배정색이 골라져 있음) */}
+          <CategoryColorPicker
+            value={draftColor}
+            onChange={setDraftColor}
+            hint="지도 핀과 칩에 이 색이 쓰여요"
+            testIDPrefix="category-add-color"
           />
-          <Pressable
-            style={styles.addBtn}
-            onPress={submit}
-            accessibilityRole="button"
-            accessibilityLabel="새 분류 저장"
-          >
-            <Text style={styles.addBtnText}>추가</Text>
-          </Pressable>
-          <Pressable onPress={close} hitSlop={8} accessibilityLabel="분류 추가 취소">
-            <Ionicons name="close" size={16} color={colors.textMuted} />
-          </Pressable>
         </View>
       )}
 
@@ -223,11 +254,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: colors.brandDark,
   },
+  addWrap: {
+    marginTop: 9,
+  },
   addBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginTop: 9,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.brandSoft2,

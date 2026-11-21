@@ -285,6 +285,17 @@ if (!only || only === 'mapsearch') {
   });
 }
 
+if (!only || only === 'color') {
+  // v2.36.2 — 분류 추가할 때 색상 지정 (팔레트·색 표·자동 배정 유지·화면·저장 배선)
+  failed += await runSuite({
+    name: '분류 색 지정 테스트',
+    entry: 'category-color-test.mjs',
+    out: 'category-color-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
 if (!only || only === 'ssr') {
   failed += await runSuite({
     name: '화면 렌더 스모크 테스트',

@@ -1,12 +1,15 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SEED_PINS } from './data/seedPins';
 import { normalizeCollections } from './utils/collections';
+import { normalizeCategoryColors } from './utils/categories';
 
 const PINS_KEY = 'reelpin.pins.v1';
 const RADIUS_KEY = 'reelpin.radius.v1';
 const PRO_KEY = 'reelpin.pro.v1';
 // v2.2 — 사용자가 만든 커스텀 분류 이름 목록 (기본 3개는 여기에 저장하지 않습니다)
 const CATEGORIES_KEY = 'reelpin.categories.v1';
+// v2.36.2 — 커스텀 분류별로 사용자가 고른 색 {'아이랑': '#8B5CF6'}
+const CATEGORY_COLORS_KEY = 'reelpin.categoryColors.v1';
 // v2.19 — 테마·코스별 핀 묶음 '컬렉션' (웹은 localStorage, 앱은 AsyncStorage — 같은 코드)
 const COLLECTIONS_KEY = 'reelpin.collections.v1';
 
@@ -91,6 +94,28 @@ export async function saveCategories(categories) {
       (name) => typeof name === 'string' && name.trim()
     );
     await AsyncStorage.setItem(CATEGORIES_KEY, JSON.stringify(list));
+  } catch (e) {
+    // 저장 실패는 조용히 무시하고 화면 상태를 유지합니다.
+  }
+}
+
+/**
+ * v2.36.2 — 커스텀 분류 색 표. 웹은 localStorage, 앱은 AsyncStorage 에 같은 코드로 저장됩니다.
+ * 깨진 값·기본 3색·빈 이름은 normalizeCategoryColors 가 조용히 걸러 냅니다.
+ */
+export async function loadCategoryColors() {
+  try {
+    const raw = await AsyncStorage.getItem(CATEGORY_COLORS_KEY);
+    if (raw == null) return {};
+    return normalizeCategoryColors(JSON.parse(raw));
+  } catch (e) {
+    return {};
+  }
+}
+
+export async function saveCategoryColors(colorMap) {
+  try {
+    await AsyncStorage.setItem(CATEGORY_COLORS_KEY, JSON.stringify(normalizeCategoryColors(colorMap)));
   } catch (e) {
     // 저장 실패는 조용히 무시하고 화면 상태를 유지합니다.
   }

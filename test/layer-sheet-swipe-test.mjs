@@ -6,7 +6,7 @@
  * 상훈 님 요청 (2026-11-21)
  *   "목록 보기 알림 내 정보는 레이어팝업 형태로 띄우는 거니까
  *    헤더를 아래로 스와이프 했을 때 아래로 접히는 걸로 하자"
- *   "레이어 팝업 상단에도 핸들바(그립 막대)를 넣어 달라" (v2.36.1)
+ *   "레이어 팝업 상단에도 핸들바(그립 막대)를 넣어 달라" (v2.36.2)
  *
  *   ① 판정 규칙 — 헤더 6px / 본문 12px · 세로 우선 · 본문은 스크롤 맨 위에서만
  *   ② 닫힘 판정·애니메이션은 장소 상세 시트와 같은 규칙(96px · 빠른 플릭 · 높이 40%)
@@ -14,7 +14,7 @@
  *   ④ LayerSheet 헤더·본문 제스처 + 웹 touch-action · ✕·바깥 탭은 그대로
  *   ⑤ 세 팝업이 모두 LayerSheet + 본문 스크롤 보고(useSheetBodyScroll)
  *   ⑥ 상단 그립 막대 — 장소 상세 시트와 같은 모양 · 헤더 판 안에서 같이 끌린다
- *   ⑦ 버전 2.36.1 일관성
+ *   ⑦ 버전 2.36.2 일관성
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -116,7 +116,7 @@ check(
 );
 
 // ═════════════════════════════════════════════════════════════
-// 6. 상단 그립 막대 (v2.36.1) — 장소 상세 시트와 같은 모양
+// 6. 상단 그립 막대 (v2.36.2) — 장소 상세 시트와 같은 모양
 // ═════════════════════════════════════════════════════════════
 const detailSheet = read('src/components/PinDetailSheet.js');
 
@@ -164,13 +164,13 @@ check('헤더 판: 다크 차콜 배경이 막대까지 이어진다', /backgrou
 check('헤더 판: 막대가 들어간 만큼 위 여백을 줄여 헤더가 툭 튀지 않는다(paddingTop 8)', /paddingTop:\s*8\b/.test(layerHead));
 
 // ═════════════════════════════════════════════════════════════
-// 7. 버전 2.36.1 일관성
+// 7. 버전 2.36.2 일관성
 // ═════════════════════════════════════════════════════════════
 const pkg = JSON.parse(read('package.json'));
 const expo = JSON.parse(read('app.json')).expo;
 const feedback = read('src/services/feedback.js');
-check('버전: package.json · app.json = 2.36.1', pkg.version === '2.36.1' && expo.version === '2.36.1', pkg.version + '/' + expo.version);
-check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.36.1', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.36.1'") > 0 && profileScreen.indexOf("APP_INFO_VERSION = '릴스핀 v2.36.1'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.36.1'") > 0);
+check('버전: package.json · app.json = 2.36.2', pkg.version === '2.36.2' && expo.version === '2.36.2', pkg.version + '/' + expo.version);
+check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.36.2', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.36.2'") > 0 && profileScreen.indexOf("APP_INFO_VERSION = '릴스핀 v2.36.2'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.36.2'") > 0);
 
 if (fails) {
   console.log('\nLAYER_SHEET_SWIPE_TEST_FAILED (' + fails + ')');

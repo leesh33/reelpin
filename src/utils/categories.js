@@ -50,6 +50,117 @@ export const CUSTOM_CATEGORY_COLORS = ['#8B5CF6', '#F97316', '#EC4899', '#22C55E
 /** 예전 이름(호환) — 커스텀 분류 팔레트 */
 export const CUSTOM_PIN_COLORS = CUSTOM_CATEGORY_COLORS;
 
+/**
+ * v2.36.2 — 분류 추가할 때 고를 수 있는 **색 팔레트 10색** (상훈 님 요청:
+ *   "혹시 분류 추가할 때 색상도 지정하게 할 수 있을까?")
+ *
+ *   · 앞 6색은 예전 자동 배정 팔레트 그대로입니다 → 아무것도 고르지 않고 추가해도
+ *     예전과 **완전히 같은 색**이 배정됩니다(CUSTOM_CATEGORY_COLORS 순서 유지).
+ *   · 뒤 4색은 기본 3색(딥 틸·앰버·블루)과 겹치지 않으면서 서로도 잘 구분되는 색입니다.
+ *   · 흰 글씨가 올라가므로(선택된 칩) 너무 밝은 파스텔은 넣지 않았습니다.
+ */
+export const CATEGORY_COLOR_PALETTE = CUSTOM_CATEGORY_COLORS.concat(['#EF4444', '#0EA5E9', '#A16207', '#475569']);
+/** 팔레트 색의 읽어 주는 이름 (색만으로는 알 수 없어서) */
+export const CATEGORY_COLOR_NAMES = {
+  '#8B5CF6': '보라',
+  '#F97316': '주황',
+  '#EC4899': '핑크',
+  '#22C55E': '초록',
+  '#84CC16': '라임',
+  '#6366F1': '인디고',
+  '#EF4444': '빨강',
+  '#0EA5E9': '하늘',
+  '#A16207': '갈색',
+  '#475569': '슬레이트',
+};
+
+/** 색 이름 (읽어 주는 이름·안내용) — 팔레트에 없으면 '내 색' */
+export function categoryColorName(hex) {
+  const key = normalizeHexColor(hex);
+  return (key && CATEGORY_COLOR_NAMES[key]) || '내 색';
+}
+
+/** '#8b5cf6' / '8b5cf6' → '#8B5CF6', 색이 아니면 null */
+export function normalizeHexColor(value) {
+  const raw = String(value == null ? '' : value).replace('#', '').trim();
+  const full = raw.length === 3 ? raw.split('').map((c) => c + c).join('') : raw;
+  if (!/^[0-9a-fA-F]{6}$/.test(full)) return null;
+  return ('#' + full).toUpperCase();
+}
+
+/**
+ * 저장된 '분류 이름 → 색' 표를 안전하게 다듬습니다.
+ * (깨진 색·빈 이름·기본 3색은 버립니다 — 기본 분류 색은 언제나 고정입니다)
+ */
+export function normalizeCategoryColors(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  Object.keys(raw).forEach((key) => {
+    const name = normalizeCategoryName(key);
+    const hex = normalizeHexColor(raw[key]);
+    if (!name || !hex) return;
+    if (isDefaultCategory(name) || isLegacyCategory(name)) return;
+    out[name] = hex;
+  });
+  return out;
+}
+
+/** 이름의 색을 정합니다 (새 표를 돌려줍니다 — 원본을 바꾸지 않습니다) */
+export function setCategoryColor(colorMap, raw, hex) {
+  const map = normalizeCategoryColors(colorMap);
+  const name = normalizeCategoryName(raw);
+  const next = normalizeHexColor(hex);
+  if (!name || !next || isDefaultCategory(name)) return map;
+  map[name] = next;
+  return map;
+}
+
+/** 이름을 바꾸면 그 색도 새 이름으로 따라갑니다 */
+export function renameCategoryColor(colorMap, oldRaw, newRaw) {
+  const map = normalizeCategoryColors(colorMap);
+  const from = normalizeCategoryName(oldRaw);
+  const to = normalizeCategoryName(newRaw);
+  if (!from || !to) return map;
+  if (!Object.prototype.hasOwnProperty.call(map, from)) return map;
+  const hex = map[from];
+  delete map[from];
+  if (!isDefaultCategory(to)) map[to] = hex;
+  return map;
+}
+
+/** 분류를 지우면 그 색도 지웁니다 */
+export function removeCategoryColor(colorMap, raw) {
+  const map = normalizeCategoryColors(colorMap);
+  const name = normalizeCategoryName(raw);
+  if (name && Object.prototype.hasOwnProperty.call(map, name)) delete map[name];
+  return map;
+}
+
+/**
+ * 새 분류에 **미리 골라 둘 색** — 지금까지의 자동 배정 규칙 그대로입니다(목록 순서).
+ * 그래서 색을 고르지 않고 [추가]만 눌러도 예전과 같은 색이 됩니다.
+ */
+export function suggestCategoryColor(customCategories) {
+  const list = normalizeCustomCategories(customCategories);
+  return CUSTOM_CATEGORY_COLORS[list.length % CUSTOM_CATEGORY_COLORS.length];
+}
+
+/**
+ * 앱이 쓰는 '분류 이름 → 색' 표 (한 곳에서만 바꿉니다).
+ * 지도 핀·칩·배지가 모두 `getCategoryColor` 를 거치므로, 표 하나만 세팅하면
+ * 화면 여러 곳에 색을 따로 넘길 필요 없이 앱 전체가 같은 색을 씁니다.
+ */
+let activeCategoryColors = {};
+
+export function setActiveCategoryColors(colorMap) {
+  activeCategoryColors = normalizeCategoryColors(colorMap);
+  return activeCategoryColors;
+}
+
+export function getActiveCategoryColors() {
+  return activeCategoryColors;
+}
+
 /** 앞뒤 공백·연속 공백·맨 앞 '#' 을 정리합니다. ('  # 아이랑  데이트 ' → '아이랑 데이트') */
 export function normalizeCategoryName(value) {
   return String(value == null ? '' : value)
@@ -314,14 +425,19 @@ export function nextFilterAfterRemoval(filter, raw) {
  * @param {Array}  customCategories 내 커스텀 분류 목록 (기본 3개가 섞여 있어도 걸러 냅니다)
  * @returns {string} '#RRGGBB'
  *
- * 커스텀 분류는 **목록에서의 순서**로 색을 받습니다 → 서로 겹치지 않습니다.
+ * 커스텀 분류는 **사용자가 고른 색**(v2.36.2)이 있으면 그 색, 없으면 **목록에서의 순서**로
+ * 색을 받습니다 → 서로 겹치지 않습니다.
  * 목록에 없는 이름(공유 지도·다른 기기에서 온 핀)은 이름 해시로 고정 색을 받습니다.
+ *
+ * @param {Object} [colorMap] '분류 이름 → #RRGGBB' — 생략하면 앱이 세팅한 표(setActiveCategoryColors)
  */
-export function getCategoryColor(category, customCategories) {
+export function getCategoryColor(category, customCategories, colorMap) {
   const name = mapLegacyCategory(category) || CATEGORY_FALLBACK;
   if (Object.prototype.hasOwnProperty.call(DEFAULT_CATEGORY_COLORS, name)) {
     return DEFAULT_CATEGORY_COLORS[name];
   }
+  const map = colorMap === undefined ? activeCategoryColors : normalizeCategoryColors(colorMap);
+  if (map && Object.prototype.hasOwnProperty.call(map, name)) return map[name];
   const list = normalizeCustomCategories(customCategories);
   const index = list.findIndex((c) => sameCategory(c, name));
   if (index >= 0) return CUSTOM_CATEGORY_COLORS[index % CUSTOM_CATEGORY_COLORS.length];

@@ -14,11 +14,14 @@ import {
   allCategories,
   getCategoryColor,
   isDefaultCategory,
+  normalizeHexColor,
   pinsInCategory,
+  suggestCategoryColor,
 } from '../utils/categories';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
 // v2.36.0 — ☰ 내 정보 시트: 본문 스크롤이 맨 위일 때 헤더처럼 아래로 당겨 닫기
 import { useSheetBodyScroll } from '../components/useSheetSwipeDismiss';
+import CategoryColorPicker from '../components/CategoryColorPicker';
 
 const RADIUS_OPTIONS = [
   { value: 300, label: '300m', hint: '골목 단위' },
@@ -332,6 +335,8 @@ export function CategoryManager({
   hideTitle = false,
 }) {
   const [newName, setNewName] = useState('');
+  // v2.36.2 — 새 분류에 고른 색 (처음엔 예전 자동 배정색)
+  const [newColor, setNewColor] = useState('');
   const [addError, setAddError] = useState('');
   const [editing, setEditing] = useState(null);
   const [editValue, setEditValue] = useState('');
@@ -343,12 +348,14 @@ export function CategoryManager({
 
   const submitAdd = () => {
     if (typeof onAddCategory !== 'function') return;
-    const result = onAddCategory(newName);
+    const picked = normalizeHexColor(newColor) || suggestCategoryColor(list);
+    const result = onAddCategory(newName, picked);
     if (!result || !result.ok) {
       setAddError((result && result.message) || '분류를 추가하지 못했어요');
       return;
     }
     setNewName('');
+    setNewColor('');
     setAddError('');
   };
 
@@ -503,6 +510,8 @@ export function CategoryManager({
           onChangeText={(t) => {
             setNewName(t);
             setAddError('');
+            // v2.36.2 — 색을 아직 고르지 않았으면 이름을 적는 동안 자동 배정색을 보여 줍니다
+            setNewColor((prev) => normalizeHexColor(prev) || suggestCategoryColor(list));
           }}
           placeholder="새 분류 이름 (예: 아이랑)"
           placeholderTextColor={colors.textMuted}
@@ -522,6 +531,13 @@ export function CategoryManager({
           <Text style={styles.catAddText}>추가</Text>
         </Pressable>
       </View>
+      {/* v2.36.2 — 추가하기 전에 고르는 분류 색 (10색 · 처음엔 자동 배정색) */}
+      <CategoryColorPicker
+        value={normalizeHexColor(newColor) || suggestCategoryColor(list)}
+        onChange={setNewColor}
+        hint="지도 핀과 칩에 이 색이 쓰여요"
+        testIDPrefix="category-manager-color"
+      />
       {!!addError && <Text style={styles.catError}>{addError}</Text>}
     </View>
   );
@@ -539,7 +555,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.36.1';
+export const APP_INFO_VERSION = '릴스핀 v2.36.2';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
