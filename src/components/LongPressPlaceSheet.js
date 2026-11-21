@@ -24,6 +24,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LayerSheet from './LayerSheet';
+import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 import CategoryPicker from './CategoryPicker';
 import { colors, radius, typography } from '../theme';
 import { DEFAULT_CATEGORIES, getCategoryColor } from '../utils/categories';
@@ -58,6 +59,8 @@ export default function LongPressPlaceSheet({
   onSave,
   onRetry,
 }) {
+  // v2.36.0 — 본문 스크롤이 맨 위일 때도 헤더처럼 아래로 당겨 닫기
+  const sheetScroll = useSheetBodyScroll();
   const rows = useMemo(() => nearbyPlaceRows(result, NEARBY_PLACE_LIMIT), [result]);
   const address = result && result.address ? result.address : null;
   // 첫 렌더부터 제안 이름·분류로 채워 둡니다(결과가 이미 있으면 곧바로 보이고,
@@ -176,6 +179,7 @@ export default function LongPressPlaceSheet({
     >
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.bodyContent}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}

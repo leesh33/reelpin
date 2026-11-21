@@ -32,6 +32,8 @@ import {
 import { pinDistanceMeters } from '../utils/pins';
 import { listSortLabel, sortPinsForList, usableOrigin } from '../utils/searchPins';
 import { formatDistance } from '../services/location';
+// v2.36.0 — 목록 보기 레이어 팝업: 본문 스크롤이 맨 위일 때 헤더처럼 아래로 당겨 닫기
+import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 
 export default function PinListView({
   pins = [],
@@ -52,6 +54,8 @@ export default function PinListView({
   // v2.19.1 — 레이어 팝업(LayerSheet) 본문으로 들어갈 때 true (전체 화면 absoluteFill 아님)
   embedded = false,
 }) {
+  // v2.36.0 — 레이어 팝업 안이면 스크롤 위치를 시트에 알려 줍니다 (밖이면 빈 객체)
+  const sheetScroll = useSheetBodyScroll();
   const origin = usableOrigin(myCoords);
   const rows = useMemo(() => sortPinsForList(pins, myCoords), [pins, myCoords]);
   const sortLabel = listSortLabel(myCoords);
@@ -93,6 +97,7 @@ export default function PinListView({
       {rows.length > 0 ? (
         <ScrollView
           style={styles.scroll}
+          {...sheetScroll}
           contentContainerStyle={[styles.scrollBody, embedded && styles.scrollBodyEmbedded]}
           showsVerticalScrollIndicator={false}
         >

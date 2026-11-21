@@ -22,11 +22,19 @@
  *            → 화면에는 `‹` 만. 읽어 주는 이름은 `accessibilityLabel`(기본 `뒤로`)에 그대로 남습니다.
  *   · 본문 : `children` (스크롤은 부르는 쪽이 만듭니다)
  *   · 발끝 : `footer` (선택)
+ *
+ * v2.36.0 — 상훈 님 요청: "목록 보기 알림 내 정보는 레이어팝업 형태로 띄우는 거니까
+ *   헤더를 아래로 스와이프 했을 때 아래로 접히는 걸로 하자"
+ *   → 헤더(아이콘 + 제목 + ✕ 줄)를 아래로 끌면 손가락을 따라 내려오고, 충분히 내리면
+ *     접혀 닫힙니다. 본문도 **스크롤 맨 위**에서 당기면 같은 방식으로 닫힙니다.
+ *     판정 규칙·손맛은 장소 상세 시트와 같은 `utils/sheetDismiss.js` · `useSheetSwipeDismiss.js`.
+ *     ✕ 버튼 탭·본문 스크롤·탭은 예전 그대로입니다.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow } from '../theme';
+import { SheetBodyScrollScope, useSheetSwipeDismiss } from './useSheetSwipeDismiss';
 
 /** 시트 높이 — 내 정보 시트와 같은 값 (화면의 86%) */
 export const SHEET_HEIGHT = '86%';
@@ -58,7 +66,11 @@ export default function LayerSheet({
   closeTestID = '',
   backTestID = '',
   zIndex = 45,
+  // v2.36.0 — 헤더를 아래로 쓸어내려 닫기 (기본 켜짐 · 필요 없는 화면은 false)
+  swipeToClose = true,
 }) {
+  const dismiss = useSheetSwipeDismiss({ onClose, visible, enabled: swipeToClose });
+
   if (!visible) return null;
 
   return (
@@ -70,8 +82,21 @@ export default function LayerSheet({
         accessibilityLabel={closeLabel}
         testID={testID + '-backdrop'}
       />
-      <View style={[styles.sheet, height !== SHEET_HEIGHT ? { height } : null]} testID={testID}>
-        <View style={styles.sheetHead} testID={headerTestID || testID + '-header'}>
+      <Animated.View
+        style={[
+          styles.sheet,
+          height !== SHEET_HEIGHT ? { height } : null,
+          { transform: [{ translateY: dismiss.translateY }] },
+        ]}
+        testID={testID}
+        onLayout={dismiss.onSheetLayout}
+      >
+        <View
+          style={styles.sheetHead}
+          testID={headerTestID || testID + '-header'}
+          accessibilityHint="아래로 쓸어내리면 닫혀요"
+          {...dismiss.headerPanHandlers}
+        >
           {typeof onBack === 'function' ? (
             <Pressable
               style={styles.backBtn}
@@ -107,10 +132,14 @@ export default function LayerSheet({
           </Pressable>
         </View>
 
-        <View style={styles.body}>{children}</View>
+        <SheetBodyScrollScope reportScrollY={dismiss.reportBodyScroll}>
+          <View style={styles.body} {...dismiss.bodyPanHandlers}>
+            {children}
+          </View>
+        </SheetBodyScrollScope>
 
         {footer ? <View style={styles.footer}>{footer}</View> : null}
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -140,6 +169,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 13,
+    // v2.36.0 — 헤더를 잡고 아래로 끌 때 브라우저 스크롤·줌이 먼저 가로채지 않게 (웹 아이폰 사파리)
+    ...(Platform.OS === 'web' ? { cursor: 'grab', touchAction: 'none' } : null),
   },
   headIcon: {
     width: 28,

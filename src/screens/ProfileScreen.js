@@ -17,6 +17,8 @@ import {
   pinsInCategory,
 } from '../utils/categories';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
+// v2.36.0 — ☰ 내 정보 시트: 본문 스크롤이 맨 위일 때 헤더처럼 아래로 당겨 닫기
+import { useSheetBodyScroll } from '../components/useSheetSwipeDismiss';
 
 const RADIUS_OPTIONS = [
   { value: 300, label: '300m', hint: '골목 단위' },
@@ -537,7 +539,7 @@ export const SUB_PAGES = {
   about: { title: '앱 정보', icon: 'information-circle-outline' },
 };
 
-export const APP_INFO_VERSION = '릴스핀 v2.35.0';
+export const APP_INFO_VERSION = '릴스핀 v2.36.0';
 export const APP_INFO_BUNDLE = 'com.odol.reelpin';
 
 /** 설정 목록의 한 줄 — 아이콘 · 제목 · 설명 · `›` */
@@ -778,6 +780,8 @@ export default function ProfileScreen({
    * (상위 App 이 `accountFocus` 를 1씩 올려 요청합니다.)
    */
   const scrollRef = useRef(null);
+  // v2.36.0 — 레이어 팝업(☰ 내 정보) 안이면 스크롤 위치를 시트에 알려 줍니다 (밖이면 빈 객체)
+  const sheetScroll = useSheetBodyScroll();
   const accountYRef = useRef(0);
   const accountSeenRef = useRef(0);
   // v2.16 — ☰ 메뉴의 [분류 관리] 요청 → v2.18 부터는 분류 관리 **서브 페이지**를 엽니다.
@@ -845,6 +849,7 @@ export default function ProfileScreen({
     <View style={[styles.root, panel && styles.rootPanel]} testID={panel ? 'profile-panel' : 'profile-screen'}>
       <ScrollView
         ref={scrollRef}
+        {...sheetScroll}
         contentContainerStyle={[styles.content, panel && styles.contentPanel]}
         showsVerticalScrollIndicator={false}
         testID="profile-scroll"

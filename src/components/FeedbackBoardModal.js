@@ -28,6 +28,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius } from '../theme';
 import LayerSheet from './LayerSheet';
+import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 import {
   APP_VERSION_NAME,
   FEEDBACK_KINDS,
@@ -119,6 +120,8 @@ export default function FeedbackBoardModal({
   onToast = null,
   zIndex = 48,
 }) {
+  // v2.36.0 — 본문 스크롤이 맨 위일 때도 헤더처럼 아래로 당겨 닫기
+  const sheetScroll = useSheetBodyScroll();
   const [kind, setKind] = useState('idea');
   const [sort, setSort] = useState('latest');
   const [items, setItems] = useState([]);
@@ -275,6 +278,7 @@ export default function FeedbackBoardModal({
   const renderCompose = () => (
     <ScrollView
       style={styles.body}
+      {...sheetScroll}
       contentContainerStyle={styles.composeBody}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
@@ -442,6 +446,7 @@ export default function FeedbackBoardModal({
 
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.listBody}
         showsVerticalScrollIndicator={false}
         testID="feedback-list"

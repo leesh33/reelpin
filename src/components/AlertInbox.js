@@ -5,6 +5,7 @@ import { colors, radius, typography } from '../theme';
 import { formatDistance } from '../services/location';
 import { buildAlertFeed } from '../utils/alertFeed';
 import LayerSheet from './LayerSheet';
+import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 
 /**
  * 🔔 알림 모음 (v2.15 · v2.19.1 레이어 팝업 통일)
@@ -35,6 +36,8 @@ export default function AlertInbox({
   onGoMap,
   radiusMeters,
 }) {
+  // v2.36.0 — 본문 스크롤이 맨 위일 때도 헤더처럼 아래로 당겨 닫기
+  const sheetScroll = useSheetBodyScroll();
   if (!visible) return null;
 
   const feed = buildAlertFeed(pins, myCoords, { radiusMeters });
@@ -74,6 +77,7 @@ export default function AlertInbox({
     >
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.bodyContent}
         showsVerticalScrollIndicator={false}
         testID="alert-inbox-scroll"

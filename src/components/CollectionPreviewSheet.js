@@ -12,6 +12,7 @@ import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LayerSheet from './LayerSheet';
+import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 import { colors, radius, typography } from '../theme';
 
 export default function CollectionPreviewSheet({
@@ -23,6 +24,8 @@ export default function CollectionPreviewSheet({
   busy = false,
   testID = 'collection-preview',
 }) {
+  // v2.36.0 — 본문 스크롤이 맨 위일 때도 헤더처럼 아래로 당겨 닫기
+  const sheetScroll = useSheetBodyScroll();
   if (!visible || !item) return null;
   const places = Array.isArray(item.places) ? item.places : [];
 
@@ -56,7 +59,7 @@ export default function CollectionPreviewSheet({
         </View>
       }
     >
-      <ScrollView contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
+      <ScrollView {...sheetScroll} contentContainerStyle={styles.body} showsVerticalScrollIndicator={false}>
         {!!item.description && <Text style={styles.desc}>{item.description}</Text>}
 
         <View style={styles.headRow}>

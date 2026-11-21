@@ -263,6 +263,17 @@ if (!only || only === 'sheet') {
   });
 }
 
+if (!only || only === 'layersheet') {
+  // v2.36.0 — 목록 보기 · 알림 · 내 정보 레이어 팝업을 헤더 아래로 쓸어내려 닫기 (임계값·배선)
+  failed += await runSuite({
+    name: '레이어 팝업 헤더·본문 스와이프 닫기 테스트',
+    entry: 'layer-sheet-swipe-test.mjs',
+    out: 'layer-sheet-swipe-test.bundle.mjs',
+    format: 'esm',
+    alias: { 'react-native': './test/stubs/react-native.js' },
+  });
+}
+
 if (!only || only === 'mapsearch') {
   // v2.35.0 — 🔍 지도 상단 통합 검색창(내 핀 + 새 장소 찾기): 배치·드롭다운 규칙·저장 탭 auto 실행
   failed += await runSuite({

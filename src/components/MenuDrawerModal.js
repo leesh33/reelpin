@@ -34,8 +34,9 @@ import { colors } from '../theme';
 // v2.20.1 — 로그아웃 상태에 '이상훈 / @odol' 이 뜨지 않도록 이름은 계정에서만 가져옵니다
 import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
+import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.35.0';
+export const APP_VERSION_LABEL = '릴스핀 v2.36.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];
@@ -88,6 +89,8 @@ export default function MenuDrawerModal({
 }) {
   // null | 'categories' | 'radius' | 'alerts' | 'about'
   const [sub, setSub] = useState(() => (SUB_PAGES[initialSub] ? initialSub : null));
+  // v2.36.0 — 서브 페이지 스크롤이 맨 위일 때도 헤더처럼 아래로 당겨 시트를 닫습니다
+  const sheetScroll = useSheetBodyScroll();
 
   // v2.20.1 — 넘겨받은 이름이 없으면 **로그인한 계정**에서만 만듭니다.
   //   로그아웃이면 둘 다 '' → ProfileScreen 이 `게스트` 로 그립니다.
@@ -107,6 +110,7 @@ export default function MenuDrawerModal({
     body = (
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.subBody}
         showsVerticalScrollIndicator={false}
         testID="menu-sub-categories"
@@ -126,6 +130,7 @@ export default function MenuDrawerModal({
     body = (
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.subBody}
         showsVerticalScrollIndicator={false}
         testID="menu-sub-radius"
@@ -137,6 +142,7 @@ export default function MenuDrawerModal({
     body = (
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.subBody}
         showsVerticalScrollIndicator={false}
         testID="menu-sub-alerts"
@@ -154,6 +160,7 @@ export default function MenuDrawerModal({
     body = (
       <ScrollView
         style={styles.body}
+        {...sheetScroll}
         contentContainerStyle={styles.subBody}
         showsVerticalScrollIndicator={false}
         testID="menu-sub-about"
