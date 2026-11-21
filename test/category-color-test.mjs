@@ -1,5 +1,5 @@
 /**
- * test/category-color-test.mjs — v2.36.2
+ * test/category-color-test.mjs — v2.37.0
  * ─────────────────────────────────────────────────────────────
  * **분류 추가할 때 색상 지정** — 상훈 님 요청(2026-11-21)
  *   "혹시 분류 추가할 때 색상도 지정하게 할 수 있을까?"
@@ -10,7 +10,7 @@
  *   ④ getCategoryColor — 고른 색 우선 · 기본 3색은 고정 · 목록 밖 이름은 이름 해시
  *   ⑤ 화면 배선 — 저장·핀 상세(CategoryPicker) · 내 정보(분류 관리) 가 색을 함께 넘긴다
  *   ⑥ 저장 경로 — storage 의 색 키 · App 의 로드/저장/세팅
- *   ⑦ 버전 2.36.2 일관성
+ *   ⑦ 버전 2.37.0 일관성
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -137,14 +137,14 @@ check('지도 핀·칩·배지가 모두 getCategoryColor 하나를 쓴다(색 �
   .every((f) => read(f).indexOf('getCategoryColor(') > 0));
 
 // ═════════════════════════════════════════════════════════════
-// 7. 버전 2.36.2
+// 7. 버전 2.37.0
 // ═════════════════════════════════════════════════════════════
 const pkg = JSON.parse(read('package.json'));
 const expo = JSON.parse(read('app.json')).expo;
 const menuDrawer = read('src/components/MenuDrawerModal.js');
 const feedback = read('src/services/feedback.js');
-check('버전: package.json · app.json = 2.36.2', pkg.version === '2.36.2' && expo.version === '2.36.2', pkg.version + '/' + expo.version);
-check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.36.2', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.36.2'") > 0 && profile.indexOf("APP_INFO_VERSION = '릴스핀 v2.36.2'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.36.2'") > 0);
+check('버전: package.json · app.json = 2.37.0', pkg.version === '2.37.0' && expo.version === '2.37.0', pkg.version + '/' + expo.version);
+check('버전: 메뉴 · 앱 정보 · 제보 첨부값도 2.37.0', menuDrawer.indexOf("APP_VERSION_LABEL = '릴스핀 v2.37.0'") > 0 && profile.indexOf("APP_INFO_VERSION = '릴스핀 v2.37.0'") > 0 && feedback.indexOf("APP_VERSION_NAME = '2.37.0'") > 0);
 
 check('utils: 팔레트·색 표가 categories.js 한 곳에 있다(색 규칙 단일 출처)', palette.indexOf('CATEGORY_COLOR_PALETTE') > 0 && palette.indexOf('export function getCategoryColor') > 0);
 

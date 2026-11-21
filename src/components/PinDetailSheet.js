@@ -8,7 +8,15 @@ import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
 import ProviderBadges from './ProviderBadge';
 import CategoryPicker from './CategoryPicker';
-import { DEFAULT_CATEGORIES, categoryTextColor, categoryTint, getCategoryColor } from '../utils/categories';
+import {
+  DEFAULT_CATEGORIES,
+  allCategories,
+  categoryTextColor,
+  categoryTint,
+  getCategoryColor,
+  mapLegacyCategory,
+  sameCategory,
+} from '../utils/categories';
 // v2.20 — 지금 영업 중 / 브레이크타임 / 휴무일 배지 (한국 시간 기준 · 확인된 값만)
 import { evaluateOpening, hasConfirmedHours, todaySummary } from '../utils/openingStatus';
 // v2.34.0 — 헤더 부근을 아래로 쓸어내려 닫기 (상훈 님 요청 IMG_9274)
@@ -61,6 +69,10 @@ export default function PinDetailSheet({
   const draggedRef = useRef(0);
   const sheetHeightRef = useRef(0);
   const scrollYRef = useRef(0);
+  // v2.37.0 — 다른 핀으로 바뀌면 본문 스크롤을 **실제로** 맨 위로 되돌립니다.
+  //   (예전에는 scrollYRef 값만 0 으로 바꿔서, 앞 핀에서 내려 둔 스크롤 위치가 그대로 남아
+  //    새 핀의 첫 줄(분류·영업시간 줄)이 헤더 아래로 가려졌습니다)
+  const scrollRef = useRef(null);
   const closingRef = useRef(false);
   const closeRef = useRef(onClose);
   useEffect(() => {
@@ -139,6 +151,13 @@ export default function PinDetailSheet({
     draggedRef.current = 0;
     scrollYRef.current = 0;
     translateY.setValue(0);
+    // v2.37.0 — 실제 스크롤 위치도 맨 위로 (웹 ScrollView 는 scrollTo, 앱은 같은 API)
+    const node = scrollRef.current;
+    if (node && typeof node.scrollTo === 'function') {
+      try {
+        node.scrollTo({ y: 0, animated: false });
+      } catch (e) {}
+    }
   }, [pin && pin.id]);
 
   useEffect(() => {
@@ -154,7 +173,14 @@ export default function PinDetailSheet({
   const address = String(pin.address || '');
   const hasAddress = Boolean(address) && address !== '주소 미확인';
   // v2.4 — 상단 분류 배지도 그 분류의 고유 색 (연한 틴트 + 진한 같은 색 글씨)
-  const categoryName = pin.category || '맛집';
+  // v2.37.0 — 옛 업종 이름(베이커리·디저트)은 지도·목록과 똑같이 '맛집'으로 보여 주고,
+  //   분류 칩도 '맛집'이 선택된 상태로 보이게 합니다. (예전에는 '베이커리'라 어느 칩도 켜지지 않았음)
+  const categoryName = mapLegacyCategory(pin.category) || '맛집';
+  // 내 분류 목록에 없는 이름(공유·다른 기기에서 온 핀)도 칩이 사라지지 않게 뒤에 붙입니다.
+  //  (훅 규칙 때문에 useMemo 대신 매 렌더 계산 — 목록이 짧아 비용이 없습니다)
+  const pickerCategories = allCategories(categories).some((name) => sameCategory(name, categoryName))
+    ? categories
+    : (Array.isArray(categories) ? categories : []).concat([categoryName]);
   const categoryBadgeBg = categoryTint(categoryName, categories, 0.13);
   const categoryBadgeBorder = categoryTint(categoryName, categories, 0.3);
   const categoryBadgeText = categoryTextColor(categoryName, categories);
@@ -290,6 +316,7 @@ export default function PinDetailSheet({
           → 헤더는 시트 **상단에 고정**하고, 본문만 스크롤되게 감쌉니다. (sheet maxHeight 86%) */}
       <ScrollView
         {...bodyPan.panHandlers}
+        ref={scrollRef}
         style={styles.bodyScroll}
         contentContainerStyle={styles.body}
         keyboardShouldPersistTaps="handled"
@@ -488,11 +515,11 @@ export default function PinDetailSheet({
         {!readOnly && (
           <View style={styles.categoryBox}>
             <CategoryPicker
-              value={pin.category || '맛집'}
+              value={categoryName}
               onChange={(name) => {
                 if (typeof onChangeCategory === 'function') onChangeCategory(pin.id, name);
               }}
-              categories={categories}
+              categories={pickerCategories}
               onAddCategory={onAddCategory}
               label={'분류'}
               hint={'누르면 바로 바뀌어요'}
@@ -661,7 +688,9 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     // v2.13 — 화면 높이의 86% 를 넘지 않게 (아이폰 사파리 상태바·주소창 위로 헤더가 밀려나 ✕ 를 못 누르던 문제)
-    maxHeight: '86%',
+    // v2.37.0 — 92% 로 조금 더 키워, 390×844 에서 흔한 장소 상세 내용(약 760px)이
+    //   스크롤 없이 첫 줄부터 끝까지 한 화면에 들어오게 했습니다. (위 8% 는 바깥을 눌러 닫는 자리)
+    maxHeight: '92%',
     overflow: 'hidden',
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xxl,
@@ -674,8 +703,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radius.xxl,
     borderTopRightRadius: radius.xxl,
     paddingHorizontal: 20,
-    paddingTop: 10,
-    paddingBottom: 14,
+    paddingTop: 8,
+    paddingBottom: 12,
     // v2.34.0 — 헤더를 잡고 아래로 끌 때 브라우저 스크롤·줌이 먼저 가로채지 않게 (웹 아이폰 사파리)
     ...(Platform.OS === 'web' ? { cursor: 'grab', touchAction: 'none' } : null),
   },
@@ -704,16 +733,20 @@ const styles = StyleSheet.create({
     textShadowRadius: 2,
   },
   // 헤더(고정) 아래에서 본문만 스크롤 — maxHeight 안에서 줄어들 수 있게 flexShrink
+  // v2.37.0 — 웹(react-native-web)에서도 헤더 아래 남은 높이만 차지하고 그 안에서 스크롤되도록
+  //   basis·minHeight 를 명시합니다. (본문이 시트 위로 넘쳐 첫 줄이 헤더에 걸리던 원인)
   bodyScroll: {
     flexGrow: 0,
     flexShrink: 1,
+    flexBasis: 'auto',
+    minHeight: 0,
   },
   body: {
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 10,
     // v2.28.0 — 상세 시트가 열려 있는 동안 하단 탭바(알약)는 숨겨지므로(App), 예전처럼
     //   `tabBar.floatTop + 10`(76px) 만큼 비워 둘 필요가 없습니다. 손끝 여백만 남깁니다.
-    paddingBottom: 28,
+    paddingBottom: 24,
   },
   chipRow: {
     flexDirection: 'row',
@@ -784,7 +817,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 4,
-    marginTop: 8,
+    marginTop: 6,
   },
   mapBadge: {
     flexDirection: 'row',
@@ -806,7 +839,7 @@ const styles = StyleSheet.create({
   openRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
     gap: 6,
   },
   openBadge: {
@@ -856,9 +889,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 9,
-    marginTop: 10,
+    marginTop: 9,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 9,
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.line,
@@ -911,7 +944,7 @@ const styles = StyleSheet.create({
   },
   // v2.10 — 📝 한줄 메모
   memoBox: {
-    marginTop: 10,
+    marginTop: 9,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.line,
@@ -1004,11 +1037,11 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   categoryBox: {
-    marginTop: 10,
+    marginTop: 9,
     backgroundColor: colors.bg,
     borderRadius: radius.md,
     paddingHorizontal: 10,
-    paddingVertical: 9,
+    paddingVertical: 8,
   },
   tagRow: {
     flexDirection: 'row',
@@ -1106,8 +1139,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    marginTop: 12,
-    height: 44,
+    marginTop: 10,
+    height: 42,
     borderRadius: radius.md,
     borderWidth: 1.5,
     borderColor: colors.brandSoft2,
@@ -1132,8 +1165,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 12,
-    height: 46,
+    marginTop: 10,
+    height: 44,
     borderRadius: radius.md,
     backgroundColor: colors.charcoal,
     paddingHorizontal: 12,
@@ -1157,7 +1190,7 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   deleteBtn: {
-    marginTop: 8,
+    marginTop: 6,
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',

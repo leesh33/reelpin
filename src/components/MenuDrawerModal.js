@@ -36,7 +36,7 @@ import { profileIdentity } from '../utils/profileIdentity';
 import LayerSheet from './LayerSheet';
 import { useSheetBodyScroll } from './useSheetSwipeDismiss';
 
-export const APP_VERSION_LABEL = '릴스핀 v2.36.2';
+export const APP_VERSION_LABEL = '릴스핀 v2.37.0';
 
 /** ☰ 시트에서 열리는 서브 페이지 키 (검사·딥링크용 단일 출처) */
 export const MENU_SUB_KEYS = ['categories', 'radius', 'alerts', 'about'];

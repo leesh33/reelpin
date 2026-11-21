@@ -78,13 +78,18 @@ export default function PinListView({
             categories={categories}
           />
         </View>
-        {/* v2.10 — ✅ 방문 상태 필터 (전체 · 미방문 · 가봤어요) */}
+        {/* v2.10 — ✅ 방문 상태 필터 (전체 · 미방문 · 가봤어요)
+            v2.37.0 — 목록에서는 분류 줄의 `전체 N` 과 겹치지 않게 '전체' 칩을 빼고
+              `방문` 머리말 + `안 가본 곳 N` / `✓ 가본 곳 N` 두 칩만 둡니다.
+              켜진 칩을 한 번 더 누르면 전체로 돌아가고, 그 안내도 옆에 보입니다. */}
         <View style={styles.visitWrap}>
           <VisitFilterChips
             value={visitFilter}
             onChange={onChangeVisitFilter}
             counts={visitCounts}
             onDark={false}
+            showAll={false}
+            rowLabel="방문"
           />
         </View>
         <View style={styles.metaRow} testID="pin-list-meta">

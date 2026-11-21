@@ -42,20 +42,20 @@ export default function Toast({
 
 /** 레이어가 없을 때의 기본 상단 위치 */
 export const TOAST_TOP = 152;
-/** 핀 상세 시트가 차지할 수 있는 최대 높이 (PinDetailSheet `maxHeight: '86%'`) */
-export const SHEET_MAX_HEIGHT_RATIO = 0.86;
+/** 핀 상세 시트가 차지할 수 있는 최대 높이 (PinDetailSheet `maxHeight: '92%'`) */
+export const SHEET_MAX_HEIGHT_RATIO = 0.92;
 /**
- * 시트 헤더 높이 — 390×844 라이브 실측: 시트 상단 118.2px · 헤더 바닥 188.2px → 70px
- * (패딩 10 + 핸들 4+12 + 이름 한 줄 ~30 + 아래 패딩 14)
+ * 시트 헤더 높이 — 390×844 라이브 실측: 시트 상단 67.5px · 헤더 바닥 133.5px → 66px
+ * (패딩 8 + 핸들 4+12 + 이름 한 줄 ~30 + 아래 패딩 12 · v2.37.0 에서 70 → 66)
  */
-export const SHEET_HEADER_HEIGHT = 70;
+export const SHEET_HEADER_HEIGHT = 66;
 /** 시트 헤더와 토스트 사이 여백 */
 export const SHEET_TOAST_GAP = 12;
 
 /**
  * 핀 상세 시트가 열린 화면에서 토스트를 놓을 `top` 값.
  *   `containerHeight` 는 시트의 기준 컨테이너(= 탭 화면이 그려지는 높이, 390×844 웹에서는 844)입니다.
- *   시트 상단(높이의 14%) + 헤더 높이 + 여백 → 헤더의 분류 색과 겹치지 않습니다.
+ *   시트 상단(높이의 8%) + 헤더 높이 + 여백 → 헤더의 분류 색과 겹치지 않습니다.
  */
 export function toastTopBelowSheetHeader(containerHeight, gap = SHEET_TOAST_GAP) {
   const height = Number(containerHeight) > 0 ? Number(containerHeight) : 844;
