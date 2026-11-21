@@ -32,6 +32,9 @@ export default function CategoryColorPicker({
 }) {
   const selected = normalizeHexColor(value);
   const list = Array.isArray(palette) && palette.length ? palette : CATEGORY_COLOR_PALETTE;
+  // 390px 화면 열에서 10색을 **5+5 두 줄**로 고르게 — 마지막 한 색만 다음 줄로 떨어지지 않게 합니다.
+  const rows = [];
+  for (let i = 0; i < list.length; i += 5) rows.push(list.slice(i, i + 5));
 
   return (
     <View style={styles.wrap} testID={testIDPrefix + '-row'}>
@@ -41,28 +44,30 @@ export default function CategoryColorPicker({
           {hint || (selected ? categoryColorName(selected) : '색을 고르세요')}
         </Text>
       </View>
-      <View style={styles.row}>
-        {list.map((hex) => {
-          const color = normalizeHexColor(hex) || hex;
-          const on = !!selected && selected === color;
-          return (
-            <Pressable
-              key={color}
-              onPress={() => typeof onChange === 'function' && onChange(color)}
-              style={[styles.swatch, on && styles.swatchOn]}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on, checked: on }}
-              aria-checked={on}
-              accessibilityLabel={'분류 색 ' + categoryColorName(color)}
-              testID={testIDPrefix + '-' + color.replace('#', '').toLowerCase()}
-            >
-              <View style={[styles.dot, { backgroundColor: color }]}>
-                {on ? <Ionicons name="checkmark" size={13} color={colors.white} /> : null}
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
+      {rows.map((row, rowIndex) => (
+        <View style={styles.row} key={'color-row-' + rowIndex}>
+          {row.map((hex) => {
+            const color = normalizeHexColor(hex) || hex;
+            const on = !!selected && selected === color;
+            return (
+              <Pressable
+                key={color}
+                onPress={() => typeof onChange === 'function' && onChange(color)}
+                style={[styles.swatch, on && styles.swatchOn]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: on, checked: on }}
+                aria-checked={on}
+                accessibilityLabel={'분류 색 ' + categoryColorName(color)}
+                testID={testIDPrefix + '-' + color.replace('#', '').toLowerCase()}
+              >
+                <View style={[styles.dot, { backgroundColor: color }]}>
+                  {on ? <Ionicons name="checkmark" size={13} color={colors.white} /> : null}
+                </View>
+              </Pressable>
+            );
+          })}
+        </View>
+      ))}
     </View>
   );
 }
@@ -90,9 +95,9 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 7,
+    marginBottom: 2,
   },
   // 고른 색은 바깥 링으로 표시 — 흰 배경 위에서도 어느 색을 골랐는지 한눈에 보입니다.
   swatch: {

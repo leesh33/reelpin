@@ -110,7 +110,8 @@ const app = read('App.js');
 const storage = read('src/storage.js');
 const palette = read('src/utils/categories.js');
 
-check('공용 스와치 컴포넌트: 10색 팔레트를 그린다', swatches.indexOf('CATEGORY_COLOR_PALETTE') > 0 && swatches.indexOf('list.map(') > 0);
+check('공용 스와치 컴포넌트: 10색 팔레트를 그린다', swatches.indexOf('CATEGORY_COLOR_PALETTE') > 0 && swatches.indexOf('rows.map(') > 0);
+check('공용 스와치 컴포넌트: 390px 화면에서 5+5 두 줄로 고르게 놀인다(마지막 한 색만 남지 않게)', swatches.indexOf('i += 5') > 0 && swatches.indexOf('list.slice(i, i + 5)') > 0);
 check('공용 스와치 컴포넌트: 고른 색은 링 + 체크로 표시', swatches.indexOf('swatchOn') > 0 && swatches.indexOf('checkmark') > 0);
 check('공용 스와치 컴포넌트: 읽어 주는 이름(분류 색 보라)', swatches.indexOf("'분류 색 ' + categoryColorName(color)") > 0);
 check('공용 스와치 컴포넌트: accessibilityRole radio + 선택 상태', swatches.indexOf('accessibilityRole="radio"') > 0 && swatches.indexOf('selected: on') > 0);
