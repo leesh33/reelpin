@@ -27,6 +27,19 @@ import {
   sheetCloseDuration,
 } from '../utils/sheetDismiss';
 
+/**
+ * v2.38.0 — Gmarket Sans 는 시스템 글꼴보다 글자 폭이 약 7% 넓어,
+ * 40자짜리 릴스 주소가 상세 시트의 한 줄에서 끝이 `…` 로 잘렸습니다(상훈 님 폰트 교체 후 실측).
+ * 데이터(pin.sourceUrl)는 **그대로** 두고, 화면에 그리는 글자만 `https://www.` 를 뺀 짧은 형태로 보여 줍니다.
+ *   https://www.instagram.com/reel/C6aRaCafe9/  →  instagram.com/reel/C6aRaCafe9
+ * (누르면 원래 주소로 그대로 열립니다 — openSource)
+ */
+export function shortUrlForDisplay(url) {
+  const source = String(url == null ? '' : url);
+  if (!source) return '';
+  return source.replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, '');
+}
+
 const PLATFORM_LABEL = {
   instagram: '인스타 릴스',
   youtube: '유튜브 쇼츠',
@@ -570,7 +583,7 @@ export default function PinDetailSheet({
             <View style={styles.sourceTextWrap}>
               <Text style={styles.sourceLabel}>{platform}</Text>
               <Text style={styles.sourceUrl} numberOfLines={1}>
-                {pin.sourceUrl}
+                {shortUrlForDisplay(pin.sourceUrl)}
               </Text>
             </View>
             <Ionicons name="open-outline" size={16} color={colors.textMuted} />

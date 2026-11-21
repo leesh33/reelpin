@@ -115,7 +115,7 @@ check(
   FEEDBACK_SORTS.map((s) => s.label).join('|')
 );
 check('정의: 길이 제한 2~80 / 5~1200 / 닉네임 12자', FEEDBACK_LIMITS.titleMin === 2 && FEEDBACK_LIMITS.titleMax === 80 && FEEDBACK_LIMITS.contentMin === 5 && FEEDBACK_LIMITS.contentMax === 1200 && FEEDBACK_LIMITS.authorMax === 12, JSON.stringify(FEEDBACK_LIMITS));
-check('정의: 앱 버전 자동 첨부값 = 2.37.0', APP_VERSION_NAME === '2.37.0', APP_VERSION_NAME);
+check('정의: 앱 버전 자동 첨부값 = 2.37.0', APP_VERSION_NAME === '2.38.0', APP_VERSION_NAME);
 check('정의: 모르는 유형은 기능 제안으로', kindInfo('nope').id === 'idea' && kindInfo('bug').id === 'bug', '');
 
 // ── 2. 닉네임 · 글 검사 ─────────────────────────────────────
@@ -165,7 +165,7 @@ const row = {
   title: '지도 흰 화면',
   content: '사파리에서 그럽니다',
   author: '꼬야네',
-  app_version: '2.37.0',
+  app_version: '2.38.0',
   likes: 3,
   status: 'fixed',
   created_at: '2026-11-17T09:00:00+09:00',
@@ -175,7 +175,7 @@ check(
   '변환: snake_case → 화면 항목',
   item.id === 'a1' &&
     item.kind === 'bug' &&
-    item.appVersion === '2.37.0' &&
+    item.appVersion === '2.38.0' &&
     item.likes === 3 &&
     item.status === 'fixed' &&
     item.createdAt === row.created_at,
@@ -238,7 +238,7 @@ check('개수: 유형별', countByKind(list).idea === 2 && countByKind(list).bug
   );
   check('등록: 성공', res.ok === true && res.item && res.item.likes === 0 && res.item.status === 'open', JSON.stringify(res).slice(0, 140));
   const sent = calls.inserts[0] || {};
-  check('등록: 앱 버전 자동 첨부', sent.app_version === '2.37.0', JSON.stringify(sent));
+  check('등록: 앱 버전 자동 첨부', sent.app_version === '2.38.0', JSON.stringify(sent));
   check('등록: 닉네임 비면 익명', sent.author === '익명', sent.author);
   check('등록: 로그인했으면 이메일 기록(소문자)', sent.user_email === 'andy.leesh33@gmail.com', sent.user_email);
   check('등록: 공감·상태는 보내지 않음(RLS 가 0/open 강제)', sent.likes === undefined && sent.status === undefined, JSON.stringify(sent));

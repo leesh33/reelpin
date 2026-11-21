@@ -1,5 +1,5 @@
 /**
- * scripts/patch-web-html.mjs — v2.0 PWA 메타 주입 (배포 빌드의 마지막 한 단계)
+ * scripts/patch-web-html.mjs — 배포 빌드의 마지막 한 단계 (PWA 메타 + Gmarket Sans)
  * ─────────────────────────────────────────────────────────────
  * Expo SDK 51 의 웹 정적 빌드(`npx expo export --platform web`)는 index.html 의 <head> 를
  * `@expo/cli` 기본 템플릿으로 만듭니다. 그 템플릿에는 `apple-touch-icon` · `manifest` ·
@@ -8,7 +8,16 @@
  *
  * 그래서 빌드 결과의 index.html 을 읽어 필요한 메타만 **한 번** 끼워 넣습니다.
  *   · 이미 있으면 다시 넣지 않습니다. (여러 번 실행해도 결과가 같음 = idempotent)
- *   · `public/` 의 아이콘·manifest 가 dist 에 빠져 있으면 함께 복사합니다.
+ *   · `public/` 의 아이콘·manifest·폰트가 dist 에 빠져 있으면 함께 복사합니다.
+ *
+ * v2.38.0 — **앱 전체 폰트를 Gmarket Sans 로** (상훈 님 선택, 2026-11-21)
+ *   · `public/fonts/GmarketSans-{Medium,Bold}.{woff2,woff}` 를 self-host (CDN 의존 없음 → 오프라인·아이폰 홈화면 앱에서도 동일)
+ *   · CSS 로 넣는 이유: 이 앱은 react-native-web 이라 모든 Text 가 `.css-146c3p1`
+ *     (`font: 14px -apple-system, …`) 클래스를 달고 나옵니다. 스타일 파일 30여 개를 고치는 대신
+ *     **그 기본 글꼴만** `#root [dir="auto"]`(Text 루트가 늘 갖는 속성) 로 덮습니다.
+ *     · 아이콘(@expo/vector-icons)은 `style="font-family: ionicons"` **인라인**이라
+ *       클래스 선택자(우리 규칙)보다 우선합니다 → 여기서 `!important` 를 쓰지 않는 한 네모(□)로 깨지지 않습니다.
+ *     · 본문 500 → Medium 파일, 600·700·800·900 → Bold 파일 (앱이 쓰는 굵기는 500·600·700·800·900 뿐)
  *
  * 실행
  *   node scripts/patch-web-html.mjs [dist경로]
@@ -33,31 +42,121 @@ export const PWA_PUBLIC_FILES = [
   'icon-512.png',
 ];
 
+/* ─────────────────────────────────────────────────────────────
+ * v2.38.0 — Gmarket Sans (본문 Medium 500 · 제목/버튼 Bold 700)
+ * ───────────────────────────────────────────────────────────── */
+
+/** CSS font-family 이름 (공백 포함 — 따옴표까지 포함한 문자열로 씁니다) */
+export const FONT_FAMILY = "'Gmarket Sans'";
+
+/**
+ * 뒤에 붙는 대체 글꼴 — Gmarket Sans 에 없는 글자(이모지 등)만 여기로 떨어집니다.
+ * (한글 11,172자 · 라틴 · 숫자 · 문장부호는 Gmarket Sans 가 모두 가지고 있습니다)
+ */
+export const FONT_FALLBACK =
+  '-apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
+
+/**
+ * self-host 하는 폰트 파일 — `public/fonts/` → `/fonts/`
+ *   앱이 실제로 쓰는 굵기(500·600·700·800·900)마다 @font-face 를 따로 선언합니다.
+ *   (굵기 범위(font-weight: 400 600)는 표준이지만 아이폰 구형 Safari 에서 무시될 수 있어,
+ *    한 굵기씩 찍어 두면 브라우저가 '합성 볼드'로 흉내내지 않고 항상 실제 파일을 씁니다)
+ *     500·600 → Medium,  700·800·900 → Bold
+ */
+export const FONT_FACES = [
+  { file: 'GmarketSans-Medium', weights: ['400', '500', '600'] },
+  { file: 'GmarketSans-Bold', weights: ['700', '800', '900'] },
+];
+
+/** dist 로 함께 복사해야 하는 폰트 파일 이름들 */
+export const FONT_FILES = FONT_FACES.flatMap((face) => [face.file + '.woff2', face.file + '.woff']);
+
+/** react-native-web 이 Text 에 붙이는 기본 글꼴 클래스 (0.19.10 기준) — `[dir="auto"]` 와 함께 이중으로 잡습니다. */
+export const RNW_TEXT_CLASSES = ['.css-146c3p1', '.css-11aywtz'];
+
+/** 폰트 파일 하나의 @font-face 선언 (woff2 우선, woff 는 예비) */
+export function fontFaceCss(face, weight) {
+  return (
+    '@font-face{font-family:' +
+    FONT_FAMILY +
+    ';font-style:normal;font-weight:' +
+    weight +
+    ';font-display:swap;src:url(\'/fonts/' +
+    face.file +
+    ".woff2') format('woff2'),url('/fonts/" +
+    face.file +
+    ".woff') format('woff')}"
+  );
+}
+
+/** index.html 에 들어갈 @font-face + 전역 글꼴 규칙 */
+export const FONT_CSS = [
+  ...FONT_FACES.flatMap((face) => face.weights.map((weight) => fontFaceCss(face, weight))),
+  // 아이콘은 인라인 font-family: ionicons 가 이깁니다(!important 를 쓰지 않는 이유)
+  'html,body{font-family:' + FONT_FAMILY + ',' + FONT_FALLBACK + '}',
+  '#root [dir="auto"],' + RNW_TEXT_CLASSES.map((cls) => '#root ' + cls).join(',') + '{font-family:' + FONT_FAMILY + ',' + FONT_FALLBACK + '}',
+].join('\n');
+
 /** index.html 의 </head> 앞에 들어갈 태그들 — 이미 있으면 건너뜁니다. */
 export const PWA_HEAD_TAGS = [
-  { key: 'theme-color', html: '<meta name="theme-color" content="' + PWA_THEME_COLOR + '" />' },
-  { key: 'apple-mobile-web-app-capable', html: '<meta name="apple-mobile-web-app-capable" content="yes" />' },
-  { key: 'mobile-web-app-capable', html: '<meta name="mobile-web-app-capable" content="yes" />' },
+  { key: 'theme-color', marker: 'name="theme-color"', html: '<meta name="theme-color" content="' + PWA_THEME_COLOR + '" />' },
+  {
+    key: 'apple-mobile-web-app-capable',
+    marker: 'name="apple-mobile-web-app-capable"',
+    html: '<meta name="apple-mobile-web-app-capable" content="yes" />',
+  },
+  {
+    key: 'mobile-web-app-capable',
+    marker: 'name="mobile-web-app-capable"',
+    html: '<meta name="mobile-web-app-capable" content="yes" />',
+  },
   {
     key: 'apple-mobile-web-app-status-bar-style',
+    marker: 'name="apple-mobile-web-app-status-bar-style"',
     html: '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />',
   },
-  { key: 'apple-mobile-web-app-title', html: '<meta name="apple-mobile-web-app-title" content="' + PWA_APP_TITLE + '" />' },
-  { key: 'application-name', html: '<meta name="application-name" content="' + PWA_APP_TITLE + '" />' },
+  {
+    key: 'apple-mobile-web-app-title',
+    marker: 'name="apple-mobile-web-app-title"',
+    html: '<meta name="apple-mobile-web-app-title" content="' + PWA_APP_TITLE + '" />',
+  },
+  {
+    key: 'application-name',
+    marker: 'name="application-name"',
+    html: '<meta name="application-name" content="' + PWA_APP_TITLE + '" />',
+  },
   {
     key: 'description',
+    marker: 'name="description"',
     html:
       '<meta name="description" content="릴스·쇼츠에서 본 맛집을 내 지도에 핀으로 저장하고, ' +
       '그 동네에 도착하면 알려 주는 앱" />',
   },
-  { key: 'apple-touch-icon', html: '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />' },
-  { key: 'icon-192', html: '<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />' },
-  { key: 'icon-512', html: '<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />' },
-  { key: 'manifest', html: '<link rel="manifest" href="/manifest.json" />' },
+  {
+    key: 'apple-touch-icon',
+    marker: 'rel="apple-touch-icon"',
+    html: '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />',
+  },
+  { key: 'icon-192', marker: 'sizes="192x192"', html: '<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />' },
+  { key: 'icon-512', marker: 'sizes="512x512"', html: '<link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />' },
+  { key: 'manifest', marker: 'rel="manifest"', html: '<link rel="manifest" href="/manifest.json" />' },
+
+  // v2.38.0 — Gmarket Sans: 첫 화면부터 Medium·Bold 를 받아 두고(swap), 없으면 3G 에서도 시스템 글꼴로 먼저 그립니다.
+  {
+    key: 'font-preload-medium',
+    marker: 'href="/fonts/GmarketSans-Medium.woff2"',
+    html: '<link rel="preload" href="/fonts/GmarketSans-Medium.woff2" as="font" type="font/woff2" crossorigin />',
+  },
+  {
+    key: 'font-preload-bold',
+    marker: 'href="/fonts/GmarketSans-Bold.woff2"',
+    html: '<link rel="preload" href="/fonts/GmarketSans-Bold.woff2" as="font" type="font/woff2" crossorigin />',
+  },
+  { key: 'reelpin-font', marker: 'id="reelpin-font"', html: '<style id="reelpin-font">\n' + FONT_CSS + '\n</style>' },
 ];
 
 /**
- * index.html 문자열에 PWA 메타를 끼워 넣습니다. (idempotent)
+ * index.html 문자열에 PWA 메타 + 폰트를 끼워 넣습니다. (idempotent)
  * @param {string} html
  * @returns {{html: string, added: string[]}}
  */
@@ -78,15 +177,7 @@ export function injectPwaHead(html) {
     (m, content) => (content.indexOf('viewport-fit') >= 0 ? m : '<meta name="viewport" content="' + content + ', viewport-fit=cover"')
   );
 
-  const tags = PWA_HEAD_TAGS.filter((tag) => {
-    // 태그를 식별하는 표식(meta name · link rel/href)이 이미 있으면 건너뜁니다.
-    if (out.indexOf('name="' + tag.key + '"') >= 0) return false;
-    if (tag.key === 'manifest' && /rel=["']manifest["']/i.test(out)) return false;
-    if (tag.key === 'apple-touch-icon' && /rel=["']apple-touch-icon["']/i.test(out)) return false;
-    if (tag.key === 'icon-192' && /sizes=["']192x192["']/i.test(out)) return false;
-    if (tag.key === 'icon-512' && /sizes=["']512x512["']/i.test(out)) return false;
-    return true;
-  });
+  const tags = PWA_HEAD_TAGS.filter((tag) => out.indexOf(tag.marker) < 0);
 
   if (tags.length && out.indexOf('</head>') >= 0) {
     out = out.replace('</head>', tags.map((t) => '    ' + t.html).join('\n') + '\n  </head>');
@@ -107,12 +198,39 @@ export const PWA_REQUIRED_MARKERS = [
   'lang="ko"',
 ];
 
+/** v2.38.0 — Gmarket Sans 가 실제로 들어갔는지 확인하는 표식 */
+export const FONT_REQUIRED_MARKERS = [
+  'id="reelpin-font"',
+  "font-family:'Gmarket Sans'",
+  'font-display:swap',
+  "url('/fonts/GmarketSans-Medium.woff2')",
+  "url('/fonts/GmarketSans-Bold.woff2')",
+  'href="/fonts/GmarketSans-Medium.woff2"',
+  'href="/fonts/GmarketSans-Bold.woff2"',
+  '#root [dir="auto"]',
+];
+
 /** `public/` 의 PWA 파일을 dist 로 복사 (Expo 가 복사한 경우 덮어쓰지 않음) */
 export function ensurePublicFiles(projectRoot, distDir) {
   const copied = [];
   PWA_PUBLIC_FILES.forEach((name) => {
     const from = path.join(projectRoot, 'public', name);
     const to = path.join(distDir, name);
+    if (!fs.existsSync(from)) return;
+    if (fs.existsSync(to)) return;
+    fs.mkdirSync(path.dirname(to), { recursive: true });
+    fs.copyFileSync(from, to);
+    copied.push(name);
+  });
+  return copied;
+}
+
+/** `public/fonts/` 의 Gmarket Sans 를 dist/fonts 로 복사 (없을 때만) */
+export function ensureFontFiles(projectRoot, distDir) {
+  const copied = [];
+  FONT_FILES.forEach((name) => {
+    const from = path.join(projectRoot, 'public', 'fonts', name);
+    const to = path.join(distDir, 'fonts', name);
     if (!fs.existsSync(from)) return;
     if (fs.existsSync(to)) return;
     fs.mkdirSync(path.dirname(to), { recursive: true });
@@ -132,17 +250,29 @@ function main() {
     process.exit(1);
   }
   const copied = ensurePublicFiles(projectRoot, distDir);
+  const copiedFonts = ensureFontFiles(projectRoot, distDir);
   const before = fs.readFileSync(indexPath, 'utf8');
   const { html, added } = injectPwaHead(before);
   if (html !== before) fs.writeFileSync(indexPath, html, 'utf8');
   console.log(
     '[web-html] ' +
       (added.length ? '주입: ' + added.join(', ') : 'already-ok') +
-      (copied.length ? ' · 복사: ' + copied.join(', ') : '')
+      (copied.length ? ' · 복사: ' + copied.join(', ') : '') +
+      (copiedFonts.length ? ' · 폰트 복사: ' + copiedFonts.join(', ') : '')
   );
   const missingTags = PWA_REQUIRED_MARKERS.filter((marker) => html.indexOf(marker) < 0);
   if (missingTags.length) {
     console.error('[web-html] 태그 확인 실패: ' + missingTags.join(', '));
+    process.exit(1);
+  }
+  const missingFonts = FONT_REQUIRED_MARKERS.filter((marker) => html.indexOf(marker) < 0);
+  if (missingFonts.length) {
+    console.error('[web-html] 폰트 확인 실패: ' + missingFonts.join(', '));
+    process.exit(1);
+  }
+  const missingFiles = FONT_FILES.filter((name) => !fs.existsSync(path.join(distDir, 'fonts', name)));
+  if (missingFiles.length) {
+    console.error('[web-html] 폰트 파일 없음: ' + missingFiles.join(', '));
     process.exit(1);
   }
 }
