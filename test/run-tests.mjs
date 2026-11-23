@@ -47,6 +47,9 @@ const STUBS = {
   'react-native-webview': './test/stubs/react-native-webview.js',
   // v2.41 — 안전 영역(노치) 값은 node 테스트에서 0 으로 충분합니다.
   'react-native-safe-area-context': './test/stubs/safe-area-context.js',
+  // v2.40.0 빌드 21 — 네이티브 OAuth 창(expo-web-browser)은 node 에서 열 수 없어 스텁으로 바꿉니다.
+  //   (무엇을 열려 했는지 · 돌아온 주소를 어떻게 세션으로 바꾸는지 검사)
+  'expo-web-browser': './test/stubs/expo-web-browser.js',
 };
 
 /** 모든 suite 가 같은 스텁 묶음을 쓰도록 — `react-native` 만 갈아 끼웁니다. */

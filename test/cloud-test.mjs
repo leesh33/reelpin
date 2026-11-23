@@ -507,7 +507,17 @@ function makeClient(options = {}) {
       },
       signInWithOAuth: async (args) => {
         calls.push(['auth.signInWithOAuth', args]);
-        return options.oauth || { data: { url: 'https://demo.supabase.co/oauth?provider=kakao', provider: args.provider }, error: null };
+        return (
+          options.oauth || {
+            data: { url: 'https://demo.supabase.co/oauth?provider=' + String(args.provider), provider: args.provider },
+            error: null,
+          }
+        );
+      },
+      // v2.40.0 빌드 21 — 네이티브 OAuth 는 돌아온 `?code=…` 를 세션으로 바꿉니다.
+      exchangeCodeForSession: async (code) => {
+        calls.push(['auth.exchangeCodeForSession', code]);
+        return options.exchange || { data: { session: { user: { id: USER, email: 'andy@b.com' }, access_token: 't2' } }, error: null };
       },
       signOut: async () => {
         calls.push(['auth.signOut']);
@@ -563,6 +573,13 @@ const otpCall = otpClient.calls.find((c) => c[0] === 'auth.signInWithOtp');
 check('매직링크: signInWithOtp + emailRedirectTo', magic.ok === true && otpCall && otpCall[1].email === 'andy@b.com' && !!otpCall[1].options.emailRedirectTo);
 check('매직링크: shouldCreateUser 허용', otpCall && otpCall[1].options.shouldCreateUser === true);
 
+// v2.40.0 빌드 21 — node 에는 window 가 없어 **네이티브 경로**로 들어갑니다.
+// 인증 세션 스텁이 '사용자가 로그인을 마치고 돌아옴' 을 돌려주게 둡니다.
+const oauthStub = (globalThis.__expoWebBrowserStub =
+  globalThis.__expoWebBrowserStub || { calls: [], next: null });
+oauthStub.calls.length = 0;
+oauthStub.next = { type: 'success', url: 'reelpin://auth-callback?code=E2E-CODE' };
+
 const oauthClient = makeClient();
 __setSupabaseClient(oauthClient);
 const kakao = await signInWithOAuth('kakao');
@@ -592,6 +609,114 @@ check(
   googleCall && googleCall[1].options.redirectTo === 'https://reelpin.vercel.app/admin',
   googleCall && googleCall[1].options.redirectTo
 );
+
+// ─────────────────────────────────────────────────────────────
+// 7-b. v2.40.0 빌드 21 · #28574 — React Native 에도 전역 `window` 가 있어
+//      네이티브 앱이 스스로를 웹으로 착각하던 문제 (카카오·구글·Apple 세 버튼 무반응)
+//      · RN: `window` 는 있고 `window.document` 는 없음  → isBrowser() false
+//      · 웹: `window.document` 있음                     → isBrowser() true
+// ─────────────────────────────────────────────────────────────
+{
+  const stub = (globalThis.__expoWebBrowserStub = globalThis.__expoWebBrowserStub || { calls: [], next: null });
+  const keepWindow = globalThis.window;
+
+  // (1) React Native 흉내 — window 는 있지만 document 가 없습니다.
+  globalThis.window = {};
+  check('RN 판정: window 만 있고 document 가 없으면 isBrowser false', typeof window !== 'undefined' && isBrowser() === false, String(isBrowser()));
+  check('RN 판정: 리다이렉트 주소는 앱 스킴', authRedirectUrl() === 'reelpin://auth-callback', authRedirectUrl());
+
+  for (const provider of ['kakao', 'google', 'apple']) {
+    const rnClient = makeClient();
+    __setSupabaseClient(rnClient);
+    stub.calls.length = 0;
+    stub.next = { type: 'success', url: 'reelpin://auth-callback?code=RN-' + provider.toUpperCase() };
+    const rn = await signInWithOAuth(provider);
+    const rnCall = rnClient.calls.find((c) => c[0] === 'auth.signInWithOAuth');
+    check(
+      'RN(' + provider + '): skipBrowserRedirect true — 웹으로 오판하지 않음',
+      rnCall && rnCall[1].options.skipBrowserRedirect === true,
+      rnCall && JSON.stringify(rnCall[1].options.skipBrowserRedirect)
+    );
+    check(
+      'RN(' + provider + '): 인증 세션(expo-web-browser)으로 로그인 창을 연다',
+      stub.calls.length === 1 && stub.calls[0].url === 'https://demo.supabase.co/oauth?provider=' + provider,
+      JSON.stringify(stub.calls.map((c) => c.url))
+    );
+    check(
+      'RN(' + provider + '): 돌아올 주소는 reelpin://auth-callback',
+      stub.calls[0] && stub.calls[0].redirectUrl === 'reelpin://auth-callback',
+      stub.calls[0] && stub.calls[0].redirectUrl
+    );
+    check(
+      'RN(' + provider + '): 돌아온 code 를 세션으로 교환',
+      rnClient.calls.some((c) => c[0] === 'auth.exchangeCodeForSession' && c[1] === 'RN-' + provider.toUpperCase()) &&
+        rn.completed === true &&
+        rn.ok === true,
+      JSON.stringify(rn)
+    );
+    check(
+      'RN(' + provider + '): 아무것도 안 하고 redirected:true 로 끝나지 않음',
+      rn.redirected !== true && !!(stub.calls[0] && stub.calls[0].url),
+      JSON.stringify({ redirected: rn.redirected })
+    );
+  }
+
+  // (2) 사용자가 창을 그냥 닫으면 조용히 취소 — 화면은 그대로 둔다
+  const cancelClient = makeClient();
+  __setSupabaseClient(cancelClient);
+  stub.calls.length = 0;
+  stub.next = { type: 'dismiss' };
+  const cancelled = await signInWithOAuth('kakao');
+  check('RN: 창을 닫으면 cancelled (오류 토스트 없음)', cancelled.ok === false && cancelled.cancelled === true, JSON.stringify(cancelled));
+
+  // (3) 앱인데 Supabase 가 주소를 안 주면 조용히 성공하지 않는다
+  const noUrlClient = makeClient({ oauth: { data: {}, error: null } });
+  __setSupabaseClient(noUrlClient);
+  stub.calls.length = 0;
+  stub.next = { type: 'dismiss' };
+  const noUrl = await signInWithOAuth('google');
+  check('RN: 로그인 주소가 없으면 실패로 알린다', noUrl.ok === false && noUrl.error === 'no-url' && stub.calls.length === 0, JSON.stringify(noUrl));
+
+  // (4) 진짜 브라우저 — document 가 있으면 웹 경로(페이지 이동) 그대로
+  globalThis.window = { document: {}, location: { origin: 'https://reelpin.vercel.app' } };
+  check('웹 판정: window.document 가 있으면 isBrowser true', isBrowser() === true);
+  const webClient = makeClient();
+  __setSupabaseClient(webClient);
+  stub.calls.length = 0;
+  const onWeb = await signInWithOAuth('kakao');
+  const webCall = webClient.calls.find((c) => c[0] === 'auth.signInWithOAuth');
+  check('웹: skipBrowserRedirect false (Supabase 가 페이지를 넘김)', webCall && webCall[1].options.skipBrowserRedirect === false);
+  check('웹: 인증 세션을 열지 않는다', stub.calls.length === 0, JSON.stringify(stub.calls));
+  check('웹: redirectTo 는 현재 사이트 루트', webCall && webCall[1].options.redirectTo === 'https://reelpin.vercel.app/', webCall && webCall[1].options.redirectTo);
+  check('웹: redirected true 로 끝난다 (예전 동작 유지)', onWeb.ok === true && onWeb.redirected === true, JSON.stringify(onWeb));
+
+  globalThis.window = keepWindow;
+  if (typeof keepWindow === 'undefined') delete globalThis.window;
+  __setSupabaseClient(null);
+}
+
+// 회귀 방지 — 웹/네이티브 판정은 `typeof window` 만으로 하지 않습니다(문서 없는 window = RN).
+{
+  const cloudSource = fs
+    .readFileSync(path.join(root, 'src/services/cloudSync.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  check('회귀 방지: signInWithOAuth 의 웹 판정은 isBrowser()', /const web = isBrowser\(\);/.test(cloudSource), 'cloudSync.js');
+  check(
+    '회귀 방지: typeof window 만으로 웹을 판정하는 곳이 없다',
+    !/const web\s*=\s*typeof window/.test(cloudSource),
+    'cloudSync.js'
+  );
+  const supabaseSourceForBrowser = fs
+    .readFileSync(path.join(root, 'src/services/supabase.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+  check(
+    '회귀 방지: isBrowser() 는 window.document 까지 확인',
+    /typeof window !== 'undefined' && !!window && typeof window\.document !== 'undefined'/.test(supabaseSourceForBrowser),
+    'supabase.js'
+  );
+}
 
 const sessionClient = makeClient({ session: { data: { session: { user: { id: USER, email: 'andy@b.com' } } }, error: null } });
 __setSupabaseClient(sessionClient);

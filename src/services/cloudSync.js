@@ -20,7 +20,7 @@
  *     그 요청만 **예전 컬럼 목록**으로 다시 보냅니다 (`legacySchema` 로 기억 → 다음부터 바로 예전 모양).
  */
 import { Linking } from 'react-native';
-import { authRedirectUrl, isSupabaseConfigured, supabase } from './supabase';
+import { authRedirectUrl, isBrowser, isSupabaseConfigured, supabase } from './supabase';
 import { isSamePin, normalizePin } from '../utils/pins';
 
 /** Supabase 테이블 이름 */
@@ -442,7 +442,12 @@ export async function signInWithOAuth(provider, options = {}) {
   if (!OAUTH_PROVIDERS.some((p) => p.id === id)) return fail('unsupported-provider', '지원하지 않는 로그인이에요');
   if (!oauthProviderReady(id)) return fail('provider-pending', OAUTH_PENDING_MESSAGE);
   try {
-    const web = typeof window !== 'undefined' && !!window;
+    // ⚠️ v2.40.0 빌드 21 — React Native(iOS·Android)에도 전역 `window` 는 **있습니다**(`window.document` 만 없음).
+    //    예전에는 `typeof window !== 'undefined' && !!window` 로 웹을 판정해서 **네이티브가 스스로를
+    //    브라우저로 착각**했습니다 → `skipBrowserRedirect:false` 가 되고, Supabase 는 페이지를 넘기지도,
+    //    인증 세션을 열지도 않은 채 `{ ok:true, redirected:true }` 로 끝나 **세 버튼 모두 무반응**
+    //    (TestFlight 2.40.0(20) 제보 #28574). `document` 존재까지 확인하는 isBrowser() 로 판정합니다.
+    const web = isBrowser();
     // 구글은 매번 계정 선택 화면을 띄웁니다. (브라우저에 이미 로그인된 계정으로 조용히 통과하지 않게)
     const redirectTo = options.redirectTo || authRedirectUrl();
     const oauthOptions = { redirectTo, skipBrowserRedirect: !web };
@@ -453,10 +458,12 @@ export async function signInWithOAuth(provider, options = {}) {
     });
     if (error) return { ok: false, error: error.code || error.name || 'auth-error', message: friendlyAuthError(error) };
     const url = data && data.url;
-    if (!web && url) {
+    if (!web) {
+      // 앱인데 주소가 비어 오면 창을 열 수 없습니다 — 조용히 성공한 척하지 않고 알립니다.
+      if (!url) return fail('no-url', '로그인 주소를 받지 못했어요. 잠시 뒤 다시 시도해 주세요');
       return await openNativeOAuth(client, url, redirectTo);
     }
-    return { ok: true, url, redirected: web };
+    return { ok: true, url, redirected: true };
   } catch (e) {
     return { ok: false, error: 'network', message: friendlyAuthError(e) };
   }

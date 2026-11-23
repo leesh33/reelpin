@@ -119,7 +119,11 @@ async function callChecks() {
       },
     },
   });
+  // v2.40.0 빌드 21 — 웹 흉내(window.document 있음)로 웹 경로를 검사합니다.
+  //   (node 는 window 가 없어 네이티브 경로 → 창이 없으니 cancelled. 그 경로는 test:cloud 가 검사)
+  globalThis.window = { document: {}, location: { origin: 'https://reelpin.vercel.app' } };
   const res = await signInWithOAuth('apple');
+  delete globalThis.window;
   check('켜짐: signInWithOAuth("apple") 이 Supabase 를 부른다', calls === 1 && res.ok === true &&
     res.error !== 'provider-pending', calls + ' / ' + JSON.stringify(res));
   check('꺼짐: 안내 문구는 지금 문구 그대로',
