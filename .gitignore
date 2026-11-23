@@ -14,3 +14,7 @@ yarn-error.*
 .env
 .env.local
 test/.tmp/
+
+# EAS 로컬 iOS 자격 증명 (.p12·프로비저닝 프로파일·비밀번호) — 절대 커밋 금지
+credentials.json
+credentials/

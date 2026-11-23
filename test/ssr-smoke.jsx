@@ -1123,7 +1123,7 @@ const pinDetailSource = fs.readFileSync(path.join(process.cwd(), 'src/components
 const extractorSource = fs.readFileSync(path.join(process.cwd(), 'src/services/extractor.js'), 'utf8');
 const geminiSource = fs.readFileSync(path.join(process.cwd(), 'api', 'gemini.js'), 'utf8');
 const v213PhotoChecks = [
-  ['저장 화면: 사진 버튼은 웹에서만(canUsePhoto)', pasteSource.indexOf('const canUsePhoto = isWebPlatform()') > 0 && pasteSource.indexOf('const tabs = canUsePhoto') > 0],
+  ['저장 화면: 사진 버튼은 모든 플랫폼(canUsePhoto)', pasteSource.indexOf('const canUsePhoto = true') > 0 && pasteSource.indexOf('const tabs = canUsePhoto') > 0],
   ['저장 화면: 사진 버튼이 pickImageFile 을 부름', pasteSource.indexOf('pickImageFile()') > 0 && pasteSource.indexOf('extractFromImage(file') > 0],
   ['저장 화면: 진행 중 AI 사진 분석 문구', pasteSource.indexOf('AI 사진 분석') > 0 && pasteSource.indexOf('중…') > 0],
   ['저장 화면: 사진 읽는 동안 다른 버튼도 잠금', /disabled=\{extracting \|\| photoBusy\}/.test(pasteSource)],

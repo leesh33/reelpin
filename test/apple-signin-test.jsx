@@ -28,6 +28,7 @@ import {
   SHOW_APPLE_SIGNIN,
   buildOAuthProviders,
   oauthProviderReady,
+  parseOAuthCallback,
   signInWithOAuth,
 } from '../src/services/cloudSync';
 import { AccountCard } from '../src/screens/ProfileScreen';
@@ -135,6 +136,20 @@ check('배선: App·ProfileScreen 모두 준비 중 가드 + 토스트',
   appSrc.indexOf('!oauthProviderReady(provider)') > 0 && appSrc.indexOf('OAUTH_PENDING_MESSAGE') > 0 &&
     profileSrc.indexOf('!oauthProviderReady(provider, providers)') > 0 &&
     profileSrc.indexOf('toast(OAUTH_PENDING_MESSAGE)') > 0);
+
+// ── v2.41 — 아이폰 로그인 복귀 주소(딥링크) 처리 ─────────────
+const cbCode = parseOAuthCallback('reelpin://auth-callback?code=abc123&state=xyz');
+check('복귀 주소: `?code=` 를 뽑아낸다 (PKCE)', cbCode.code === 'abc123' && cbCode.error === '', JSON.stringify(cbCode));
+const cbHash = parseOAuthCallback('reelpin://auth-callback#access_token=at1&refresh_token=rt1');
+check('복귀 주소: 해시의 토큰도 뽑아낸다', cbHash.accessToken === 'at1' && cbHash.refreshToken === 'rt1', JSON.stringify(cbHash));
+const cbError = parseOAuthCallback('reelpin://auth-callback?error=access_denied&error_description=nope');
+check('복귀 주소: 거절(error) 도 알아본다', cbError.error === 'access_denied' && cbError.errorDescription === 'nope');
+check('복귀 주소: 빈 값이면 아무것도 없다', parseOAuthCallback('').code === '' && parseOAuthCallback(null).code === '');
+check('배선: 네이티브는 openAuthSessionAsync + exchangeCodeForSession 으로 세션을 만든다',
+  cloudSrc.indexOf('openAuthSessionAsync') > 0 && cloudSrc.indexOf('exchangeCodeForSession') > 0 &&
+    cloudSrc.indexOf('completeOAuthCallback') > 0);
+check('배선: 앱이 딥링크(url) 로 돌아온 로그인도 받는다',
+  appSrc.indexOf("Linking.addEventListener('url'") > 0 && appSrc.indexOf('completeOAuthCallback(null, url)') > 0);
 
 // ── README 안내 ──────────────────────────────────────────────
 // 안내는 **제목 줄**('## … Apple 로그인 켜기 …')부터 잘라 봅니다 — 본문 중간의 안내 문구와 섞이지 않게

@@ -1264,7 +1264,8 @@ export async function resizeImageForUpload(file, options = {}) {
  */
 export function pickImageFile(options = {}) {
   if (typeof document === 'undefined' || typeof document.createElement !== 'function') {
-    return Promise.resolve(null);
+    // v2.41 — 📸 **네이티브(아이폰·안드로이드)** 에서도 사진으로 찾기를 씁니다.
+    return pickImageFileNative(options);
   }
   return new Promise((resolve) => {
     let input = null;
@@ -1304,9 +1305,79 @@ export function pickImageFile(options = {}) {
   });
 }
 
-/** File/Blob 원본에서 EXIF GPS 만 읽습니다. (없거나 실패하면 null — 사진 처리는 그대로) */
-async function readImageGps(file) {
+/**
+ * v2.41 — 📸 **네이티브(아이폰·안드로이드) 사진 고르기**
+ *   `expo-image-picker` 로 사진 보관함을 열고 `expo-image-manipulator` 로 웹과 같은 규칙
+ *   (긴 변 1280px · JPEG 0.82)으로 줄여 `{ base64, mimeType, dataUrl }` 모양으로 돌려줍니다.
+ *   → `prepareImageInput` 이 그대로 받아 `/api/gemini` 로 보냅니다(추가 분기 없음).
+ *   · 취소하면 null · 권한을 거절하면 `{ error:'permission-denied' }`
+ *   · expo 모듈은 **호출 시점에만** require 합니다(웹 번들·node 테스트 영향 0).
+ */
+async function pickImageFileNative(options = {}) {
+  let ImagePicker = null;
   try {
+    // eslint-disable-next-line global-require
+    ImagePicker = require('expo-image-picker');
+  } catch (e) {
+    return null;
+  }
+  if (!ImagePicker || typeof ImagePicker.launchImageLibraryAsync !== 'function') return null;
+
+  try {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (permission && permission.granted === false) return { error: 'permission-denied' };
+  } catch (e) {
+    /* 권한 API 가 없으면 그냥 열어 봅니다 */
+  }
+
+  let result = null;
+  try {
+    result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : 'Images',
+      allowsMultipleSelection: false,
+      quality: 1,
+      exif: false,
+    });
+  } catch (e) {
+    return null;
+  }
+  if (!result || result.canceled) return null;
+  const asset = (result.assets && result.assets[0]) || null;
+  if (!asset || !asset.uri) return null;
+
+  const maxEdge = Number(options.maxEdge) || IMAGE_MAX_EDGE;
+  let out = { base64: asset.base64 || '', width: asset.width, height: asset.height };
+  try {
+    // eslint-disable-next-line global-require
+    const Manipulator = require('expo-image-manipulator');
+    const w = Number(asset.width) || 0;
+    const h = Number(asset.height) || 0;
+    const longEdge = Math.max(w, h);
+    const actions =
+      longEdge > maxEdge ? [{ resize: w >= h ? { width: maxEdge } : { height: maxEdge } }] : [];
+    out = await Manipulator.manipulateAsync(asset.uri, actions, {
+      compress: IMAGE_JPEG_QUALITY,
+      format: Manipulator.SaveFormat.JPEG,
+      base64: true,
+    });
+  } catch (e) {
+    /* 사진 조작기를 못 쓰면 아래에서 원본 base64 로 이어갑니다 */
+  }
+
+  let base64 = String((out && out.base64) || '').replace(/\s+/g, '');
+  if (!base64 && asset.base64) base64 = String(asset.base64).replace(/\s+/g, '');
+  if (!base64) return null;
+  return {
+    base64,
+    mimeType: 'image/jpeg',
+    dataUrl: 'data:image/jpeg;base64,' + base64,
+    width: Number((out && out.width) || asset.width) || null,
+    height: Number((out && out.height) || asset.height) || null,
+  };
+}
+
+/** File/Blob 원본에서 EXIF GPS 만 읽습니다. (없거나 실패하면 null — 사진 처리는 그대로) */
+async function readImageGps(file) {  try {
     if (!file || typeof file.arrayBuffer !== 'function') return null;
     // EXIF(APP1)는 파일 맨 앞에 있습니다 — 큰 사진은 앞 2MB 만 읽습니다.
     const slice = typeof file.slice === 'function' ? file.slice(0, 2 * 1024 * 1024) : file;

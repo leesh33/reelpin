@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, SafeAreaView, StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, SafeAreaView, StatusBar, StyleSheet, useWindowDimensions, View } from 'react-native';
+// v2.41 — 📱 상단 노치(안전 영역) 높이를 실제 기기에서 읽어 상태바 배경을 칠합니다
+import { SafeAreaProvider, useSafeAreaInsets, initialWindowMetrics } from 'react-native-safe-area-context';
 import { AppText as Text } from './src/components/AppText';
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 // v2.40.0 — 🔤 Gmarket Sans 네이티브 로딩 (웹은 index.html 의 @font-face 가 맡습니다)
@@ -93,6 +95,7 @@ import {
   oauthProviderReady,
   deleteCloudPin,
   deleteMyAccount,
+  completeOAuthCallback,
   fetchCloudPins,
   getSession,
   onAuthStateChange,
@@ -108,7 +111,30 @@ import { colors, tabBar, typography } from './src/theme';
 
 const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
 
+/**
+ * v2.41 — 📱 **상단 상태바 시인성**
+ *
+ *   증상(빌드 16 · 아이폰): 맨 위 노치 영역이 **흰 배경 + 흰 글씨**라 시계·배터리가 안 보였습니다.
+ *   원인: 루트 `SafeAreaView` 의 배경이 `colors.bg`(밝은 색)인데 `ExpoStatusBar style="light"`(흰 글씨)였습니다.
+ *   고침: 안전 영역 **위쪽만** `AppHeader` 와 같은 다크 네이비(`#0F172A`)로 칠하고 상태바 글씨는 흰색 유지.
+ *         아래쪽 안전 영역은 기존 그대로(밝은 배경)입니다.
+ */
+const FALLBACK_METRICS = {
+  frame: { x: 0, y: 0, width: 0, height: 0 },
+  insets: { top: 0, left: 0, right: 0, bottom: 0 },
+};
+
 export default function App() {
+  // SSR·웹·테스트에서도 처음부터 안전 영역 값이 있도록 0 값 지표를 함께 넘깁니다.
+  return (
+    <SafeAreaProvider initialMetrics={initialWindowMetrics || FALLBACK_METRICS}>
+      <AppShell />
+    </SafeAreaProvider>
+  );
+}
+
+function AppShell() {
+  const insets = useSafeAreaInsets();
   const [ready, setReady] = useState(false);
   // v2.40.0 — 네이티브 글꼴이 준비되면 한 번 다시 그립니다(웹은 처음부터 true)
   const [, setFontsReady] = useState(Platform.OS === 'web');
@@ -200,6 +226,8 @@ export default function App() {
   const pinsRef = useRef([]);
   const syncWarnedRef = useRef(false);
   const authUnsubRef = useRef(null);
+  // v2.41 — 앱으로 돌아온 소셜 로그인 딥링크(`reelpin://auth-callback`) 구독 해지용
+  const authUrlSubRef = useRef(null);
 
   // 최초 1회: 저장된 핀·반경·플랜 불러오기
   useEffect(() => {
@@ -524,12 +552,35 @@ export default function App() {
         if (session) adoptCloudSession(session, { fromEvent: true, silent: true });
       });
       authUnsubRef.current = unsubscribe;
+      // v2.41 — iOS·Android 에서 **딥링크로 앱이 다시 열린 경우**도 세션으로 이어 줍니다.
+      //   (소셜 로그인 창이 앱으로 돌아올 때 `reelpin://auth-callback?code=…` 가 옵니다)
+      if (Platform.OS !== 'web') {
+        const handleUrl = (url) => {
+          if (!url || String(url).indexOf('code=') < 0) return;
+          completeOAuthCallback(null, url).catch(() => {});
+        };
+        const sub = Linking.addEventListener('url', (event) => handleUrl(event && event.url));
+        Linking.getInitialURL()
+          .then((url) => handleUrl(url))
+          .catch(() => {});
+        authUrlSubRef.current = () => {
+          try {
+            if (sub && typeof sub.remove === 'function') sub.remove();
+          } catch (e) {
+            /* 해지 실패는 무시 */
+          }
+        };
+      }
     })();
     return () => {
       cancelled = true;
       if (authUnsubRef.current) {
         authUnsubRef.current();
         authUnsubRef.current = null;
+      }
+      if (authUrlSubRef.current) {
+        authUrlSubRef.current();
+        authUrlSubRef.current = null;
       }
     };
   }, [ready, adoptCloudSession, clearCloudSession]);
@@ -607,12 +658,17 @@ export default function App() {
       setCloudMessage('');
       const res = await signInWithOAuth(provider);
       setCloudBusy(false);
+      if (res && res.cancelled) return; // 사용자가 창을 닫았어요 — 조용히 둡니다
       if (!res.ok) {
         setCloudMessage(res.message || '로그인 창을 열지 못했어요');
         showToast(res.message || '로그인 창을 열지 못했어요');
         return;
       }
       const label = (OAUTH_PROVIDERS.find((p) => p.id === provider) || {}).label || provider;
+      if (res.completed) {
+        showToast(label + ' 로그인했어요');
+        return;
+      }
       showToast(label + ' 로그인 창을 열었어요');
     },
     [showToast]
@@ -1358,7 +1414,12 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ExpoStatusBar style="light" />
+      <ExpoStatusBar style="light" backgroundColor={colors.navy} />
+      <View
+        pointerEvents="none"
+        style={[styles.statusBarFill, { height: insets.top }]}
+        testID="status-bar-fill"
+      />
       <View style={[styles.container, { paddingTop: TOP_INSET }]}>
         <View style={styles.screenStack} onLayout={(e) => setScreenHeight(e.nativeEvent.layout.height)}>
           <View style={[styles.screen, tab !== 'map' && styles.hidden]}>
@@ -1532,6 +1593,14 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: colors.bg,
+  },
+  statusBarFill: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    backgroundColor: colors.navy,
+    zIndex: 2,
   },
   container: {
     flex: 1,

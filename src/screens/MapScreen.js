@@ -43,6 +43,7 @@ import {
   findNearbyPins,
   formatDistance,
   geolocationPermissionState,
+  hasNativeLocationPermission,
   nearestPin,
   readLocationGrantedFlag,
   requestCurrentPosition,
@@ -454,14 +455,21 @@ export default function MapScreen({
    * · permissions.query 가 'granted'  → 버튼 없이 바로 현재 위치로 이동
    * · 'prompt'/'unknown'(iOS 사파리 등) → 한 번 허용한 적이 있으면(localStorage 기록) 시도
    * · 'denied' → 시도하지 않고 [내 위치] 버튼을 기다립니다.
+   * v2.41 — **네이티브(iOS·Android)**: 이미 권한을 허용한 사람만 조용히 잡습니다.
+   *   (첫 실행에 권한 팝업을 먼저 띄우지 않습니다 — [내 위치] 버튼이 그 역할을 합니다)
    * 실패하면 조용히 기록을 지우고 안내 배너만 남깁니다.
    */
   useEffect(() => {
-    if (Platform.OS !== 'web') return undefined;
     if (autoLocateRef.current) return undefined;
     autoLocateRef.current = true;
     let cancelled = false;
     (async () => {
+      if (Platform.OS !== 'web') {
+        const granted = await hasNativeLocationPermission();
+        if (cancelled || !granted) return;
+        await locate({ announce: false, silent: true });
+        return;
+      }
       const permission = await geolocationPermissionState();
       if (cancelled) return;
       const grantedFlag = readLocationGrantedFlag();

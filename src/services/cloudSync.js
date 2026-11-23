@@ -430,8 +430,10 @@ export async function signInWithMagicLink(email) {
 /**
  * 소셜 로그인 — `google` · `kakao` · `apple`.
  *   · 웹: Supabase 가 페이지를 그 Provider 로 넘깁니다. (`skipBrowserRedirect:false`)
- *   · 앱: 로그인 URL 만 받아 `Linking.openURL` 로 엽니다. (돌아올 때는 `reelpin://auth-callback`)
- *   · v2.20.1 — 준비 중(`pending`)인 Apple 은 **Supabase 를 부르지 않고** 안내만 돌려줍니다.
+ *   · 앱: v2.41 — `expo-web-browser` 의 **인증 세션**으로 열고, 돌아온 `reelpin://auth-callback?code=…`
+ *     의 code 를 `exchangeCodeForSession` 으로 세션으로 바꿉니다.
+ *     (예전에는 `Linking.openURL` 로 열기만 하고 **돌아온 주소를 아무도 처리하지 않아**
+ *      아이폰에서 브라우저만 닫히고 로그인이 안 된 채로 남았습니다.)
  */
 export async function signInWithOAuth(provider, options = {}) {
   const client = guardClient();
@@ -442,7 +444,8 @@ export async function signInWithOAuth(provider, options = {}) {
   try {
     const web = typeof window !== 'undefined' && !!window;
     // 구글은 매번 계정 선택 화면을 띄웁니다. (브라우저에 이미 로그인된 계정으로 조용히 통과하지 않게)
-    const oauthOptions = { redirectTo: options.redirectTo || authRedirectUrl(), skipBrowserRedirect: !web };
+    const redirectTo = options.redirectTo || authRedirectUrl();
+    const oauthOptions = { redirectTo, skipBrowserRedirect: !web };
     if (id === 'google') oauthOptions.queryParams = { prompt: 'select_account' };
     const { data, error } = await client.auth.signInWithOAuth({
       provider: id,
@@ -451,16 +454,106 @@ export async function signInWithOAuth(provider, options = {}) {
     if (error) return { ok: false, error: error.code || error.name || 'auth-error', message: friendlyAuthError(error) };
     const url = data && data.url;
     if (!web && url) {
-      try {
-        await Linking.openURL(url);
-      } catch (e) {
-        return fail('open-failed', '로그인 창을 열지 못했어요. 브라우저에서 다시 시도해 주세요');
-      }
+      return await openNativeOAuth(client, url, redirectTo);
     }
     return { ok: true, url, redirected: web };
   } catch (e) {
     return { ok: false, error: 'network', message: friendlyAuthError(e) };
   }
+}
+
+/**
+ * v2.41 — 네이티브 OAuth: 브라우저(인증 세션)를 열고 돌아온 주소로 세션을 만듭니다.
+ *   · `openAuthSessionAsync` 는 `reelpin://auth-callback` 로 돌아오는 순간 브라우저를 **스스로 닫고**
+ *     그 주소를 돌려줍니다. (사용자가 직접 앱으로 돌아오지 않아도 됩니다)
+ *   · PKCE 흐름이라 주소에 `?code=…` 가 실려 옵니다 → `exchangeCodeForSession`
+ *   · 사용자가 창을 그냥 닫으면 조용히 취소(`cancelled`) — 화면은 그대로 둡니다.
+ */
+async function openNativeOAuth(client, url, redirectTo) {
+  let WebBrowser = null;
+  try {
+    // eslint-disable-next-line global-require
+    WebBrowser = require('expo-web-browser');
+  } catch (e) {
+    WebBrowser = null;
+  }
+  if (!WebBrowser || typeof WebBrowser.openAuthSessionAsync !== 'function') {
+    try {
+      await Linking.openURL(url);
+    } catch (e) {
+      return fail('open-failed', '로그인 창을 열지 못했어요. 브라우저에서 다시 시도해 주세요');
+    }
+    return { ok: true, url, redirected: false, manual: true };
+  }
+  let result = null;
+  try {
+    result = await WebBrowser.openAuthSessionAsync(url, redirectTo);
+  } catch (e) {
+    return fail('open-failed', '로그인 창을 열지 못했어요. 잠시 후 다시 시도해 주세요');
+  }
+  if (!result || result.type !== 'success' || !result.url) {
+    return { ok: false, error: 'cancelled', message: '', cancelled: true };
+  }
+  return await completeOAuthCallback(client, result.url);
+}
+
+/** 로그인 뒤 돌아온 주소(`reelpin://auth-callback?code=…`)를 세션으로 바꿉니다. */
+export async function completeOAuthCallback(client, callbackUrl) {
+  const target = client || guardClient();
+  if (!target) return { ...NOT_CONFIGURED };
+  const parsed = parseOAuthCallback(callbackUrl);
+  if (parsed.error) return { ok: false, error: parsed.error, message: friendlyAuthError({ message: parsed.errorDescription }) };
+  try {
+    if (parsed.code) {
+      const { data, error } = await target.auth.exchangeCodeForSession(parsed.code);
+      if (error) return { ok: false, error: error.code || 'exchange-failed', message: friendlyAuthError(error) };
+      return { ok: true, session: data && data.session ? data.session : null, completed: true };
+    }
+    if (parsed.accessToken && parsed.refreshToken) {
+      const { data, error } = await target.auth.setSession({
+        access_token: parsed.accessToken,
+        refresh_token: parsed.refreshToken,
+      });
+      if (error) return { ok: false, error: error.code || 'session-failed', message: friendlyAuthError(error) };
+      return { ok: true, session: data && data.session ? data.session : null, completed: true };
+    }
+  } catch (e) {
+    return { ok: false, error: 'network', message: friendlyAuthError(e) };
+  }
+  return { ok: false, error: 'no-code', message: '로그인 결과를 받지 못했어요. 다시 시도해 주세요' };
+}
+
+/** 콜백 주소에서 code/토큰/오류를 **순수하게** 뽑아냅니다(테스트 대상). */
+export function parseOAuthCallback(callbackUrl) {
+  const out = { code: '', accessToken: '', refreshToken: '', error: '', errorDescription: '' };
+  const raw = String(callbackUrl || '');
+  if (!raw) return out;
+  const hashIndex = raw.indexOf('#');
+  const queryPart = raw.slice(0, hashIndex >= 0 ? hashIndex : raw.length);
+  const hashPart = hashIndex >= 0 ? raw.slice(hashIndex + 1) : '';
+  const read = (params) => {
+    try {
+      const search = new URLSearchParams(params);
+      return search;
+    } catch (e) {
+      return null;
+    }
+  };
+  const queryIndex = queryPart.indexOf('?');
+  const query = read(queryIndex >= 0 ? queryPart.slice(queryIndex + 1) : '');
+  const hash = read(hashPart);
+  const pick = (key) => {
+    const fromQuery = query && query.get(key);
+    if (fromQuery) return String(fromQuery);
+    const fromHash = hash && hash.get(key);
+    return fromHash ? String(fromHash) : '';
+  };
+  out.code = pick('code');
+  out.accessToken = pick('access_token');
+  out.refreshToken = pick('refresh_token');
+  out.error = pick('error');
+  out.errorDescription = pick('error_description');
+  return out;
 }
 
 /** 로그아웃 — 기기 세션을 지웁니다. (기기에 저장된 핀은 그대로) */

@@ -42,7 +42,14 @@ const STUBS = {
   'expo-font': './test/stubs/expo-font.js',
   '@react-native-async-storage/async-storage': './test/stubs/async-storage.js',
   '@expo/vector-icons': './test/stubs/vector-icons.js',
+  // v2.41 — 네이티브 WebView(지도)는 node 에서 실제 모듈을 읽을 수 없어 스텁으로 바꿉니다.
+  'react-native-webview': './test/stubs/react-native-webview.js',
+  // v2.41 — 안전 영역(노치) 값은 node 테스트에서 0 으로 충분합니다.
+  'react-native-safe-area-context': './test/stubs/safe-area-context.js',
 };
+
+/** 모든 suite 가 같은 스텁 묶음을 쓰도록 — `react-native` 만 갈아 끼웁니다. */
+const aliasFor = (reactNative) => ({ 'react-native': reactNative, ...STUBS });
 
 async function runSuite({ name, entry, out, format, alias }) {
   const outFile = path.join(outDir, out);
@@ -72,7 +79,7 @@ if (!only || only === 'extract') {
     entry: 'extractor-test.mjs',
     out: 'extractor-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -83,7 +90,7 @@ if (!only || only === 'proxy') {
     entry: 'proxy-test.mjs',
     out: 'proxy-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native-web.js' },
+    alias: aliasFor('./test/stubs/react-native-web.js'),
   });
 }
 
@@ -104,6 +111,8 @@ if (!only || only === 'location') {
     entry: 'location-test.mjs',
     out: 'location-test.bundle.mjs',
     format: 'esm',
+    // v2.41 — location.js 가 네이티브에서 expo-location 을 쓰므로 react-native 스텁이 필요합니다.
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -114,7 +123,7 @@ if (!only || only === 'cloud') {
     entry: 'cloud-test.mjs',
     out: 'cloud-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -125,7 +134,7 @@ if (!only || only === 'category') {
     entry: 'category-test.mjs',
     out: 'category-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -136,7 +145,7 @@ if (!only || only === 'search') {
     entry: 'search-cluster-test.mjs',
     out: 'search-cluster-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 
@@ -147,7 +156,7 @@ if (!only || only === 'nav') {
     entry: 'search-nav-test.mjs',
     out: 'search-nav-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -158,7 +167,7 @@ if (!only || only === 'visit') {
     entry: 'visit-memo-test.mjs',
     out: 'visit-memo-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -179,7 +188,7 @@ if (!only || only === 'hours') {
     entry: 'opening-status-test.mjs',
     out: 'opening-status-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -201,7 +210,7 @@ if (!only || only === 'visits') {
     entry: 'visits-test.mjs',
     out: 'visits-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -212,7 +221,7 @@ if (!only || only === 'feedback') {
     entry: 'feedback-test.mjs',
     out: 'feedback-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -223,7 +232,7 @@ if (!only || only === 'curation') {
     entry: 'curation-test.mjs',
     out: 'curation-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -235,7 +244,7 @@ if (!only || only === 'longpress') {
     out: 'longpress-test.bundle.mjs',
     format: 'esm',
     // 지도 컴포넌트(RealMapView.web.js)의 계산 함수까지 함께 검사하므로 실제 react-native-web 으로 묶습니다.
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 
@@ -256,7 +265,7 @@ if (!only || only === 'legal') {
     entry: 'legal-test.mjs',
     out: 'legal-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -267,7 +276,7 @@ if (!only || only === 'rank') {
     entry: 'search-rank-test.mjs',
     out: 'search-rank-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -278,7 +287,7 @@ if (!only || only === 'sheet') {
     entry: 'sheet-dismiss-test.mjs',
     out: 'sheet-dismiss-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -289,7 +298,7 @@ if (!only || only === 'layersheet') {
     entry: 'layer-sheet-swipe-test.mjs',
     out: 'layer-sheet-swipe-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -300,7 +309,7 @@ if (!only || only === 'mapsearch') {
     entry: 'map-search-test.mjs',
     out: 'map-search-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -311,7 +320,7 @@ if (!only || only === 'color') {
     entry: 'category-color-test.mjs',
     out: 'category-color-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js' },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -322,7 +331,7 @@ if (!only || only === 'menu') {
     entry: 'menu-order-test.jsx',
     out: 'menu-order-test.cjs',
     format: 'cjs',
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 
@@ -333,7 +342,7 @@ if (!only || only === 'procard') {
     entry: 'pro-card-hidden-test.jsx',
     out: 'pro-card-hidden-test.cjs',
     format: 'cjs',
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 
@@ -344,7 +353,7 @@ if (!only || only === 'account') {
     entry: 'account-deletion-test.jsx',
     out: 'account-deletion-test.cjs',
     format: 'cjs',
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 
@@ -355,7 +364,7 @@ if (!only || only === 'apple') {
     entry: 'apple-signin-test.jsx',
     out: 'apple-signin-test.cjs',
     format: 'cjs',
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 
@@ -366,7 +375,7 @@ if (!only || only === 'fonts') {
     entry: 'fonts-test.mjs',
     out: 'fonts-test.bundle.mjs',
     format: 'esm',
-    alias: { 'react-native': './test/stubs/react-native.js', ...STUBS },
+    alias: aliasFor('./test/stubs/react-native.js'),
   });
 }
 
@@ -376,7 +385,7 @@ if (!only || only === 'ssr') {
     entry: 'ssr-smoke.jsx',
     out: 'ssr-smoke.cjs',
     format: 'cjs',
-    alias: { 'react-native': 'react-native-web', ...STUBS },
+    alias: aliasFor('react-native-web'),
   });
 }
 

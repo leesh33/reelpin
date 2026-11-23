@@ -159,7 +159,130 @@ export const LOCATION_MESSAGES = {
   unknown: '위치를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.',
 };
 
+/**
+ * 네이티브(iOS·Android)인가? — react-native 를 import 하지 않고 판별합니다.
+ * (이 파일은 node 테스트에서도 그대로 import 되므로 무거운 의존을 들이지 않습니다)
+ */
+export function isNativeRuntime() {
+  try {
+    return typeof navigator !== 'undefined' && !!navigator && navigator.product === 'ReactNative';
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * v2.41 — 📍 **네이티브 위치**(`expo-location`)를 브라우저 `navigator.geolocation` 모양으로 감쌉니다.
+ *
+ *   RN 에는 `navigator.geolocation` 이 없어서, 그대로 두면 아이폰·안드로이드에서
+ *   [내 위치]·주변 500m 알림이 **아예 동작하지 않았습니다**(웹에서만 되던 이유).
+ *   여기서는 웹 코드가 기대하는 그대로 — `getCurrentPosition` · `watchPosition` · `clearWatch` —
+ *   를 돌려주고, 오류도 브라우저와 같은 code(1 거절 / 2 사용 불가 / 3 시간 초과)로 맞춥니다.
+ *   `expo-location` 은 **호출 시점에만** require 해서 웹 번들·테스트에 영향을 주지 않습니다.
+ */
+function nativeGeoApi() {
+  if (!isNativeRuntime()) return null;
+  let Location = null;
+  try {
+    // eslint-disable-next-line global-require
+    Location = require('expo-location');
+  } catch (e) {
+    return null;
+  }
+  if (!Location || typeof Location.getCurrentPositionAsync !== 'function') return null;
+
+  const browserError = (code, message) => ({ code, message: message || '' });
+  const errorCodeOf = (e) => {
+    const text = String((e && (e.code || e.message)) || '').toLowerCase();
+    if (text.indexOf('permission') >= 0 || text.indexOf('denied') >= 0) return 1;
+    if (text.indexOf('timeout') >= 0) return 3;
+    return 2;
+  };
+  const toBrowserPosition = (position) => ({
+    coords: {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy,
+    },
+    timestamp: position.timestamp || Date.now(),
+  });
+
+  const ensurePermission = async () => {
+    const current = await Location.getForegroundPermissionsAsync();
+    if (current && current.status === 'granted') return true;
+    const asked = await Location.requestForegroundPermissionsAsync();
+    return Boolean(asked && asked.status === 'granted');
+  };
+
+  return {
+    getCurrentPosition(onSuccess, onError, options = {}) {
+      (async () => {
+        try {
+          const granted = await ensurePermission();
+          if (!granted) {
+            onError(browserError(1));
+            return;
+          }
+          const position = await Location.getCurrentPositionAsync({
+            accuracy: options.enableHighAccuracy === false ? Location.Accuracy.Balanced : Location.Accuracy.High,
+            mayShowUserSettingsDialog: true,
+          });
+          onSuccess(toBrowserPosition(position));
+        } catch (e) {
+          onError(browserError(errorCodeOf(e), e && e.message));
+        }
+      })();
+    },
+    watchPosition(onSuccess, onError) {
+      let subscription = null;
+      let cancelled = false;
+      const handle = {
+        remove() {
+          cancelled = true;
+          try {
+            if (subscription && typeof subscription.remove === 'function') subscription.remove();
+          } catch (e) {
+            /* 해지 실패는 무시 */
+          }
+        },
+      };
+      (async () => {
+        try {
+          const granted = await ensurePermission();
+          if (!granted) {
+            if (!cancelled) onError(browserError(1));
+            return;
+          }
+          if (cancelled) return;
+          subscription = await Location.watchPositionAsync(
+            {
+              accuracy: Location.Accuracy.High,
+              distanceInterval: 20,
+              timeInterval: 10000,
+            },
+            (position) => {
+              if (!cancelled) onSuccess(toBrowserPosition(position));
+            }
+          );
+        } catch (e) {
+          if (!cancelled) onError(browserError(errorCodeOf(e), e && e.message));
+        }
+      })();
+      return handle;
+    },
+    clearWatch(handle) {
+      try {
+        if (handle && typeof handle.remove === 'function') handle.remove();
+      } catch (e) {
+        /* 해지 실패는 무시 */
+      }
+    },
+  };
+}
+
 function geoApi() {
+  const native = nativeGeoApi();
+  if (native) return native;
   if (typeof navigator === 'undefined' || !navigator) return null;
   const geo = navigator.geolocation;
   if (!geo || typeof geo.getCurrentPosition !== 'function') return null;
@@ -169,6 +292,23 @@ function geoApi() {
 /** 이 환경에서 위치 기능을 쓸 수 있는지 (SSR·구형 브라우저 대비) */
 export function isGeolocationSupported() {
   return geoApi() !== null;
+}
+
+/**
+ * v2.41 — 네이티브에서 **이미 허용된 경우에만** 위치를 쓸 수 있는지 확인합니다.
+ *   · 첫 실행에 권한 팝업을 띄우지 않고, 예전에 허용한 사람은 앱을 열자마자 내 위치로 갈 수 있게.
+ *   · 웹·권한 API 가 없으면 false (기존 동작 그대로).
+ */
+export async function hasNativeLocationPermission() {
+  if (!isNativeRuntime()) return false;
+  try {
+    // eslint-disable-next-line global-require
+    const Location = require('expo-location');
+    const current = await Location.getForegroundPermissionsAsync();
+    return Boolean(current && current.status === 'granted');
+  } catch (e) {
+    return false;
+  }
 }
 
 function locationError(code) {

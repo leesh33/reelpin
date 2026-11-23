@@ -29,13 +29,14 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.odol.reelpin",
-      "buildNumber": "16",
+      "buildNumber": "17",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "저장한 맛집 근처에 도착했을 때 알려드리기 위해 위치를 사용합니다.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "앱이 꺼져 있어도 저장한 맛집 근처에서 알려드리기 위해 위치를 사용합니다.",
         "NSCameraUsageDescription": "릴스·쇼츠 화면이나 가게 사진을 찍어 저장할 장소를 찾기 위해 카메라를 사용합니다.",
         "NSPhotoLibraryUsageDescription": "사진 속 가게 이름을 읽어 저장할 장소를 찾기 위해 사진 보관함에서 사진을 고릅니다.",
-        "NSPhotoLibraryAddUsageDescription": "내 지도·핀을 사진으로 저장할 때 사진 보관함에 추가합니다."
+        "NSPhotoLibraryAddUsageDescription": "내 지도·핀을 사진으로 저장할 때 사진 보관함에 추가합니다.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -49,6 +50,12 @@
     "web": {
       "bundler": "metro",
       "favicon": "./assets/icon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "463f8e73-5209-403a-90b9-4917f3dab2c5"
+      }
+    },
+    "owner": "leesh33"
   }
 }

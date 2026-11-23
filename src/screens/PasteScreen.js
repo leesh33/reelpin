@@ -62,13 +62,13 @@ export default function PasteScreen({
   header = null,
   request = null,
 }) {
-  // 웹(배포 앱)에서만 Gemini 사진 분석 프록시를 부를 수 있습니다. (키는 서버에만)
-  const canUsePhoto = isWebPlatform();
+  // v2.41 — 📸 사진으로 찾기를 **네이티브(iOS·Android)에서도** 씁니다.
+  //   웹은 파일 선택창, 네이티브는 `expo-image-picker` 로 사진 보관함을 열고
+  //   둘 다 `extractFromImage` → `/api/gemini` 로 같은 파이프라인을 탑니다. (키는 서버에만)
+  const canUsePhoto = true;
   /**
    * v2.14 — 저장 화면 상단을 3개 탭으로 나눕니다: `🔗 릴스 링크` · `📸 사진으로 찾기` · `🔍 가게명 찾기`.
-   *   · 사진 탭은 Gemini 서버 프록시(웹 전용)로 동작하므로, 웹에서는 3개 탭이 모두 보이고
-   *     네이티브(`Platform.OS !== 'web'`)에서는 예전처럼 2개 탭만 보입니다.
-   *   · 네이티브에서 `initialMode="photo"` 로 들어와도 사진 탭이 없으니 링크 탭으로 엽니다.
+   *   · v2.41 — 세 탭이 **웹·iOS·Android 모두** 보입니다(사진 탭이 네이티브에서도 동작).
    */
   const [mode, setMode] = useState(() => {
     const want = initialMode === 'search' ? 'search' : initialMode === 'photo' ? 'photo' : 'link';
@@ -340,6 +340,10 @@ export default function PasteScreen({
     if (extracting || photoBusy) return;
     const file = await pickImageFile();
     if (!file) return; // 사용자가 취소 — 화면은 그대로 둡니다
+    if (file.error === 'permission-denied') {
+      setError('사진 보관함 권한이 꺼져 있어요. 설정 › 릴스핀 › 사진 에서 허용으로 바꿔 주세요.');
+      return;
+    }
     const seq = runSeq.current + 1;
     runSeq.current = seq;
     if (mode !== 'photo') setMode('photo');

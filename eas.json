@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 13.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "distribution": "store",
+      "autoIncrement": false,
+      "credentialsSource": "local",
+      "ios": {
+        "image": "macos-sequoia-15.6-xcode-26.0"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "ascAppId": "6838161642",
+        "ascApiKeyPath": "credentials/AuthKey_LNH9GFU8D9.p8",
+        "ascApiKeyId": "LNH9GFU8D9",
+        "ascApiKeyIssuerId": "cc970abf-84b5-4a37-9bee-9a5e37ad2ed0"
+      }
+    }
+  }
+}
