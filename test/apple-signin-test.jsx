@@ -74,10 +74,10 @@ const cardOn = renderToString(
   })
 );
 
-check('스위치: 지금은 꺼짐 (Apple Developer 가입 전)', SHOW_APPLE_SIGNIN === false, String(SHOW_APPLE_SIGNIN));
+check('스위치: 지금은 켜짐 (Apple Developer·Supabase Provider 등록 후)', SHOW_APPLE_SIGNIN === true, String(SHOW_APPLE_SIGNIN));
 check('스위치: 목록은 스위치 값으로 만들어진다 (OAUTH_PROVIDERS = buildOAuthProviders())',
   cloudSrc.indexOf('export const OAUTH_PROVIDERS = buildOAuthProviders();') > 0 &&
-    cloudSrc.indexOf('export const SHOW_APPLE_SIGNIN = false;') > 0);
+    cloudSrc.indexOf('export const SHOW_APPLE_SIGNIN = ' + SHOW_APPLE_SIGNIN + ';') > 0);
 check('목록: 카카오 · 구글 · Apple 세 개 (순서 그대로)',
   OAUTH_PROVIDERS.map((p) => p.id).join(',') === 'kakao,google,apple',
   OAUTH_PROVIDERS.map((p) => p.id).join(','));
@@ -87,7 +87,7 @@ check('켜짐/꺼짐 모두 카카오·구글은 늘 준비됨',
 
 // ── 꺼짐 상태 ────────────────────────────────────────────────
 check('꺼짐: Apple 은 pending (Supabase 로 넘기지 않음)',
-  appleOf(off).pending === true && oauthProviderReady('apple', off) === false && oauthProviderReady('apple') === false);
+  appleOf(off).pending === true && oauthProviderReady('apple', off) === false && oauthProviderReady('apple') === true);
 check('꺼짐: 화면에 `준비 중` 배지 + 안내 줄',
   cardOff.indexOf('social-apple-pending') > 0 && cardOff.indexOf('준비 중') > 0 &&
     cardOff.indexOf('social-pending-line') > 0 && cardOff.indexOf('Apple 로그인은 준비 중이에요') > 0);
@@ -119,8 +119,8 @@ async function callChecks() {
     },
   });
   const res = await signInWithOAuth('apple');
-  check('꺼짐: signInWithOAuth("apple") 은 Supabase 를 부르지 않고 안내만', calls === 0 && res.ok === false &&
-    res.error === 'provider-pending' && res.message === OAUTH_PENDING_MESSAGE, calls + ' / ' + JSON.stringify(res));
+  check('켜짐: signInWithOAuth("apple") 이 Supabase 를 부른다', calls === 1 && res.ok === true &&
+    res.error !== 'provider-pending', calls + ' / ' + JSON.stringify(res));
   check('꺼짐: 안내 문구는 지금 문구 그대로',
     OAUTH_PENDING_MESSAGE === 'Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.', OAUTH_PENDING_MESSAGE);
   __setSupabaseClient(null);

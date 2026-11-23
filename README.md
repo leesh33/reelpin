@@ -1,5 +1,6 @@
 # 📍 릴스핀 (Reelspin) — iOS 앱 풀소스 v2.40.0
 
+> **v2.41 (2026-11-23)** **🍎 Sign in with Apple 켜짐** — Apple Developer Program(Team `LH82P8DQ96`)에 App ID `com.odol.reelpin`(Sign in with Apple capability)·Services ID `com.odol.reelpin.signin`(domain `zdcdvjlssncsawpqsjwe.supabase.co` · return URL `/auth/v1/callback`)·Key `53NM8MDYHR`(`.p8`, 저장소 밖 보관)를 만들고 Supabase Apple Provider 를 켰습니다(비밀키 JWT 를 Apple `/auth/token` 에 던져 `invalid_grant` 로 유효 확인). 앱 스위치 `SHOW_APPLE_SIGNIN` 을 `true` 로 — 로그인 카드의 Apple 버튼이 활성이고 `signInWithOAuth({provider:'apple'})` 로 넘어갑니다(`test:apple` 17건·스모크 3건 기대값을 켜짐 상태로 갱신). 켠 순서·값·6개월 만료 주의는 아래 **「6. 🍎 Apple 로그인 켜기」** 에 갱신해 두었습니다.
 > **브랜드 표기** **릴스핀 · Reelspin** 으로 통일 (앱 로고·문서·패키지 설명). `reelpin.vercel.app`·`reelpin://`·`com.odol.reelpin`·`reelpin.*` 저장 키 같은 **기술 식별자는 그대로** 둡니다 (로그인·데이터 유지).
 
 > **기획** 이상훈 (@odol) · **개발** 오돌
@@ -217,7 +218,7 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 3. **Authentication → Providers**
    - **Email**: 그대로 사용(비밀번호 로그인 + 매직링크). 'Confirm email' 을 켜 두면 가입 후 메일함에서 링크를 눌러야 로그인됩니다.
    - **카카오 / 구글**: 각 콘솔에서 OAuth 앱을 만들고 Client ID·Secret 을 넣어 켜면 앱의 소셜 버튼이 동작합니다. (안 켜져 있으면 버튼을 눌렀을 때 '아직 서버에서 켜지지 않았어요' 안내가 뜨고, 앱은 그대로 쓸 수 있습니다)
-   - **Apple**: **준비 중**입니다 — 유료 Apple Developer 계정(연 129,000원)이 필요해 앱의 Apple 버튼은 `준비 중` 배지로 잠겨 있고, 눌러도 Supabase 를 부르지 않습니다. 가입 후 켜는 방법은 아래 **「6. 🍎 Apple 로그인 켜기」** 참고 (v2.40.0 — 스위치 `SHOW_APPLE_SIGNIN` 한 줄)
+   - **Apple**: **켜짐** — Team ID `LH82P8DQ96` · Services ID `com.odol.reelpin.signin` · Key `53NM8MDYHR` 로 Supabase Provider 를 켜 두었고 앱의 Apple 버튼도 활성입니다. 켠 순서·값은 아래 **「6. 🍎 Apple 로그인 켜기」** 참고 (v2.41.0 — 스위치 `SHOW_APPLE_SIGNIN` 이 `true`)
    - **Authentication → URL Configuration → Redirect URLs** 에 `https://reelpin.vercel.app/` 와 앱용 `reelpin://auth-callback` 을 추가 (매직링크·소셜 로그인이 돌아올 주소)
 4. **Vercel → Project → Settings → Environment Variables**
    - `SUPABASE_URL`, `SUPABASE_ANON_KEY` (접미 없는 이름 — `/api/auth-config` 가 읽어 웹 앱에 전달합니다)
@@ -231,27 +232,35 @@ v2.1은 **설정이 없어도 그냥 동작합니다**(기기 로컬 전용). �
 ## 6. 🍎 Apple 로그인 켜기 (Apple Developer 가입 후 · 심사 지침 4.8)
 
 다른 소셜 로그인(카카오·구글)을 제공하는 앱은 **Apple 로그인도 함께** 제공해야 합니다(심사 지침 4.8).
-지금은 Apple Developer 계정(연 129,000원)이 없어 **Provider 가 꺼져 있고**, 앱의 Apple 버튼은 `준비 중` 으로
-잠겨 있습니다 — **깨진 버튼이 나가지 않도록** 스위치 하나로 관리합니다.
+**v2.41.0(2026-11-23) 현재 켜져 있습니다** — 아래 순서는 그때 한 일의 기록이자, 키를 다시 만들 때
+다시 밟을 순서입니다.
+
+> 지금 값 — **Team ID** `LH82P8DQ96` · **Services ID** `com.odol.reelpin.signin` · **Key ID** `53NM8MDYHR`
+> · Return URL `https://zdcdvjlssncsawpqsjwe.supabase.co/auth/v1/callback` · 앱 스위치 `SHOW_APPLE_SIGNIN = true`
+> · `.p8` 은 저장소 밖(`secrets/apple/`, `.gitignore` 의 `*.p8`)에만 두고 **절대 커밋하지 않습니다**.
 
 1. **Apple Developer** → Certificates, Identifiers & Profiles
    - **App ID**(`com.odol.reelpin`) 에 **Sign in with Apple** capability 추가
-   - **Services ID** 새로 만들기(예: `com.odol.reelpin.web`) → **Sign in with Apple** 켜고
-     **Return URLs** 에 `https://zdcdvjlssncsawpqsjwe.supabase.co/auth/v1/callback` 추가
+   - **Services ID**(Service ID) 새로 만들기(`com.odol.reelpin.signin`) → **Sign in with Apple** 켜고
+     **Domains and Subdomains** `zdcdvjlssncsawpqsjwe.supabase.co` · **Return URLs**
+     `https://zdcdvjlssncsawpqsjwe.supabase.co/auth/v1/callback` 추가
      (Supabase 대시보드 → Authentication → Providers → Apple 이 보여 주는 주소 그대로)
    - **Keys** → `+` → **Sign in with Apple** → `.p8` 내려받기 (한 번만 받을 수 있음) · **Key ID** · **Team ID** 기록
 2. **Supabase** → Authentication → Providers → **Apple** → Enable
-   - **Service ID** · **Team ID** · **Key ID** · **.p8 내용** 을 넣고 Save
-3. **앱 스위치를 켭니다** — `src/services/cloudSync.js` 의 한 줄
+   - **Client IDs** 에 Services ID · **Secret Key (for OAuth)** 에 `.p8`·Key ID·Team ID 로 만든 **6개월짜리 JWT** 를 넣고 Save
+     (Apple 이 그 비밀키를 받아 주는지는 `curl` 로 `/auth/token` 에 한 번 던져 `invalid_grant` 가 오는지로 확인합니다 — `invalid_client` 면 키가 틀린 것)
+3. **앱 스위치** — `src/services/cloudSync.js` 의 한 줄이 `true` 입니다
    ```js
-   export const SHOW_APPLE_SIGNIN = false;   // → true
+   export const SHOW_APPLE_SIGNIN = true;
    ```
-   그러면 로그인 카드의 Apple 버튼이 `준비 중` 배지 없이 활성으로 나오고, 누르면
+   Apple 버튼이 `준비 중` 배지 없이 활성으로 나오고, 누르면
    `supabase.auth.signInWithOAuth({ provider: 'apple' })` 로 넘어갑니다.
+   → 다시 잠그려면 이 값을 `false` 로 (버튼이 `준비 중` 으로 돌아가고 Supabase 를 부르지 않습니다).
 4. **확인** — `npm run test:apple` (꺼짐/켜짐 두 상태) → `npm run export:web` → `main` push → 라이브에서
    Apple 버튼을 눌러 Apple 로그인 화면이 뜨는지 확인합니다.
    ※ iOS **네이티브 빌드**에서는 `app.json` 에 `expo-apple-authentication` 을 쓰지 않고
      **OAuth(브라우저) 방식**이라 별도 네이티브 모듈이 필요 없습니다.
+   ⚠️ **6개월마다** Secret Key(JWT)가 만료됩니다 — 만료되면 웹 Apple 로그인이 실패하므로 그때 위 2번을 다시 합니다.
 
 ## 7. 🗑️ 회원탈퇴 — DB 설치 (한 번만)
 

@@ -45,7 +45,7 @@ const OAUTH_BASE = Object.freeze([
  * 켜는 순서는 `README.md` 의 「🍎 Apple 로그인 켜기」 항목에 그대로 적어 두었습니다.
  * (스위치 한 줄 + Supabase provider 활성화 + Apple Developer Service ID/Key)
  */
-export const SHOW_APPLE_SIGNIN = false;
+export const SHOW_APPLE_SIGNIN = true;
 
 /** 로그인 카드에 그릴 소셜 로그인 목록 — Apple 스위치를 반영해 만듭니다 (검사에서 두 상태 모두 확인) */
 export function buildOAuthProviders(showApple = SHOW_APPLE_SIGNIN) {

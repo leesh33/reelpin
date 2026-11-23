@@ -2490,22 +2490,23 @@ const v2201Checks = [
     textOfTestId2201(signedMenuHtml2201, 'profile-display-name') === '이상훈' &&
       textOfTestId2201(signedMenuHtml2201, 'profile-display-sub').indexOf('@andy.lee') >= 0,
     textOfTestId2201(signedMenuHtml2201, 'profile-display-name') + ' / ' + textOfTestId2201(signedMenuHtml2201, 'profile-display-sub')],
-  // ③ Apple 로그인은 준비 중 — 카카오·구글은 그대로
-  ['v2.20.1 소셜: 카카오·구글은 준비됨 · Apple 은 준비 중',
+  // ③ Apple 로그인 켜짐 (v2.41.0 — Apple Developer·Supabase Provider 등록 후) — 카카오·구글은 그대로
+  ['v2.20.1 소셜: 카카오·구글·Apple 모두 준비됨 (naver 는 없음)',
     oauthProviderReady('kakao') === true && oauthProviderReady('google') === true &&
-      oauthProviderReady('apple') === false && oauthProviderReady('naver') === false,
+      oauthProviderReady('apple') === true && oauthProviderReady('naver') === false,
     OAUTH_PROVIDERS_2201.map((p) => p.id + ':' + (p.pending === true ? '준비중' : 'ok')).join(' ')],
   ['v2.20.1 소셜: 안내 문구 그대로',
     OAUTH_PENDING_MESSAGE === 'Apple 로그인은 준비 중이에요. 구글이나 카카오 로그인을 이용해 주세요.',
     OAUTH_PENDING_MESSAGE],
-  ['v2.20.1 소셜: 로그인 카드에 Apple `준비 중` · 카카오/구글 버튼 유지',
-    guestProfileHtml2201.indexOf('social-apple-pending') > 0 &&
+  ['v2.20.1 소셜: 로그인 카드에 Apple 활성 버튼 · 카카오/구글 버튼 유지',
+    guestProfileHtml2201.indexOf('social-apple') > 0 &&
+      guestProfileHtml2201.indexOf('social-apple-pending') < 0 &&
       guestProfileHtml2201.indexOf('social-kakao') > 0 && guestProfileHtml2201.indexOf('social-google') > 0 &&
-      guestProfileHtml2201.indexOf('준비 중') > 0 && guestProfileHtml2201.indexOf('social-pending-line') > 0],
-  ['v2.20.1 소셜: cloudSync 가 Apple 을 Supabase 로 보내지 않음',
+      guestProfileHtml2201.indexOf('준비 중') < 0],
+  ['v2.20.1 소셜: cloudSync 가 Apple 을 Supabase 로 보낸다 (스위치 켜짐)',
     cloudSyncSource2201.indexOf('if (!oauthProviderReady(id)) return fail(\'provider-pending\', OAUTH_PENDING_MESSAGE);') > 0 &&
-      // v2.40.0 — 스위치로 관리: SHOW_APPLE_SIGNIN 이 false 면 apple.pending = true
-      cloudSyncSource2201.indexOf('const SHOW_APPLE_SIGNIN = false;') > 0 &&
+      // v2.41.0 — 스위치 켜짐: SHOW_APPLE_SIGNIN = true 면 apple.pending 이 붙지 않음
+      cloudSyncSource2201.indexOf('const SHOW_APPLE_SIGNIN = true;') > 0 &&
       cloudSyncSource2201.indexOf('apple.pending = true') > 0,
   ],
   ['v2.20.1 소셜: App·ProfileScreen 모두 준비 중 가드 + 토스트',
