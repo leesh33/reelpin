@@ -225,6 +225,20 @@ check('키 모양: 공백 포함 거부', looksLikeAnonKey('eyJhbGciOiJIUzI1NiJ9
 check('세션 키: reelpin 전용 키 사용', SESSION_STORAGE_KEY === 'reelpin.auth.session');
 check('설정 엔드포인트: 같은 출처 /api/auth-config', AUTH_CONFIG_ENDPOINT === '/api/auth-config');
 
+// v2.40.2 — Expo 의 EXPO_PUBLIC_ 치환은 **정적 접근**에만 동작합니다. `env.EXPO_PUBLIC_…` 로 읽으면
+// 네이티브 번들에 값이 박히지 않아(빌드 18 에서 실제로 겪음) 기기에서 설정이 비어 보입니다.
+const supabaseSource = fs
+  .readFileSync(path.join(root, 'src/services/supabase.js'), 'utf8')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '');
+check(
+  '설정: EXPO_PUBLIC_ 를 정적 접근으로 읽는다(번들에 값이 박히게)',
+  /process\.env\.EXPO_PUBLIC_SUPABASE_URL/.test(supabaseSource) &&
+    /process\.env\.EXPO_PUBLIC_SUPABASE_ANON_KEY/.test(supabaseSource) &&
+    !/[^.\w]env\.EXPO_PUBLIC_SUPABASE_URL/.test(supabaseSource) &&
+    !/[^.\w]env\.EXPO_PUBLIC_SUPABASE_ANON_KEY/.test(supabaseSource)
+);
+
 // 세션 저장소 — SSR(AsyncStorage 없음)에서도 예외 없이 메모리 폴백
 await supabaseAuthStorage.setItem('k', 'v1');
 check('저장소: set/get', (await supabaseAuthStorage.getItem('k')) === 'v1');

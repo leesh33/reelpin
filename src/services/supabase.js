@@ -40,12 +40,16 @@ export const SESSION_STORAGE_KEY = 'reelpin.auth.session';
  * Expo 의 `EXPO_PUBLIC_` 인라인 치환은 **정적 멤버 접근**(`process.env.이름`)에만 동작합니다.
  * 그래서 이름을 변수로 돌리지 않고 그대로 적습니다. (테스트에서 값을 바꿔 볼 수 있게
  * 모듈 로드 시점이 아니라 호출 시점에 읽습니다.)
+ *
+ * ⚠️ v2.40.2 — 예전에는 `const env = process.env` 로 받아 `env.EXPO_PUBLIC_SUPABASE_URL` 로
+ *    읽었는데, 이 **동적 접근은 치환되지 않아** 네이티브 번들에 값이 박히지 않았습니다
+ *    (빌드 18 의 .ipa `main.jsbundle` 에 Supabase 주소가 0건). 그래서 아래처럼 직접 적습니다.
  */
 export function readEnvConfig() {
-  const env = typeof process !== 'undefined' && process && process.env ? process.env : {};
+  if (typeof process === 'undefined' || !process || !process.env) return { url: '', anonKey: '' };
   return {
-    url: String(env.EXPO_PUBLIC_SUPABASE_URL || '').trim(),
-    anonKey: String(env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim(),
+    url: String(process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim(),
+    anonKey: String(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim(),
   };
 }
 
@@ -241,8 +245,10 @@ export const supabaseAuthStorage = {
  *   · `EXPO_PUBLIC_AUTH_REDIRECT_URL` 이 있으면 그 값을 우선합니다.
  */
 export function authRedirectUrl() {
-  const env = typeof process !== 'undefined' && process && process.env ? process.env : {};
-  const explicit = String(env.EXPO_PUBLIC_AUTH_REDIRECT_URL || '').trim();
+  const explicit =
+    typeof process !== 'undefined' && process && process.env
+      ? String(process.env.EXPO_PUBLIC_AUTH_REDIRECT_URL || '').trim()
+      : '';
   if (explicit) return explicit;
   if (isBrowser()) {
     try {

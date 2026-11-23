@@ -98,8 +98,8 @@ check('app.json: NSPhotoLibraryAddUsageDescription (사진 저장 · 한국어)'
 check('app.json: 기존 위치 권한 두 개는 그대로',
   String(plist.NSLocationWhenInUseUsageDescription || '').indexOf('위치') >= 0 &&
     String(plist.NSLocationAlwaysAndWhenInUseUsageDescription || '').indexOf('위치') >= 0);
-check('app.json: 버전 2.40.0 · 빌드 번호 올림(18) · Android versionCode 18',
-  app.version === '2.40.0' && String(app.ios.buildNumber) === '18' && app.android.versionCode === 18,
+check('app.json: 버전 2.40.0 · 빌드 번호 올림(19) · Android versionCode 18',
+  app.version === '2.40.0' && String(app.ios.buildNumber) === '19' && app.android.versionCode === 18,
   app.version + ' / ' + app.ios.buildNumber + ' / ' + app.android.versionCode);
 
 // ── 4. 로더 · AppText ───────────────────────────────────────
