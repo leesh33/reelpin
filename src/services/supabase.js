@@ -5,8 +5,10 @@
  *
  * 설정을 찾는 순서
  *   1. 빌드에 박히는 공개 환경변수 `EXPO_PUBLIC_SUPABASE_URL` / `EXPO_PUBLIC_SUPABASE_ANON_KEY`
- *   2. 웹에서 위 값이 비었을 때: 같은 출처의 `/api/auth-config` (Vercel 함수) — 서버에만 있는
+ *   2. 웹: 같은 출처의 `/api/auth-config`, **네이티브(iOS·Android): 같은 절대 주소**
+ *      `https://reelpin.vercel.app/api/auth-config` (Vercel 함수) — 서버에만 있는
  *      `SUPABASE_URL` / `SUPABASE_ANON_KEY` 를 돌려받습니다. (`SERVICE_ROLE_KEY` 는 **절대** 안 옵니다)
+ *      · 네이티브에는 같은 출처가 없어 상대 경로 `fetch('/api/auth-config')` 가 실패하므로 절대 주소를 씁니다.
  *   3. 둘 다 없으면 `isSupabaseConfigured() === false` → 앱은 기존처럼 **기기 로컬 전용**으로 동작합니다.
  *
  * SSR/Node 안전 규칙 (지난 v1.x 에서 웹 export 가 깨졌던 지점들)
@@ -20,9 +22,12 @@
  */
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_ORIGIN, isNativeRuntime } from '../utils/apiOrigin';
 
 /** 웹에서 서버 설정을 받아 오는 같은 출처 엔드포인트 (Vercel 함수) */
 export const AUTH_CONFIG_ENDPOINT = '/api/auth-config';
+/** 네이티브에서 쓰는 **절대 주소** — 같은 출처가 없는 앱에서도 설정을 받아 옵니다. */
+export const NATIVE_AUTH_CONFIG_ENDPOINT = API_ORIGIN + AUTH_CONFIG_ENDPOINT;
 /** 설정 조회는 4초 안에 끊습니다. (Vercel 무료 플랜 함수 시간 보호) */
 export const AUTH_CONFIG_TIMEOUT_MS = 4000;
 /** 받아 온 설정을 메모리에 들고 있는 시간 — 한 세션 안에서 매번 부르지 않게 */
@@ -128,8 +133,10 @@ export function resetSupabaseConfigCache() {
 }
 
 /**
- * 웹에서 `/api/auth-config` 로 설정을 받아 옵니다.
- *   · Node SSR·앱(iOS/Android)·테스트에서는 fetch 를 부르지 않고 바로 `{ ok:false, reason:'not-web' }`.
+ * `/api/auth-config` 로 설정을 받아 옵니다.
+ *   · 웹      … 같은 출처 상대 경로 `'/api/auth-config'`
+ *   · 네이티브 … 절대 주소 `'https://reelpin.vercel.app/api/auth-config'` (v2.40.1)
+ *   · Node SSR·테스트 … fetch 를 부르지 않고 바로 `{ ok:false, reason:'not-web' }`
  *   · 실패해도 예외를 던지지 않습니다. (앱은 로컬 전용으로 계속 동작)
  */
 export async function loadSupabaseConfig(options = {}) {
@@ -138,7 +145,9 @@ export async function loadSupabaseConfig(options = {}) {
     return { ok: true, source: 'env', config: resolveSupabaseConfig() };
   }
   if (injectedConfig) return { ok: true, source: 'injected', config: resolveSupabaseConfig() };
-  if (!isBrowser()) return { ok: false, reason: 'not-web', config: resolveSupabaseConfig() };
+  // v2.40.1 — 네이티브는 같은 출처가 없지만 **절대 주소**로는 받아 올 수 있습니다.
+  const native = isNativeRuntime();
+  if (!isBrowser() && !native) return { ok: false, reason: 'not-web', config: resolveSupabaseConfig() };
 
   const now = Date.now();
   if (serverConfig && now - serverConfig.at < (options.maxAgeMs || AUTH_CONFIG_CACHE_MS)) {
@@ -148,7 +157,8 @@ export async function loadSupabaseConfig(options = {}) {
   const fetchImpl = options.fetchImpl || (typeof fetch === 'function' ? fetch : null);
   if (!fetchImpl) return { ok: false, reason: 'no-fetch', config: resolveSupabaseConfig() };
 
-  const endpoint = options.endpoint || AUTH_CONFIG_ENDPOINT;
+  const endpoint =
+    options.endpoint || (native && !isBrowser() ? NATIVE_AUTH_CONFIG_ENDPOINT : AUTH_CONFIG_ENDPOINT);
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : AUTH_CONFIG_TIMEOUT_MS;
   let timer = null;
   try {

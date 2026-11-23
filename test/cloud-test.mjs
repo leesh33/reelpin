@@ -16,6 +16,7 @@ import path from 'node:path';
 import authConfigHandler from '../api/auth-config.js';
 import {
   AUTH_CONFIG_ENDPOINT,
+  NATIVE_AUTH_CONFIG_ENDPOINT,
   SESSION_STORAGE_KEY,
   __setSupabaseClient,
   authRedirectUrl,
@@ -31,6 +32,7 @@ import {
   setSupabaseConfig,
   supabaseAuthStorage,
 } from '../src/services/supabase.js';
+import { API_ORIGIN, apiUrl, isNativeRuntime } from '../src/utils/apiOrigin.js';
 import {
   MIN_PASSWORD_LENGTH,
   OAUTH_PROVIDERS,
@@ -280,6 +282,41 @@ try {
 }
 check('SSR 복귀: window 삭제 후 isBrowser false', isBrowser() === false);
 check('SSR 복귀: 앱 리다이렉트는 reelpin:// 스킴', authRedirectUrl() === 'reelpin://auth-callback');
+
+// ── v2.40.1 · 네이티브(iOS·Android) — 같은 출처가 없어도 **절대 주소**로 설정을 받아 옵니다 ──
+{
+  const nativeCalls = [];
+  const keepFetch = globalThis.fetch;
+  // React Native 는 전역 navigator.product 를 'ReactNative' 로 둡니다. (node 의 navigator 는 읽기 전용이라 defineProperty)
+  Object.defineProperty(globalThis, 'navigator', { value: { product: 'ReactNative' }, configurable: true, writable: true });
+  try {
+    globalThis.fetch = async (url) => {
+      nativeCalls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ url: 'https://demo.supabase.co', anonKey: ANON }) };
+    };
+    clearEnv();
+    resetSupabaseConfigCache();
+    check('네이티브 판정: navigator.product=ReactNative 면 true (window 없음)', isNativeRuntime() === true && isBrowser() === false);
+    check(
+      '네이티브 주소: /api/auth-config → https://reelpin.vercel.app/api/auth-config',
+      NATIVE_AUTH_CONFIG_ENDPOINT === 'https://reelpin.vercel.app/api/auth-config' &&
+        apiUrl('/api/reverse-place') === API_ORIGIN + '/api/reverse-place'
+    );
+    const nativeLoad = await loadSupabaseConfig();
+    check(
+      '네이티브 설정: 절대 주소로 받아 옴',
+      nativeCalls.length === 1 && nativeCalls[0] === NATIVE_AUTH_CONFIG_ENDPOINT,
+      JSON.stringify(nativeCalls)
+    );
+    check('네이티브 설정: 받은 값으로 configured true', nativeLoad.ok === true && nativeLoad.source === 'server' && isSupabaseConfigured() === true);
+  } finally {
+    globalThis.fetch = keepFetch;
+    delete globalThis.navigator;
+    resetSupabaseConfigCache();
+    clearEnv();
+  }
+  check('네이티브 아닌 SSR: 다시 not-web (fetch 안 부름)', (await loadSupabaseConfig()).reason === 'not-web');
+}
 
 // ─────────────────────────────────────────────────────────────
 // 4. 핀 ↔ DB 행 변환

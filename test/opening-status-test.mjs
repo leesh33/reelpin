@@ -27,7 +27,14 @@ import {
   memoDraftOfParts,
   mergeMemoDrafts,
 } from '../src/utils/memoDraft.js';
-import { extractKakaoPlaceId, extractNaverPlaceId, needsPlaceInfo, placeInfoPathOf, placeInfoTargetOf } from '../src/services/placeInfo.js';
+import {
+  fetchPlaceInfo,
+  extractKakaoPlaceId,
+  extractNaverPlaceId,
+  needsPlaceInfo,
+  placeInfoPathOf,
+  placeInfoTargetOf,
+} from '../src/services/placeInfo.js';
 import { buildPin, normalizePin, withPlaceHours } from '../src/utils/pins.js';
 // v2.20 — Gemini 응답의 memo 재료를 추출기가 그대로 받는지 (영상·사진 공통)
 import { memoPartsOf } from '../src/services/extractor.js';
@@ -214,6 +221,35 @@ check(
     placeInfoPathOf(placeInfoTargetOf(kakaoPin)) === '/api/kakao-place?id=2057792795'
 );
 check('매장: 6시간 지나면 다시 확인', needsPlaceInfo(kakaoPin, Date.now()) === true);
+
+// v2.40.1 — 네이티브(iOS): 같은 출처가 없으니 **배포 서버 절대 주소**로 부릅니다.
+{
+  const calls = [];
+  const keepFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, 'navigator', { value: { product: 'ReactNative' }, configurable: true, writable: true });
+  try {
+    globalThis.fetch = async (url) => {
+      calls.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ok: true, provider: 'naver', placeId: '1736095566', name: '칸다소바', hours: { hasHours: true, days: [] }, tips: {} }),
+      };
+    };
+    const nativeInfo = await fetchPlaceInfo(naverPin);
+    check(
+      '매장 네이티브: 절대 주소로 부른다',
+      calls.length === 1 && calls[0] === 'https://reelpin.vercel.app/api/naver-place?id=1736095566',
+      JSON.stringify(calls)
+    );
+    check('매장 네이티브: 응답을 place 로 해설', nativeInfo.ok === true && nativeInfo.place.name === '칸다소바');
+  } finally {
+    globalThis.fetch = keepFetch;
+    delete globalThis.navigator;
+  }
+  const srvOnly = await fetchPlaceInfo(naverPin);
+  check('매장 SSR(웹도 네이티브도 아님): 요청하지 않는다', srvOnly.ok === false && srvOnly.reason === 'web-only');
+}
 check(
   '매장: 방금 확인했으면 다시 안 부름',
   needsPlaceInfo({ ...kakaoPin, hours: HOURS_EVERYDAY, hoursCheckedAt: new Date().toISOString() }, Date.now()) === false

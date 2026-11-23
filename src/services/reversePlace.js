@@ -5,13 +5,14 @@
  *
  *   · `/api/reverse-place?lat=…&lng=…&radius=…` (api/reverse-place.js)
  *     → 카카오 coord2address(도로명·지번·건물명) + 반경 60m 업종 검색(음식점·카페·관광명소·문화시설)
- *   · 카카오 키는 **서버에만** 있습니다 — 브라우저는 우리 서버만 부릅니다. (CORS·키 노출 없음)
- *   · 서버 프록시가 있는 **웹에서만** 부릅니다. 네이티브에서는 조용히 실패로 돌려주고
- *     화면은 `이름 직접 입력` 으로 이어집니다. (등록 자체는 언제나 가능)
+ *   · 카카오 키는 **서버에만** 있습니다 — 브라우저·앱은 우리 서버만 부릅니다. (CORS·키 노출 없음)
+ *   · 서버 프록시가 있는 **웹**은 같은 출처 경로, **네이티브**는 절대 주소(`https://reelpin.vercel.app`)를 씁니다. (v2.40.1)
+ *     네이티브에서도 실패하면 조용히 실패로 돌려주고 화면은 `이름 직접 입력` 으로 이어집니다.
  *   · 실패해도 예외를 던지지 않습니다 — 꾹 누르기 UI 는 항상 열립니다.
  */
 
 import { REVERSE_PLACE_RADIUS_M } from '../utils/longPressPlace';
+import { API_ORIGIN, apiBaseUrl, isNativeRuntime } from '../utils/apiOrigin';
 
 export const REVERSE_PLACE_ENDPOINT = '/api/reverse-place';
 /** 서버가 다섯 요청을 동시에 보내고 4초에 끊습니다 — 화면은 그보다 조금 더 기다립니다. */
@@ -41,6 +42,9 @@ export function buildReversePlacePath(point, options = {}) {
     encodeURIComponent(String(radius))
   );
 }
+
+/** 네이티브에서 붙일 배포 서버 주소 */
+export const REVERSE_PLACE_ORIGIN = API_ORIGIN;
 
 /** 서버 프록시가 있는 웹인가 (services/placeInfo.js 와 같은 판정) */
 function isWebRuntime() {
@@ -82,11 +86,13 @@ async function getJson(url, timeoutMs) {
  */
 export async function fetchReversePlace(point, options = {}) {
   if (!isValidPoint(point)) return { ok: false, reason: 'bad-coords' };
-  if (!isWebRuntime()) return { ok: false, reason: 'web-only' };
+  // 웹은 같은 출처, 네이티브는 절대 주소 — 둘 다 아니면(SSR·테스트) 부르지 않습니다.
+  const web = isWebRuntime();
+  if (!web && !isNativeRuntime()) return { ok: false, reason: 'web-only' };
   const path = buildReversePlacePath(point, options);
   if (!path) return { ok: false, reason: 'bad-coords' };
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : REVERSE_PLACE_TIMEOUT_MS;
-  const json = await getJson((options.baseUrl || '') + path, timeoutMs);
+  const json = await getJson(apiBaseUrl(options, web) + path, timeoutMs);
   if (!json || typeof json !== 'object') return { ok: false, reason: 'network' };
   if (json.ok === false || json.error) return { ok: false, reason: String(json.error || 'reverse-place-failed') };
   const address = json.address && typeof json.address === 'object' ? json.address : null;

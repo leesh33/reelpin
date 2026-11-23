@@ -9,10 +9,13 @@
  *      카카오로 찾은 핀 대부분이 이 경로로 영업시간을 얻습니다)
  *
  * 원칙
- *   1. 서버(프록시)가 있는 **웹에서만** 부릅니다. 네이티브에는 서버 키·프록시가 없습니다.
+ *   1. 서버 프록시가 있는 **웹**과, 배포 서버 절대 주소를 쓰는 **네이티브**에서 부릅니다. (v2.40.1)
+ *      · 네이티브 상대 경로(`/api/...`)는 같은 출처가 없어 실패하므로 `https://reelpin.vercel.app` 을 붙입니다.
+ *      · 서버 키(네이버·카카오)는 Vercel 함수에만 있고 앱 번들로는 오지 않습니다.
  *   2. id 를 못 찾은 핀은 요청하지 않습니다 → 화면은 `영업시간 미확인` 으로 둡니다.
  *   3. 실패해도 예외를 던지지 않습니다. (영업시간은 없어도 핀은 그대로 씁니다)
  */
+import { API_ORIGIN, apiBaseUrl, isNativeRuntime } from '../utils/apiOrigin';
 
 /** 같은 매장 정보를 다시 부르지 않는 시간 — 6시간 */
 export const PLACE_INFO_TTL_MS = 6 * 60 * 60 * 1000;
@@ -91,6 +94,9 @@ function isWebRuntime() {
   }
 }
 
+/** 네이티브에서 붙일 배포 서버 주소 */
+export const PLACE_INFO_ORIGIN = API_ORIGIN;
+
 /** 타임아웃 있는 GET JSON — 실패는 null (예외 없음) */
 async function getJson(url, timeoutMs) {
   if (typeof fetch !== 'function') return null;
@@ -124,9 +130,11 @@ async function getJson(url, timeoutMs) {
 export async function fetchPlaceInfo(pin, options = {}) {
   const target = placeInfoTargetOf(pin);
   if (!target) return { ok: false, reason: 'no-place-id' };
-  if (!isWebRuntime()) return { ok: false, reason: 'web-only' };
+  // 웹은 같은 출처, 네이티브는 절대 주소 — 둘 다 아니면(SSR·테스트) 부르지 않습니다.
+  const web = isWebRuntime();
+  if (!web && !isNativeRuntime()) return { ok: false, reason: 'web-only' };
   const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : PLACE_INFO_TIMEOUT_MS;
-  const url = (options.baseUrl || '') + placeInfoPathOf(target);
+  const url = apiBaseUrl(options, web) + placeInfoPathOf(target);
   const json = await getJson(url, timeoutMs);
   if (!json || typeof json !== 'object') return { ok: false, reason: 'network' };
   if (json.ok === false) return { ok: false, reason: String(json.error || 'place-info-failed') };
