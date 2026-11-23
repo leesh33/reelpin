@@ -22,6 +22,7 @@
  *   npm run test:apple     … 🍎 Sign in with Apple 스위치(꺼짐/켜짐 · Supabase 호출 가드) 테스트만 (v2.40.0)
  *   npm run test:fonts     … 🔤 Gmarket Sans 네이티브(OTF · expo-font · AppText) 테스트만 (v2.40.0)
  *   npm run test:bottom    … 📱 빌드 20 하단 안전 영역(홈 인디케이터) · 지도 풀블리드 · +/− 둥근 박스 테스트만
+ *   npm run test:build22   … 🗺️ 빌드 22 지도 핀·이름표 세로 잘림(고정 폭 마커) · 백그라운드 복귀 까만 화면 테스트만
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -391,6 +392,17 @@ if (!only || only === 'bottom') {
     out: 'bottom-safe-test.bundle.mjs',
     format: 'esm',
     alias: aliasFor('./test/stubs/react-native.js'),
+  });
+}
+
+if (!only || only === 'build22') {
+  // v2.43 · 빌드 22 — 🗺️ 지도 핀 이름표 세로 잘림(고정 폭 마커 + 가운데 anchor) ·
+  //                  백그라운드 복귀 까만 화면(onContentProcessDidTerminate → retry)
+  failed += await runSuite({
+    name: '빌드 22 지도 핀·백그라운드 복귀 테스트',
+    entry: 'build22-test.mjs',
+    out: 'build22-test.bundle.mjs',
+    format: 'esm',
   });
 }
 

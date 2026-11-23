@@ -43,7 +43,8 @@
     "test:account": "node test/run-tests.mjs account",
     "test:apple": "node test/run-tests.mjs apple",
     "test:fonts": "node test/run-tests.mjs fonts",
-    "test:bottom": "node test/run-tests.mjs bottom"
+    "test:bottom": "node test/run-tests.mjs bottom",
+    "test:build22": "node test/run-tests.mjs build22"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

@@ -199,7 +199,12 @@ export default function RealMapView({
           androidLayerType="hardware"
           onMessage={handleMessage}
           onError={() => setStatus('error')}
-          onRenderProcessGone={() => setStatus('error')}
+          // v2.43 · 빌드 22 — iOS 가 백그라운드에서 WKWebView 프로세스를 종료한 채 돌아오면
+          //   죽은 WebView 위에 #0F172A 배경과 +/− 버튼만 남았습니다(빌드 21 TestFlight IMG_9336,
+          //   30분 이상 백그라운드 후 복귀). iOS 콜백 `onContentProcessDidTerminate` 가 없어서
+          //   아무것도 다시 그리지 못한 탓입니다 — 프로세스가 죽으면 곧바로 key 를 올려 다시 띄웁니다.
+          onContentProcessDidTerminate={retry}
+          onRenderProcessGone={retry}
           testID="map-webview"
         />
       )}

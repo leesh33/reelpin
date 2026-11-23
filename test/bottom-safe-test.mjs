@@ -47,8 +47,8 @@ const collectionsSource = read('src/screens/CollectionsScreen.js');
 const profileSource = read('src/screens/ProfileScreen.js');
 
 // ── 1. 빌드 번호 ─────────────────────────────────────────────
-check('빌드 21: app.json ios.buildNumber = 21', String(appJson.ios.buildNumber) === '21', appJson.ios.buildNumber);
-check('빌드 21: 버전은 2.40.0 그대로', appJson.version === '2.40.0', appJson.version);
+check('빌드 22: app.json ios.buildNumber = 22', String(appJson.ios.buildNumber) === '22', appJson.ios.buildNumber);
+check('빌드 22: 버전은 2.40.0 그대로', appJson.version === '2.40.0', appJson.version);
 
 // ── 2. 루트: 화면 끝까지 (A) ──────────────────────────────────
 check(

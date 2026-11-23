@@ -30,6 +30,18 @@ export const EMBED_CLUSTER_THRESHOLD_PX = 22;
 export const EMBED_PIN_SIZE = 18;
 export const EMBED_PIN_SIZE_SELECTED = 26;
 export const EMBED_LABEL_MAX_WIDTH = 112;
+/**
+ * v2.43 · 빌드 22 — 마커 content 는 **고정 폭 박스**입니다.
+ *
+ * 빌드 21 까지는 `width: max-content` + `transform: translateX(-50%)` 로 스스로 가로 중심을
+ * 맞췄는데, iOS WKWebView 의 네이버 지도 마커 상자에서는 `translateX` 로 밀려 나간 절반이
+ * 잘렸습니다(빌드 21 TestFlight IMG_9335 — `검단 아라뱃…` 이름표 오른쪽 절반 잘림).
+ * 이제는 라벨 최대 폭(112)보다 넉넉한 고정 폭 박스 안에서 flex 가운데 정렬하고,
+ * 마커 anchor 도 **박스 가운데**(width / 2)로 주어 정렬이 박스 안에서 끝납니다.
+ */
+export const EMBED_PIN_BOX_WIDTH = EMBED_LABEL_MAX_WIDTH + 16; // 128
+/** 꾹 눌러 찍은 자리 핀(`여기`)의 고정 폭 박스 */
+export const EMBED_DROP_BOX_WIDTH = 72;
 
 const FONT_STACK =
   "-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif";
@@ -79,6 +91,8 @@ const EMBED_SCRIPT = `
   var PIN_SIZE = ${EMBED_PIN_SIZE};
   var PIN_SIZE_SELECTED = ${EMBED_PIN_SIZE_SELECTED};
   var LABEL_MAX_WIDTH = ${EMBED_LABEL_MAX_WIDTH};
+  var PIN_BOX_WIDTH = ${EMBED_PIN_BOX_WIDTH};
+  var DROP_BOX_WIDTH = ${EMBED_DROP_BOX_WIDTH};
   var CLUSTER_MIXED = '#64748B';
   var FOCUS_ZOOM = 16;
   var FIT_PADDING = { top: 260, right: 56, bottom: 150, left: 56 };
@@ -156,6 +170,7 @@ const EMBED_SCRIPT = `
       'padding:2px 6px;border-radius:999px;background:' + background + ';border:1px solid ' + border +
       ';color:' + textColor + ';font-family:' + FONT + ';font-size:11px;font-weight:800;line-height:13px;' +
       'letter-spacing:-0.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;' +
+      'pointer-events:auto;' +
       'box-shadow:0 1px 4px rgba(15,23,42,0.22);">' + (visited ? '\\u2713 ' : '') + esc(name) + '</div>';
   }
   function pinIcon(pin, selected) {
@@ -164,11 +179,14 @@ const EMBED_SCRIPT = `
     var color = (pin && pin.color) || '#0D9488';
     var circle = '<div style="width:' + size + 'px;height:' + size + 'px;box-sizing:border-box;' +
       'border-radius:50%;background:' + color + ';border:' + border + 'px solid #FFFFFF;' +
-      'box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
-    var html = '<div style="display:flex;flex-direction:column;align-items:center;width:max-content;' +
-      'transform:translateX(-50%);cursor:pointer;-webkit-tap-highlight-color:transparent;">' +
+      'pointer-events:auto;box-shadow:0 2px 6px rgba(0,0,0,0.35);"></div>';
+    // 고정 폭 박스 + 박스 가운데 anchor — translateX 로 상자 밖으로 나가지 않습니다.
+    //   (빈 여백은 pointer-events:none 으로 통과시켜 동그라미·이름표만 눌리게 합니다)
+    var html = '<div style="display:flex;flex-direction:column;align-items:center;' +
+      'width:' + PIN_BOX_WIDTH + 'px;box-sizing:border-box;pointer-events:none;' +
+      'cursor:pointer;-webkit-tap-highlight-color:transparent;">' +
       circle + labelHtml(pin, selected) + '</div>';
-    return { content: html, anchor: new nv.Point(0, size / 2) };
+    return { content: html, anchor: new nv.Point(PIN_BOX_WIDTH / 2, size / 2) };
   }
   function clusterIcon(count, color) {
     var size = Number(count) >= 10 ? 46 : 40;
@@ -184,8 +202,8 @@ const EMBED_SCRIPT = `
   }
   function dropIcon() {
     var html = '<div style="position:relative;display:flex;flex-direction:column;align-items:center;' +
-      'width:max-content;transform:translateX(-50%);">' +
-      '<div style="position:relative;width:22px;height:22px;">' +
+      'width:' + DROP_BOX_WIDTH + 'px;box-sizing:border-box;pointer-events:none;">' +
+      '<div style="position:relative;width:22px;height:22px;pointer-events:auto;">' +
       '<span class="rp-pulse" style="position:absolute;left:50%;top:50%;width:22px;height:22px;' +
       'margin:-11px 0 0 -11px;border-radius:50%;background:rgba(13,148,136,0.30);"></span>' +
       '<div style="position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;' +
@@ -193,8 +211,8 @@ const EMBED_SCRIPT = `
       'box-shadow:0 2px 8px rgba(0,0,0,0.42);"></div></div>' +
       '<div style="margin-top:3px;padding:2px 7px;border-radius:999px;background:#0D9488;color:#FFFFFF;' +
       'font-family:' + FONT + ';font-size:10.5px;font-weight:900;line-height:13px;letter-spacing:-0.2px;' +
-      'white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.30);">\\uC5EC\\uAE30</div></div>';
-    return { content: html, anchor: new nv.Point(0, 11) };
+      'white-space:nowrap;pointer-events:auto;box-shadow:0 2px 6px rgba(0,0,0,0.30);">\\uC5EC\\uAE30</div></div>';
+    return { content: html, anchor: new nv.Point(DROP_BOX_WIDTH / 2, 11) };
   }
   function myDotIcon() {
     var html = '<div style="width:14px;height:14px;box-sizing:border-box;border-radius:50%;' +
