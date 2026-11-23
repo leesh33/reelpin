@@ -42,7 +42,8 @@
     "test:procard": "node test/run-tests.mjs procard",
     "test:account": "node test/run-tests.mjs account",
     "test:apple": "node test/run-tests.mjs apple",
-    "test:fonts": "node test/run-tests.mjs fonts"
+    "test:fonts": "node test/run-tests.mjs fonts",
+    "test:bottom": "node test/run-tests.mjs bottom"
   },
   "dependencies": {
     "@expo/metro-runtime": "~3.2.3",

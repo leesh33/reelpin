@@ -1757,6 +1757,8 @@ export default function RealMapView({
   onLongPress = null,
   droppedPoint = null,
   focusAnchorY = 0.5,
+  // v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로 확대/축소·안내도 이만큼 올립니다(웹은 보통 0).
+  bottomLift = 0,
 }) {
   const controlsRef = useRef(null);
   // 인증 실패가 이미 확인된 세션이면 곧바로 폴백 지도로 시작합니다.
@@ -1838,7 +1840,7 @@ export default function RealMapView({
       )}
 
       {status === 'ready' && (
-        <View style={styles.zoomCol} pointerEvents="box-none">
+        <View style={[styles.zoomCol, { bottom: mapControls.zoomBottom + bottomLift }]} pointerEvents="box-none">
           <Pressable
             style={[styles.zoomBtn, styles.zoomBtnTop]}
             onPress={() => zoom('in')}
@@ -1861,7 +1863,7 @@ export default function RealMapView({
       )}
 
       {!!notice && !hideNotice && (
-        <View style={styles.noticeWrap} pointerEvents="none">
+        <View style={[styles.noticeWrap, { bottom: 108 + tabBar.floatTop + bottomLift }]} pointerEvents="none">
           <View style={styles.noticePill}>
             <Ionicons name="information-circle" size={12} color={colors.white} />
             <Text style={styles.noticeText} numberOfLines={2}>

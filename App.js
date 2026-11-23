@@ -107,6 +107,8 @@ import {
   signUpWithEmail,
   upsertCloudPins,
 } from './src/services/cloudSync';
+// v2.42 — 📱 아래 안전 영역(홈 인디케이터)만큼 떠 있는 UI 를 올립니다 (지도는 화면 끝까지)
+import { useBottomLift } from './src/utils/safeArea';
 import { colors, tabBar, typography } from './src/theme';
 
 const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
@@ -117,7 +119,12 @@ const TOP_INSET = Platform.OS === 'android' ? StatusBar.currentHeight || 0 : 0;
  *   증상(빌드 16 · 아이폰): 맨 위 노치 영역이 **흰 배경 + 흰 글씨**라 시계·배터리가 안 보였습니다.
  *   원인: 루트 `SafeAreaView` 의 배경이 `colors.bg`(밝은 색)인데 `ExpoStatusBar style="light"`(흰 글씨)였습니다.
  *   고침: 안전 영역 **위쪽만** `AppHeader` 와 같은 다크 네이비(`#0F172A`)로 칠하고 상태바 글씨는 흰색 유지.
- *         아래쪽 안전 영역은 기존 그대로(밝은 배경)입니다.
+ *
+ * v2.42 · 빌드 20 — 📱 **아래쪽(홈 인디케이터)까지 화면을 채웁니다**
+ *   증상(빌드 17/19 · 아이폰 · IMG_9332): 지도 탭 맨 아래에 흰 띠가 남았습니다.
+ *   원인: 루트 `SafeAreaView` 가 **아래 안전 영역(34px)을 잘라 낸 채** 그렸습니다.
+ *   고침: 루트는 **위(노치)만** 비우는 `View` 로 바꾸고, 바닥에 붙는 UI 는 `useBottomLift()` 만큼
+ *         스스로 올라갑니다(탭바 · 지도 버튼 · 토스트 · 목록/시트 끝 여백).
  */
 const FALLBACK_METRICS = {
   frame: { x: 0, y: 0, width: 0, height: 0 },
@@ -135,6 +142,10 @@ export default function App() {
 
 function AppShell() {
   const insets = useSafeAreaInsets();
+  // v2.42 — 홈 인디케이터(아래 안전 영역) 높이. 0 이면 예전 스타일 그대로입니다.
+  const bottomLift = useBottomLift();
+  // 노치(위 안전 영역) — iOS 는 insets.top, 안드로이드는 상태바 높이.
+  const topPad = Math.max(insets.top || 0, TOP_INSET);
   const [ready, setReady] = useState(false);
   // v2.40.0 — 네이티브 글꼴이 준비되면 한 번 다시 그립니다(웹은 처음부터 true)
   const [, setFontsReady] = useState(Platform.OS === 'web');
@@ -1413,14 +1424,14 @@ function AppShell() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <View style={styles.safe}>
       <ExpoStatusBar style="light" backgroundColor={colors.navy} />
       <View
         pointerEvents="none"
-        style={[styles.statusBarFill, { height: insets.top }]}
+        style={[styles.statusBarFill, { height: topPad }]}
         testID="status-bar-fill"
       />
-      <View style={[styles.container, { paddingTop: TOP_INSET }]}>
+      <View style={[styles.container, { paddingTop: topPad }]}>
         <View style={styles.screenStack} onLayout={(e) => setScreenHeight(e.nativeEvent.layout.height)}>
           <View style={[styles.screen, tab !== 'map' && styles.hidden]}>
             <MapScreen
@@ -1501,11 +1512,11 @@ function AppShell() {
             하단 탭바를 **그리지 않습니다**. 예전에는 시트 아래(흰 바탕)에 알약이 떠 있어
             `지도에서 보기`·`네이버지도 열기`·`카카오맵 열기` 버튼을 가렸고, 시트가 열린 채로
             탭을 바꿀 수도 있었습니다. 지도·저장·컬렉션 화면에서는 그대로 보입니다. */}
-        {tabBarState.visible ? <TabBar active={tab} onChange={setTab} /> : null}
+        {tabBarState.visible ? <TabBar active={tab} onChange={setTab} bottomLift={bottomLift} /> : null}
         <Toast
           message={toast ? toast.message : null}
           tone={toast ? toast.tone : 'dark'}
-          bottomOffset={tabBar.controlsBottom + 16}
+          bottomOffset={tabBar.controlsBottom + 16 + bottomLift}
           placement={tab === 'map' && selectedPinId ? 'top' : 'bottom'}
           topOffset={toastTopBelowSheetHeader(screenHeight || windowHeight)}
         />
@@ -1585,7 +1596,7 @@ function AppShell() {
           onToast={showToast}
         />
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 

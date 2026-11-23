@@ -29,7 +29,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.odol.reelpin",
-      "buildNumber": "19",
+      "buildNumber": "20",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "저장한 맛집 근처에 도착했을 때 알려드리기 위해 위치를 사용합니다.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "앱이 꺼져 있어도 저장한 맛집 근처에서 알려드리기 위해 위치를 사용합니다.",

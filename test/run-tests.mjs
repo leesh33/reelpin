@@ -21,6 +21,7 @@
  *   npm run test:account   … 🗑️ 회원탈퇴(계정 삭제 · 2단계 확인 · delete_my_account) 테스트만 (v2.40.0)
  *   npm run test:apple     … 🍎 Sign in with Apple 스위치(꺼짐/켜짐 · Supabase 호출 가드) 테스트만 (v2.40.0)
  *   npm run test:fonts     … 🔤 Gmarket Sans 네이티브(OTF · expo-font · AppText) 테스트만 (v2.40.0)
+ *   npm run test:bottom    … 📱 빌드 20 하단 안전 영역(홈 인디케이터) · 지도 풀블리드 · +/− 둥근 박스 테스트만
  */
 import { build } from 'esbuild';
 import { spawnSync } from 'node:child_process';
@@ -374,6 +375,17 @@ if (!only || only === 'fonts') {
     name: 'Gmarket Sans 네이티브 글꼴 테스트',
     entry: 'fonts-test.mjs',
     out: 'fonts-test.bundle.mjs',
+    format: 'esm',
+    alias: aliasFor('./test/stubs/react-native.js'),
+  });
+}
+
+if (!only || only === 'bottom') {
+  // v2.42 · 빌드 20 — 📱 아래 안전 영역(홈 인디케이터)까지 화면 채우기 · 지도 +/− 버튼 둥근 박스
+  failed += await runSuite({
+    name: '하단 안전 영역·지도 풀블리드 테스트',
+    entry: 'bottom-safe-test.mjs',
+    out: 'bottom-safe-test.bundle.mjs',
     format: 'esm',
     alias: aliasFor('./test/stubs/react-native.js'),
   });

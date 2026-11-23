@@ -20,6 +20,8 @@ import {
   suggestCategoryColor,
 } from '../utils/categories';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
+// v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로 내 정보·서브 페이지 끝 여백을 이만큼 더합니다.
+import { useBottomLift } from '../utils/safeArea';
 // v2.36.0 — ☰ 내 정보 시트: 본문 스크롤이 맨 위일 때 헤더처럼 아래로 당겨 닫기
 import { useSheetBodyScroll } from '../components/useSheetSwipeDismiss';
 import CategoryColorPicker from '../components/CategoryColorPicker';
@@ -791,6 +793,8 @@ export default function ProfileScreen({
   // v2.40.0 🗑️ 회원탈퇴 — 서버(Supabase delete_my_account)에 지우고 `{ ok, message }` 를 돌려줍니다.
   onDeleteAccount = null,
 }) {
+  // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 스크롤 끝 여백을 더합니다.
+  const bottomLift = useBottomLift();
   const [copied, setCopied] = useState(false);
   // v2.40.0 🗑️ 회원탈퇴 — 확인 창 열림 · 요청 중 · 실패 문구
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -912,7 +916,11 @@ export default function ProfileScreen({
       <ScrollView
         ref={scrollRef}
         {...sheetScroll}
-        contentContainerStyle={[styles.content, panel && styles.contentPanel]}
+        contentContainerStyle={[
+          styles.content,
+          panel && styles.contentPanel,
+          bottomLift ? { paddingBottom: (panel ? 28 : 32 + tabBar.floatTop) + bottomLift } : null,
+        ]}
         showsVerticalScrollIndicator={false}
         testID="profile-scroll"
       >
@@ -1172,7 +1180,10 @@ export default function ProfileScreen({
             <View style={styles.subRight} />
           </View>
           <ScrollView
-            contentContainerStyle={styles.subContent}
+            contentContainerStyle={[
+              styles.subContent,
+              bottomLift ? { paddingBottom: 32 + tabBar.floatTop + bottomLift } : null,
+            ]}
             showsVerticalScrollIndicator={false}
           >
             {sub === 'categories' ? (

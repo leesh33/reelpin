@@ -63,6 +63,8 @@ export default function RealMapView({
   onLongPress = null,
   droppedPoint = null,
   focusAnchorY = 0.5,
+  // v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로 확대/축소·안내도 이만큼 올립니다.
+  bottomLift = 0,
 }) {
   const webRef = useRef(null);
   const readyRef = useRef(false);
@@ -215,30 +217,36 @@ export default function RealMapView({
       )}
 
       {status === 'ready' && (
-        <View style={styles.zoomCol} pointerEvents="box-none">
-          <Pressable
-            style={[styles.zoomBtn, styles.zoomBtnTop]}
-            onPress={() => zoom('in')}
-            accessibilityRole="button"
-            accessibilityLabel="지도 확대"
-            hitSlop={6}
-          >
-            <Ionicons name="add" size={18} color={colors.white} />
-          </Pressable>
-          <Pressable
-            style={styles.zoomBtn}
-            onPress={() => zoom('out')}
-            accessibilityRole="button"
-            accessibilityLabel="지도 축소"
-            hitSlop={6}
-          >
-            <Ionicons name="remove" size={18} color={colors.white} />
-          </Pressable>
+        // v2.42 · 빌드 20 — 두 버튼을 **하나의 둥근 박스**로 감싸 `−` 버튼 아래 모서리가
+        //   잘린 듯 보이지 않게 했습니다(빌드 19 스크린샷 IMG_9332: "축소버튼도 짤려있어").
+        //   모양은 웹(RealMapView.web.js)과 같습니다 — 둥근 네모 + 가운데 1px 구분선.
+        <View style={[styles.zoomCol, { bottom: mapControls.zoomBottom + bottomLift }]} pointerEvents="box-none">
+          <View style={styles.zoomBox}>
+            <Pressable
+              style={[styles.zoomBtn, styles.zoomBtnTop]}
+              onPress={() => zoom('in')}
+              accessibilityRole="button"
+              accessibilityLabel="지도 확대"
+              hitSlop={6}
+            >
+              <Ionicons name="add" size={18} color={colors.white} />
+            </Pressable>
+            <View style={styles.zoomDivider} />
+            <Pressable
+              style={styles.zoomBtn}
+              onPress={() => zoom('out')}
+              accessibilityRole="button"
+              accessibilityLabel="지도 축소"
+              hitSlop={6}
+            >
+              <Ionicons name="remove" size={18} color={colors.white} />
+            </Pressable>
+          </View>
         </View>
       )}
 
       {status === 'error' && !hideNotice && (
-        <View style={styles.noticeWrap} pointerEvents="none">
+        <View style={[styles.noticeWrap, { bottom: mapControls.zoomBottom + 52 + bottomLift }]} pointerEvents="none">
           <Pressable style={styles.noticePill} onPress={retry} accessibilityRole="button" accessibilityLabel="지도 다시 불러오기">
             <Ionicons name="information-circle" size={12} color={colors.white} />
             <Text style={styles.noticeText} numberOfLines={2}>
@@ -271,25 +279,34 @@ const styles = StyleSheet.create({
     bottom: mapControls.zoomBottom,
     alignItems: 'center',
   },
+  // v2.42 — 위(`+`)·아래(`−`)를 담는 하나의 둥근 박스. 예전엔 위 버튼에만 위쪽 모서리 라운드를 주고
+  //   아래 버튼은 각진 사각형이라, 마지막(축소) 버튼이 잘린 것처럼 보였습니다.
+  zoomBox: {
+    width: mapControls.controlSize,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+    backgroundColor: 'rgba(15,23,42,0.82)',
+    overflow: 'hidden',
+  },
   zoomBtn: {
-    width: 38,
-    height: 38,
+    width: '100%',
+    height: mapControls.controlSize,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15,23,42,0.82)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.22)',
   },
   zoomBtnTop: {
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
-    borderBottomWidth: 0,
+    // 모서리는 감싸는 박스(zoomBox)가 맡습니다 — 여기서는 배경만.
+  },
+  zoomDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.24)',
   },
   noticeWrap: {
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: mapControls.zoomBottom + 52,
+    bottom: mapControls.zoomBottom + 52, // + bottomLift 는 화면에서 더합니다(v2.42)
     alignItems: 'center',
   },
   noticePill: {

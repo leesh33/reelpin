@@ -54,6 +54,8 @@ export default function PinListView({
   onGoPaste,
   // v2.19.1 — 레이어 팝업(LayerSheet) 본문으로 들어갈 때 true (전체 화면 absoluteFill 아님)
   embedded = false,
+  // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 목록 끝 여백을 더합니다
+  bottomLift = 0,
 }) {
   // v2.36.0 — 레이어 팝업 안이면 스크롤 위치를 시트에 알려 줍니다 (밖이면 빈 객체)
   const sheetScroll = useSheetBodyScroll();
@@ -104,7 +106,10 @@ export default function PinListView({
         <ScrollView
           style={styles.scroll}
           {...sheetScroll}
-          contentContainerStyle={[styles.scrollBody, embedded && styles.scrollBodyEmbedded]}
+          contentContainerStyle={[styles.scrollBody, embedded && styles.scrollBodyEmbedded,
+            // v2.42 — 앱이 화면 끝까지 그리므로 홈 인디케이터만큼 더 비웁니다.
+            bottomLift ? { paddingBottom: (embedded ? 20 : 28 + tabBar.floatTop) + bottomLift } : null,
+          ]}
           showsVerticalScrollIndicator={false}
         >
           {rows.map((pin) => {

@@ -65,6 +65,8 @@ export default function MapToolsMenu({
   onToggleOpen,
   onToggleVisited,
   onShare,
+  // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 왼쪽 하단 도구도 올립니다
+  bottomLift = 0,
 }) {
   const nearbySub = nearbyOpen
     ? '반경 ' + nearbyRadius + 'm · ' + nearbyCount + '곳 보는 중'
@@ -99,7 +101,7 @@ export default function MapToolsMenu({
   };
 
   return (
-    <View style={styles.col}>
+    <View style={[styles.col, { bottom: mapControls.toolsToggleBottom + bottomLift }]}>
       {!!summary && (
         <View style={styles.summaryPill} pointerEvents="none" testID="map-tools-summary">
           <View style={styles.summaryDot} />

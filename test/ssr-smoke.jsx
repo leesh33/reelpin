@@ -1172,7 +1172,7 @@ const v213SheetChecks = [
   ],
   [
     '핀 시트: 본문만 스크롤(style=bodyScroll · contentContainerStyle=body)',
-    pinDetailSource.indexOf('contentContainerStyle={styles.body}') > 0 &&
+    (/contentContainerStyle=\{(\[)?styles\.body/.test(pinDetailSource)) &&
       /bodyScroll: \{[\s\S]{0,80}?flexShrink: 1/.test(pinDetailSource),
   ],
   [
@@ -1824,7 +1824,7 @@ const v218Checks = [
   ['v2.19 탭바: 선택 탭은 연한 딥 틸 알약', tabBarSource218.indexOf("backgroundColor: 'rgba(13, 148, 136, 0.12)'") > 0 && tabBarSource218.indexOf('styles.iconPillOn') > 0],
   ['v2.19 탭바: 지도 · 저장(+) · 컬렉션 세 탭', ['지도', '저장', '컬렉션'].every((t) => tabBarSource218.indexOf("label: '" + t + "'") > 0) && tabBarHtml218.indexOf('tab-paste') > 0 && tabBarHtml218.indexOf('tab-collections') > 0],
   ['v2.19 탭바: 값은 theme.tabBar 한 곳 (폭 190 · 높이 54 · 뜬 간격 12)', tabBar.width === 190 && tabBar.height === 54 && tabBar.bottom === 12 && tabBar.floatTop === 66 && tabBar.controlsBottom === 76],
-  ['v2.18 탭바: 앱이 화면 최상위 레이어에 그림', appSource218.indexOf('<TabBar active={tab} onChange={setTab} />') > 0 && appSource218.indexOf('tabBar.controlsBottom + 16') > 0],
+  ['v2.18 탭바: 앱이 화면 최상위 레이어에 그림', appSource218.indexOf('<TabBar active={tab} onChange={setTab}') > 0 && appSource218.indexOf('tabBar.controlsBottom + 16') > 0],
   // ② 지도 — 흰 반투명 분류 칩 + 맨 앞 목록 아이콘 버튼 + 탭바와 안 겹침
   ['v2.18 지도: 분류 칩이 흰색 반투명(rgba(255,255,255,0.90)) + 어두운 글씨', filterChipsSource218.indexOf("backgroundColor: 'rgba(255,255,255,0.90)'") > 0 && /text: \{[\s\S]{0,120}?color: '#1C1C1E'/.test(filterChipsSource218)],
   ['v2.18 지도: 목록 아이콘 버튼이 분류 맨 앞', /<View style=\{styles\.row\}>[\s\S]{0,400}?testID="map-list-toggle"[\s\S]{0,900}?<ScrollView/.test(filterChipsSource218) && filterChipsSource218.indexOf('map-list-toggle') > 0],
@@ -2800,7 +2800,7 @@ const v228Checks = [
     ['listSheet', 'collection', 'search', 'alerts', 'menu', 'feedback'].every((k) => tabBarVisibility({ tab: 'map', [k]: true }).visible === false)],
   // ② App 배선 — 한 곳에서 판단하고 조건부로 그립니다
   ['v2.28 App: 판단 규칙 모듈을 씀', appSource228.indexOf("from './src/utils/tabBarVisibility'") > 0 && appSource228.indexOf('tabBarVisibility({') > 0],
-  ['v2.28 App: 탭바는 조건부 렌더(숨김이면 DOM 에 없음)', appSource228.indexOf('{tabBarState.visible ? <TabBar active={tab} onChange={setTab} /> : null}') > 0],
+  ['v2.28 App: 탭바는 조건부 렌더(숨김이면 DOM 에 없음)', appSource228.indexOf('{tabBarState.visible ? <TabBar active={tab} onChange={setTab}') > 0],
   ['v2.28 App: 모든 레이어 상태를 규칙에 넘김 (v2.35.0: 검색 레이어 제거)',
     /tabBarVisibility\(\{[\s\S]{0,420}?pinDetail: Boolean\(selectedPinId\)[\s\S]{0,420}?alerts: alertOpen[\s\S]{0,240}?feedback: feedbackOpen/.test(appSource228) && appSource228.indexOf('search: searchOpen') < 0],
   ['v2.28 App: 지도·컬렉션이 바닥 레이어를 위로 알림', appSource228.indexOf('onListSheetChange={setMapListSheet}') > 0 && appSource228.indexOf('onCreateSheetChange={setCollectionSheet}') > 0],

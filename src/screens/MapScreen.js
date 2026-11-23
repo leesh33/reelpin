@@ -59,6 +59,8 @@ import {
   showNearbyNotification,
 } from '../services/notifications';
 import { colors, cardShadow, mapControls, radius, typography } from '../theme';
+// v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로, 바닥에 붙는 지도 버튼은 이만큼 올립니다.
+import { useBottomLift } from '../utils/safeArea';
 import { buildShareUrl, canNativeShare, nativeShare, shareMessage } from '../utils/shareMap';
 import {
   VISIT_ALL,
@@ -124,6 +126,8 @@ export default function MapScreen({
    * 위치를 잡을 때마다 상위(App)로 한 번씩 알려 줍니다.
    */
   const onMyCoordsRef = useRef(typeof onMyCoords === 'function' ? onMyCoords : null);
+  // v2.42 — 아래 안전 영역만큼 지도 버튼·패널을 올립니다(0 이면 예전 그대로).
+  const bottomLift = useBottomLift();
   useEffect(() => {
     onMyCoordsRef.current = typeof onMyCoords === 'function' ? onMyCoords : null;
   }, [onMyCoords]);
@@ -931,6 +935,7 @@ export default function MapScreen({
           onLongPress={handleMapLongPress}
           droppedPoint={placePoint}
           focusAnchorY={placePoint ? 0.15 : 0.5}
+          bottomLift={bottomLift}
         />
 
         {/* v2.35.0 — 검색 드롭다운이 열려 있을 때 지도(검색창 바깥)을 누르면 깜끔하게 닫고 지도 보기로.
@@ -1071,6 +1076,7 @@ export default function MapScreen({
         {view === 'map' && !selectedPin && (
           <MapToolsMenu
             open={toolsOpen}
+            bottomLift={bottomLift}
             visitedOnly={visitedOnly}
             visitedCount={visitCounts[VISIT_DONE]}
             totalCount={pins.length}
@@ -1105,7 +1111,7 @@ export default function MapScreen({
 
         {/* 반경 500m 주변 목록 */}
         {view === 'map' && !selectedPin && nearbyOpen && (
-          <View style={styles.nearbyPanel} testID="nearby-panel">
+          <View style={[styles.nearbyPanel, { bottom: mapControls.panelBottom + bottomLift }]} testID="nearby-panel">
             <View style={styles.panelHead}>
               <Text style={styles.panelTitle}>
                 {'반경 ' + NEARBY_RADIUS_M + 'm · ' + nearbyList.length + '곳'}
@@ -1190,7 +1196,7 @@ export default function MapScreen({
             v2.19.2 — 상훈 님 요청대로 `+/−` 와 자리를 맞바꿔, **맨 아래 = 내 위치 FAB**,
             그 위 = `+/−` 확대·축소 박스입니다. */}
         {view === 'map' && !selectedPin && (
-          <View style={styles.actionCol}>
+          <View style={[styles.actionCol, { bottom: mapControls.actionBottom + bottomLift }]}>
             <Pressable
               style={[styles.fab, myCoords && styles.fabLive]}
               onPress={() => locateFromUser()}
@@ -1258,6 +1264,7 @@ export default function MapScreen({
         >
           <PinListView
             embedded
+            bottomLift={bottomLift}
             pins={filtered}
             query={query}
             onQueryChange={setQuery}

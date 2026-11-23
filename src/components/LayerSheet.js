@@ -42,6 +42,8 @@ import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow } from '../theme';
+// v2.42 — 시트가 화면 맨 아래(홈 인디케이터 자리)까지 내려오므로, 발끝 버튼은 이만큼 띄웁니다.
+import { useBottomLift } from '../utils/safeArea';
 import { SheetBodyScrollScope, useSheetSwipeDismiss } from './useSheetSwipeDismiss';
 
 /** 시트 높이 — 내 정보 시트와 같은 값 (화면의 86%) */
@@ -78,6 +80,8 @@ export default function LayerSheet({
   swipeToClose = true,
 }) {
   const dismiss = useSheetSwipeDismiss({ onClose, visible, enabled: swipeToClose });
+  // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 발끝 버튼([담기]·[저장])을 올립니다.
+  const bottomLift = useBottomLift();
 
   if (!visible) return null;
 
@@ -150,7 +154,7 @@ export default function LayerSheet({
           </View>
         </SheetBodyScrollScope>
 
-        {footer ? <View style={styles.footer}>{footer}</View> : null}
+        {footer ? <View style={[styles.footer, bottomLift ? { paddingBottom: bottomLift } : null]}>{footer}</View> : null}
       </Animated.View>
     </View>
   );

@@ -4,6 +4,8 @@ import { AppText as Text, AppTextInput as TextInput } from './AppText';
 import * as Clipboard from 'expo-clipboard';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, sheetShadow, typography } from '../theme';
+// v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로 시트 본문 끝 여백을 이만큼 더합니다.
+import { useBottomLift } from '../utils/safeArea';
 import { openMap, openPhone, openSource, telUrlOf } from '../utils/links';
 import { formatDistance } from '../services/location';
 import InAppPlaceModal from './InAppPlaceModal';
@@ -70,6 +72,8 @@ export default function PinDetailSheet({
   // v2.25.0 — 🗺️ 지도에서 보기: 시트를 닫고 지도 탭에서 이 핀 위치로 이동(실제 이동은 지도 화면이 함)
   onShowOnMap,
 }) {
+  // v2.42 — 홈 인디케이터 높이만큼 본문 끝 여백을 더합니다(시트가 화면 맨 아래까지 내려오므로).
+  const bottomLift = useBottomLift();
   // v1.7 — [매장 정보 보기] 는 브라우저 밖으로 나가지 않고 앱 안 모달을 엽니다.
   const [placeModalOpen, setPlaceModalOpen] = useState(false);
   // v2.10 — 📝 한줄 메모는 입력 중인 글자를 따로 들고 있다가 저장할 때 핀에 반영합니다.
@@ -332,7 +336,7 @@ export default function PinDetailSheet({
         {...bodyPan.panHandlers}
         ref={scrollRef}
         style={styles.bodyScroll}
-        contentContainerStyle={styles.body}
+        contentContainerStyle={[styles.body, bottomLift ? { paddingBottom: 24 + bottomLift } : null]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
         testID="pin-sheet-scroll"

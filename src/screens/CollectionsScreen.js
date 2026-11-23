@@ -35,6 +35,8 @@ import {
 } from '../utils/collections';
 import { buildShareUrl, canNativeShare, nativeShare } from '../utils/shareMap';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
+// v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로 스크롤 끝 여백을 이만큼 더합니다.
+import { useBottomLift } from '../utils/safeArea';
 
 /**
  * v2.32 — 사진형 포스터 카드 너비.
@@ -150,6 +152,8 @@ export default function CollectionsScreen({
   // v2.32.2 — 내부 검사용: 기본은 `SHOW_AD_BANNER`(true = 광고 슬롯 노출). 화면에서는 넘기지 않습니다.
   showAdBanner = SHOW_AD_BANNER,
 }) {
+  // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 스크롤 끝 여백을 더합니다.
+  const bottomLift = useBottomLift();
   // 'list' — 컬렉션 카드 목록 / 'detail' — 한 컬렉션의 핀 담기·빼기
   const [mode, setMode] = useState(initialCollectionId ? 'detail' : 'list');
   const [detailId, setDetailId] = useState(initialCollectionId || null);
@@ -393,7 +397,7 @@ export default function CollectionsScreen({
 
       {mode === 'list' ? (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, bottomLift ? { paddingBottom: tabBar.floatTop + 28 + bottomLift } : null]}
           showsVerticalScrollIndicator={false}
           testID="collections-list"
         >
@@ -681,7 +685,10 @@ export default function CollectionsScreen({
             <View style={styles.detailRight} />
           </View>
 
-          <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            contentContainerStyle={[styles.content, bottomLift ? { paddingBottom: tabBar.floatTop + 28 + bottomLift } : null]}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.card}>
               <View style={styles.cardHead}>
                 <View style={[styles.cardEmoji, { backgroundColor: detail.color + '1F' }]}>

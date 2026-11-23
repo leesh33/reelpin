@@ -29,6 +29,8 @@ import { DEFAULT_CATEGORIES, getCategoryColor, mapLegacyCategory } from '../util
 // v2.34.0 — 내 위치 좌표 검사(0,0·범위 밖 제외)는 정렬 모듈 한 곳을 씁니다.
 import { usableOrigin } from '../utils/placeRanking';
 import { cardShadow, colors, radius, tabBar, typography } from '../theme';
+// v2.42 — 앱이 화면 끝(홈 인디케이터)까지 그리므로 스크롤 끝 여백을 이만큼 더합니다.
+import { useBottomLift } from '../utils/safeArea';
 
 const EMOJI_BY_CATEGORY = {
   베이커리: '🥐',
@@ -62,6 +64,8 @@ export default function PasteScreen({
   header = null,
   request = null,
 }) {
+  // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 스크롤 끝 여백을 더합니다.
+  const bottomLift = useBottomLift();
   // v2.41 — 📸 사진으로 찾기를 **네이티브(iOS·Android)에서도** 씁니다.
   //   웹은 파일 선택창, 네이티브는 `expo-image-picker` 로 사진 보관함을 열고
   //   둘 다 `extractFromImage` → `/api/gemini` 로 같은 파이프라인을 탑니다. (키는 서버에만)
@@ -518,7 +522,10 @@ export default function PasteScreen({
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          bottomLift ? { paddingBottom: 36 + tabBar.floatTop + bottomLift } : null,
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >

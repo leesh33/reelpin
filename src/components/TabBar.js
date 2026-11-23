@@ -30,9 +30,10 @@ export const TAB_ITEMS = [
 /** 탭 순서(검사용 단일 출처) */
 export const TAB_KEYS = TAB_ITEMS.map((t) => t.key);
 
-export default function TabBar({ active, onChange }) {
+export default function TabBar({ active, onChange, bottomLift = 0 }) {
   return (
-    <View style={styles.wrap} pointerEvents="box-none" testID="tab-bar">
+    // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 앉은 자리를 올립니다 (앱이 화면 끝까지 그리므로)
+    <View style={[styles.wrap, { bottom: tabBar.bottom + bottomLift }]} pointerEvents="box-none" testID="tab-bar">
       <View style={styles.bar}>
         {TAB_ITEMS.map((tab) => {
           const on = active === tab.key;
