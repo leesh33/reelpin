@@ -9,8 +9,22 @@ export function naverMapAppUrl(pin) {
   return `nmap://search?query=${q}&appname=${APP_NAME}`;
 }
 
+/**
+ * v2.44 — 지도 검색어: `동네 + 가게명` 다만 가게 이름에 이미 동네가 있으면 붙이지 않습니다.
+ *   (예전: 핀 이름 '성수동 소금빵집' + 동네 '성수동' → `성수동 성수동 소금빵집`)
+ */
+export function pinSearchQuery(pin) {
+  const area = String((pin && pin.area) || '').trim();
+  const name = String((pin && pin.name) || '').trim();
+  if (!area) return name;
+  if (!name) return area;
+  const squeeze = (v) => v.replace(/\s+/g, '');
+  if (squeeze(name).indexOf(squeeze(area)) >= 0) return name;
+  return area + ' ' + name;
+}
+
 export function naverMapWebUrl(pin) {
-  const q = encodeURIComponent([pin.area, pin.name].filter(Boolean).join(' '));
+  const q = encodeURIComponent(pinSearchQuery(pin));
   return `https://map.naver.com/p/search/${q}`;
 }
 
@@ -98,11 +112,7 @@ export function naverPlaceSearchUrl(pin) {
   if (/^\d{5,}$/.test(id)) return naverPlaceDetailUrl(id);
   const fromUrl = extractNaverPlaceId(pin && pin.placeUrl);
   if (fromUrl) return naverPlaceDetailUrl(fromUrl);
-  const query = [pin && pin.area, pin && pin.name]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
-  return `https://m.place.naver.com/place/list?query=${encodeURIComponent(query)}`;
+  return `https://m.place.naver.com/place/list?query=${encodeURIComponent(pinSearchQuery(pin))}`;
 }
 
 // ─────────────────────────────────────────────────────────────

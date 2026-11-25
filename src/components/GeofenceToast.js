@@ -17,7 +17,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './AppText';
-import { NEARBY_RADIUS_M } from '../services/location';
+import { NEARBY_RADIUS_M, radiusLabel } from '../services/location';
 import { colors } from '../theme';
 
 /** 떠 있는 시간 — 6초(상훈 님 요청 2026-11-18: 3.2초는 너무 빨리 사라져서 5~6초로). */
@@ -32,10 +32,11 @@ export const GEOFENCE_TOAST_ACTION = '보기';
  *   · 개수가 0 이면 빈 문자열(그때는 토스트를 띄우지 않습니다).
  *   · 반경 값은 지도·알림 모음이 쓰는 NEARBY_RADIUS_M 한 곳에서 옵니다.
  */
-export function nearbyToastMessage(count) {
+export function nearbyToastMessage(count, radiusMeters = NEARBY_RADIUS_M) {
   const n = Math.floor(Number(count));
   if (!Number.isFinite(n) || n <= 0) return '';
-  return '반경 ' + NEARBY_RADIUS_M + 'm 안에 ' + n + '곳 있어요';
+  // v2.44 — 내가 고른 반경(300/500/1km)을 그대로 말합니다 (예전엔 500m 하드코딩)
+  return '반경 ' + radiusLabel(radiusMeters) + ' 안에 ' + n + '곳 있어요';
 }
 
 /** 반경 안에 저장한 곳이 있을 때만 알립니다(반경 밖 가장 가까운 곳은 🔔 뱃지가 안내). */
@@ -43,7 +44,12 @@ export function shouldToastNearby(count) {
   return Math.floor(Number(count)) > 0;
 }
 
-export default function GeofenceToast({ message, onPress, testID = GEOFENCE_TOAST_TESTID }) {
+export default function GeofenceToast({
+  message,
+  onPress,
+  radiusMeters = NEARBY_RADIUS_M,
+  testID = GEOFENCE_TOAST_TESTID,
+}) {
   const text = message || '';
   if (!text) return null;
   return (
@@ -58,7 +64,7 @@ export default function GeofenceToast({ message, onPress, testID = GEOFENCE_TOAS
         onPress={onPress}
         hitSlop={6}
         accessibilityRole="button"
-        accessibilityLabel={'반경 500m 알림 보기'}
+        accessibilityLabel={'반경 ' + radiusLabel(radiusMeters) + ' 알림 보기'}
         testID={testID + '-open'}
       >
         <Text style={styles.actionText}>{GEOFENCE_TOAST_ACTION}</Text>

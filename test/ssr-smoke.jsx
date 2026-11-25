@@ -531,7 +531,7 @@ const schemaSource = fs.readFileSync(path.join(process.cwd(), 'supabase/schema.s
 
 const v21Checks = [
   ['ProfileScreen: 계정 카드 컴포넌트', profileSource.indexOf('function AccountCard') > 0 && profileSource.indexOf('계정 · 클라우드 동기화') > 0],
-  ['ProfileScreen: 미설정이면 안내 토스트만', profileSource.indexOf('Supabase 설정이 아직 없어요') > 0],
+  ['ProfileScreen: 미설정이면 안내 토스트만', profileSource.indexOf('로그인 연결이 아직 준비되지 않았어요') > 0],
   ['ProfileScreen: 로그인 후 [지금 동기화]·[로그아웃]', profileSource.indexOf('지금 동기화') > 0 && profileSource.indexOf('로그아웃') > 0],
   ['App: 로그인 세션 복원·구독', appSource.indexOf('getSession') > 0 && appSource.indexOf('onAuthStateChange') > 0],
   ['App: 로컬·클라우드 병합', appSource.indexOf('planCloudSync') > 0 && appSource.indexOf('syncWithCloud') > 0],
@@ -1436,7 +1436,7 @@ const v215Checks = [
   ['v2.19 내 정보: 자체 헤더 없이 ☰ 시트 본문(panel)으로만', profileSource215.indexOf('<AppHeader') < 0 && profileSource215.indexOf('panel') > 0 && fs.readFileSync(path.join(process.cwd(), 'src/components/MenuDrawerModal.js'), 'utf8').indexOf('panel') > 0],
   ['세 탭 모두 같은 headerProps 를 받음', (appSource215.match(/header=\{headerProps\}/g) || []).length === 3, (appSource215.match(/header=\{headerProps\}/g) || []).length],
   // ④ 헤더 우측 아이콘의 동작
-  ['🔔: App 이 알림 모음을 열고 목록은 최대 5곳', appSource215.indexOf('<AlertInbox') > 0 && appSource215.indexOf('buildAlertFeed(pins, alertCoords)') > 0 && ALERT_FEED_LIMIT === 5],
+  ['🔔: App 이 알림 모음을 열고 목록은 최대 5곳(내 반경 사용)', appSource215.indexOf('<AlertInbox') > 0 && appSource215.indexOf('buildAlertFeed(pins, alertCoords, { radiusMeters: radius })') > 0 && ALERT_FEED_LIMIT === 5],
   ['🔔: 장소를 누르면 지도 탭 + 그 핀 상세로', appSource215.indexOf('setPinFocus(') > 0 && mapSource215.indexOf('focusPin') > 0 && mapSource215.indexOf('onSelectPin(target.id)') > 0],
   ['🔔: 지도 탭이 잡은 위치를 헤더와 공유', mapSource215.indexOf('onMyCoordsRef.current(position)') > 0 && appSource215.indexOf('onMyCoords={handleMyCoords}') > 0],
   ['v2.19: 내 정보 탭 제거 + 계정 카드는 ☰ 시트 안', appSource215.indexOf("setTab('profile')") < 0 && appSource215.indexOf("tab !== 'collections'") > 0 && profileSource215.indexOf('profile-account-card') > 0],
@@ -2358,7 +2358,7 @@ const v220Checks = [
   // ③ 매장 상세 조회 — 네이버/카카오 두 경로 + 6시간 캐시 + 반경 핀 미리 확인
   ['v2.20 지도: 매장 상세(영업시간) 조회 → 핀에 저장', mapSource220.indexOf('fetchPlaceInfo(pin)') > 0 && mapSource220.indexOf('onSavePinHours(pin.id, pinHoursPatch(result.place))') > 0],
   ['v2.20 지도: 보고 있는 핀 + 반경 500m 핀(최대 3곳) 미리 확인', mapSource220.indexOf('push(selectedPin)') > 0 && mapSource220.indexOf('nearby.slice(0, 3)') > 0],
-  ['v2.20 지도: 반경 안 알림은 영업 상태 없이 개수만 알림(v2.28.0)', mapSource220.indexOf('bannerOpeningBadge(') < 0 && mapSource220.indexOf('opening={bannerOpening}') < 0 && mapSource220.indexOf('nearbyToastMessage(nearbyToast.count)') > 0],
+  ['v2.20 지도: 반경 안 알림은 영업 상태 없이 개수만 알림(v2.28.0)', mapSource220.indexOf('bannerOpeningBadge(') < 0 && mapSource220.indexOf('opening={bannerOpening}') < 0 && mapSource220.indexOf('nearbyToastMessage(nearbyToast.count, alertRadius)') > 0],
   // ④ 저장 화면 — AI 한줄 메모 자동 채우기
   ['v2.20 저장 화면: 추출 결과의 memoDraft 로 메모를 자동 채움', pasteSource220.indexOf('String(result.memoDraft ||') > 0 && pasteSource220.indexOf('setMemo(draft)') > 0 && pasteSource220.indexOf('setMemo(photoDraft)') > 0],
   ['v2.20 저장 화면: AI 초안 안내 줄 + testID', pasteSource220.indexOf('paste-memo-auto-line') > 0 && pasteSource220.indexOf('AI가 한줄 메모 초안을 채웠어요') > 0],

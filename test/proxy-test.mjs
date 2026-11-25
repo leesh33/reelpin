@@ -206,7 +206,7 @@ handler = (url) => {
 const fallbackFlow = await extractPlaces('https://youtube.com/shorts/9Xk2mQpLz7A');
 check('web/폴백: oEmbed 로 제목 확보', fallbackFlow.sourceTitle === '연남동 딸기 케이크 맛집', fallbackFlow.sourceTitle);
 check('web/폴백: oEmbed 는 CORS 열려 있어 웹에서 동작', calls.some((c) => c.url.indexOf('youtube.com/oembed') > 0), calls.map((c) => c.url).join(' | '));
-check('web/폴백: ok 결과 유지', fallbackFlow.ok === true && fallbackFlow.candidates.length > 0, String(fallbackFlow.candidates.length));
+check('web/폴백: ok 유지 + 가짜 후보 없음(v2.44)', fallbackFlow.ok === true && fallbackFlow.candidates.length === 0, String(fallbackFlow.candidates.length));
 
 // ── 7-1. v2.9 Gemini 영상 분석 폴백 (유튜브 · 1차 실패 시에만) ──
 check('web/gemini: 프록시 주소 상수', API_PROXY.gemini === '/api/gemini', String(API_PROXY.gemini));
@@ -304,7 +304,7 @@ handler = (url) => {
   return jsonRes({ items: [], documents: [] });
 };
 const gEmpty = await extractPlaces('https://youtube.com/shorts/LPLE_SH2b9U');
-check('web/gemini 빈 결과: 오프라인 폴백 유지', String(gEmpty.usedAdapter).indexOf('offline') === 0 && gEmpty.candidates.length > 0, gEmpty.usedAdapter);
+check('web/gemini 빈 결과: 오프라인 폴백 · 가짜 후보 없음(v2.44)', String(gEmpty.usedAdapter).indexOf('offline') === 0 && gEmpty.candidates.length === 0, gEmpty.usedAdapter);
 check('web/gemini 빈 결과: aiNote 없음', !gEmpty.aiNote, String(gEmpty.aiNote));
 
 handler = (url) => {
@@ -654,7 +654,7 @@ globalThis.fetch = async () => {
 const thrown = await searchPlacesDirect('성수 소금빵');
 check('web/예외: 조용히 실패 처리', thrown.ok === false && thrown.candidates.length === 0, JSON.stringify(thrown.reason));
 const thrownExtract = await extractPlaces(ytUrl);
-check('web/예외: 추출기는 오프라인 폴백', thrownExtract.ok === true && thrownExtract.candidates.length > 0, thrownExtract.usedAdapter);
+check('web/예외: 추출기는 오프라인 폴백 · 가짜 후보 없음(v2.44)', thrownExtract.ok === true && thrownExtract.candidates.length === 0, thrownExtract.usedAdapter);
 
 if (fails) {
   console.log('\nPROXY_TEST_FAILED (' + fails + ')');

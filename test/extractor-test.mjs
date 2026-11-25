@@ -141,20 +141,21 @@ check('parse tiktok', parseUrl('https://www.tiktok.com/@food/video/7301234567890
 check('reject plain text', parseUrl('그냥 텍스트').ok === false);
 check('reject http-less', isSupportedUrl('www.instagram.com/reel/abc') === false);
 
-// ── 2. 키가 하나도 없을 때 = 오프라인 추출기 (기존 동작 유지) ──
+// ── 2. 키가 하나도 없을 때 = **가짜 후보를 만들지 않음** (v2.44) ──
+//   예전에는 '성수동 소금빵집'(가짜 주소)·'이름 없는 릴스 장소'(성수 좌표)를 후보로 돌려줬습니다.
 const r1 = await extractPlaces(PRESETS[0].url, { caption: PRESETS[0].caption });
-check('preset1 extracts', r1.ok && r1.candidates.length > 0, JSON.stringify(r1).slice(0, 120));
-check('preset1 top name', r1.candidates[0].name === '성수동 소금빵집', r1.candidates[0].name);
+check('preset1: 가게를 못 찾으면 후보 0', r1.ok === true && r1.candidates.length === 0, JSON.stringify(r1).slice(0, 160));
+check('preset1: 안내 문구 + not-found', r1.emptyReason === 'not-found' && String(r1.notFoundMessage).indexOf('가게를 찾지 못했어요') >= 0, r1.notFoundMessage);
 check('preset1 offline adapter', r1.usedAdapter === 'offline', r1.usedAdapter);
 
 const r2 = await extractPlaces(PRESETS[1].url, { caption: PRESETS[1].caption });
-check('preset2 top name', r2.candidates[0].name === '연남동 딸기 케이크 맛집', r2.candidates[0].name);
+check('preset2: 가짜 후보 없음', r2.candidates.length === 0, JSON.stringify(r2.candidates));
 
 const r3 = await extractPlaces(PRESETS[2].url, { caption: PRESETS[2].caption });
-check('preset3 top name', r3.candidates[0].name === '아라뱃길 뷰 카페', r3.candidates[0].name);
+check('preset3: 가짜 후보 없음', r3.candidates.length === 0, JSON.stringify(r3.candidates));
 
 const r4 = await extractPlaces('https://www.instagram.com/reel/Unknown123/', {});
-check('unknown link still returns manual candidate', r4.ok && r4.candidates.length === 1 && r4.candidates[0].manual === true);
+check('모르는 링크: 체크된 가짜 후보를 만들지 않음', r4.ok === true && r4.candidates.length === 0, JSON.stringify(r4.candidates));
 
 const r5 = await extractPlaces('not-a-url', {});
 check('invalid url rejected', r5.ok === false);
@@ -441,7 +442,7 @@ check('flow: providersTried recorded', JSON.stringify(flow.providersTried) === '
 handler = () => jsonRes({ documents: [], items: [], places: [] });
 const emptyFallback = await extractPlaces(PRESETS[0].url, { caption: PRESETS[0].caption });
 check('flow: empty api result falls back offline', emptyFallback.usedAdapter === 'offline-fallback', emptyFallback.usedAdapter);
-check('flow: offline candidates still valid', emptyFallback.candidates.length > 0 && emptyFallback.candidates[0].name === '성수동 소금빵집', emptyFallback.candidates[0].name);
+check('flow: 결과가 없으면 가짜 후보 대신 안내', emptyFallback.candidates.length === 0 && emptyFallback.emptyReason === 'not-found', JSON.stringify(emptyFallback.candidates));
 
 // 3-8b. LLM 분류는 지도사 분류가 없을 때만 쓰임 (지도사 분류 우선)
 process.env.EXPO_PUBLIC_OPENAI_API_KEY = 'OPENAIKEY';
@@ -516,7 +517,7 @@ check('v2.9 native: aiNote 없음', !nativeGemini.aiNote, String(nativeGemini.ai
 
 // ── 4. 오프라인 추출기 단위 ───────────────────────────────────
 const off = offlineSmartExtract({ url: 'https://www.instagram.com/reel/x/', contentId: 'x' }, '검단 아라뱃길 카페');
-check('offline: finds 검단 카페', off[0].name === '아라뱃길 뷰 카페', off[0].name);
+check('offline: 가짜 장소를 만들지 않음', Array.isArray(off) && off.length === 0, JSON.stringify(off));
 
 // ── 5. 딥링크·공유 링크 ───────────────────────────────────────
 const pin = { name: '성수동 소금빵집', area: '성수동', lat: 37.5, lng: 127.0 };
@@ -534,7 +535,7 @@ check(
   naverPlaceUrl
 );
 const naverPlaceQuery = decodeURIComponent(naverPlaceUrl.split('query=')[1]);
-check('naver place: 동네 + 가게명 순서로 검색어 구성', naverPlaceQuery === '성수동 성수동 소금빵집', naverPlaceQuery);
+check('v2.44 naver place: 가게명에 이미 있는 동네는 중복하지 않음', naverPlaceQuery === '성수동 소금빵집', naverPlaceQuery);
 const naverPlaceNoArea = naverPlaceSearchUrl({ name: '베통 성수' });
 check(
   'naver place: 동네 없으면 가게명만',

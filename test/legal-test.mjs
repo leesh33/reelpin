@@ -92,13 +92,13 @@ check(
   check(name + ': 홈으로 돌아가는 링크(https://reelpin.vercel.app)', has(html, 'href="https://reelpin.vercel.app"'));
   check(name + ': 다른 문서로 가는 링크', has(html, 'href="/privacy"') && has(html, 'href="/terms"'));
   check(name + ': 문의처 andy.leesh33@gmail.com', has(html, 'andy.leesh33@gmail.com'));
-  check(name + ': 시행일 표기', has(html, '시행일 2026년 11월 20일'));
+  check(name + ': 시행일 표기', has(html, '시행일 2026년 11월 25일'));
   check(name + ': 모바일 폭 대응(max-width 미디어쿼리)', has(html, '@media (max-width: 420px)'));
   check(name + ': 태그 균형(div/section)', (html.match(/<div\b/g) || []).length === (html.match(/<\/div>/g) || []).length && (html.match(/<section\b/g) || []).length === (html.match(/<\/section>/g) || []).length);
 });
 
 // ── 4) 개인정보처리방침 — 브리프가 요구한 고지 ──────────────────────────
-check('방침: 수집 항목 — 구글·카카오 로그인 이메일·이름', has(privacy, 'Google·카카오 로그인') && has(privacy, '이메일 주소·이름'));
+check('방침: 수집 항목 — Google·카카오·Apple 로그인 이메일·이름', has(privacy, 'Google·카카오·Apple 로그인') && has(privacy, '이메일 주소·이름'));
 check('방침: 수집 항목 — 저장한 링크·장소 핀·컬렉션·메모', has(privacy, '장소 핀') && has(privacy, '컬렉션') && has(privacy, '한 줄 메모'));
 check('방침: 이용 목적 — 장소 추출·컬렉션 관리·지도 저장·백업', has(privacy, '장소(가게) 정보를 추출') && has(privacy, '컬렉션 관리') && has(privacy, '백업과 동기화'));
 check('방침: 보관·파기 — 삭제 요청 시 지체 없이 파기', has(privacy, '지체 없이 파기'));

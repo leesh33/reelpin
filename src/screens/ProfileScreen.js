@@ -74,7 +74,7 @@ export function AccountCard({
 
   const guardOffline = () => {
     if (cloudConfigured) return false;
-    toast('Supabase 설정이 아직 없어요 — 지금은 기기에만 저장됩니다');
+    toast('로그인 연결이 아직 준비되지 않았어요 — 지금은 이 기기에만 저장됩니다');
     return true;
   };
 
@@ -736,7 +736,7 @@ export function AppInfoCard({ cloudUser }) {
       <View style={styles.infoRow}>
         <Text style={styles.infoKey}>데이터 저장</Text>
         <Text style={styles.infoValue}>
-          {cloud ? '기기 + 클라우드(Supabase)' : '기기 내부 (AsyncStorage)'}
+          {cloud ? '이 기기 + 내 계정 클라우드' : '이 기기 안에만'}
         </Text>
       </View>
     </View>

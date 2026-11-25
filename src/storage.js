@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { SEED_PINS } from './data/seedPins';
+import { SEED_PINS, stripSeedPins } from './data/seedPins';
 import { normalizeCollections } from './utils/collections';
 import { normalizeCategoryColors } from './utils/categories';
 
@@ -12,19 +12,26 @@ const CATEGORIES_KEY = 'reelpin.categories.v1';
 const CATEGORY_COLORS_KEY = 'reelpin.categoryColors.v1';
 // v2.19 — 테마·코스별 핀 묶음 '컬렉션' (웹은 localStorage, 앱은 AsyncStorage — 같은 코드)
 const COLLECTIONS_KEY = 'reelpin.collections.v1';
+// v2.44 — 이 기기의 핀이 **어느 계정 것인지**. 로그아웃 뒤 다른 계정으로 들어올 때
+//   이전 계정의 핀이 새 계정으로 넘어가지 않게 하는 기준값입니다.
+const OWNER_KEY = 'reelpin.owner.v1';
 
-/** 저장된 핀 목록을 읽습니다. 처음 실행이면 샘플 4개로 시작합니다. */
+/**
+ * 저장된 핀 목록을 읽습니다.
+ *
+ * v2.44 — 처음 실행이면 **샘플 4곳을 화면 예시로만** 돌려주고 **저장하지 않습니다**.
+ *   (예전에는 저장해서 로그인하면 클라우드까지 올라갔습니다 — 가짜 주소가 내 핀이 됨)
+ *   · 예전 버전이 저장해 둔 샘플(`seed-`)도 읽을 때 걸러 냅니다.
+ *   · 핀이 하나라도 진짜로 저장되면 그때부터는 저장값만 읽으므로 샘플은 자연히 사라집니다.
+ */
 export async function loadPins() {
   try {
     const raw = await AsyncStorage.getItem(PINS_KEY);
-    if (raw == null) {
-      await AsyncStorage.setItem(PINS_KEY, JSON.stringify(SEED_PINS));
-      return SEED_PINS;
-    }
+    if (raw == null) return SEED_PINS;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : SEED_PINS;
+    return Array.isArray(parsed) ? stripSeedPins(parsed) : [];
   } catch (e) {
-    return SEED_PINS;
+    return [];
   }
 }
 
@@ -37,8 +44,30 @@ export async function savePins(pins) {
 }
 
 export async function resetPins() {
-  await savePins(SEED_PINS);
-  return SEED_PINS;
+  await savePins([]);
+  return [];
+}
+
+/** 기기에 저장된 핀을 모두 지웁니다 (로그아웃·탈퇴·계정 전환). */
+export async function clearPins() {
+  await savePins([]);
+}
+
+/** 이 기기의 핀이 어느 계정 것인지 읽습니다 (없으면 '') */
+export async function loadDataOwner() {
+  try {
+    return String((await AsyncStorage.getItem(OWNER_KEY)) || '');
+  } catch (e) {
+    return '';
+  }
+}
+
+export async function saveDataOwner(userId) {
+  try {
+    await AsyncStorage.setItem(OWNER_KEY, String(userId || ''));
+  } catch (e) {
+    // 저장 실패는 조용히 무시합니다 — 다음 로그인에서 한 번 더 맞춰 봅니다.
+  }
 }
 
 /** 지오펜스 알림 반경(300 / 500 / 1000 m) */
@@ -144,6 +173,11 @@ export async function saveCollections(collections) {
   } catch (e) {
     // 저장 실패는 조용히 무시하고 화면 상태를 유지합니다.
   }
+}
+
+/** 기기에 저장된 컬렉션을 모두 지웁니다 (로그아웃·탈퇴·계정 전환). */
+export async function clearCollections() {
+  await saveCollections([]);
 }
 
 /** v2.10 — 저장 개수 한도 없음 (예전 화면·테스트 호환용 이름) */

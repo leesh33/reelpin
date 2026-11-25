@@ -41,6 +41,8 @@ export default function AppHeader({
   badge = '지도',
   onPressAlerts,
   alertCount = 0,
+  // v2.44 — 알림 뱃지가 세는 반경 표기(내 정보에서 고른 300m/500m/1km)
+  radiusText = '500m',
   onPressMenu,
   signedIn = false,
   onPressClose,
@@ -69,7 +71,7 @@ export default function AppHeader({
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={
-              countLabel ? '알림 모음 · 반경 500m 안 ' + alertCount + '곳' : '알림 모음'
+              countLabel ? '알림 모음 · 반경 ' + radiusText + ' 안 ' + alertCount + '곳' : '알림 모음'
             }
             testID="header-alerts"
           >

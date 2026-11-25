@@ -2023,6 +2023,65 @@ const ENGLISH_NOISE = [
   'coffee', 'dessert', 'restaurant', 'review', 'map', 'link', 'follow', 'like', 'seoul', 'korea',
 ];
 
+/**
+ * v2.44 — **영문 링크·SNS·음원 라벨**. 상호가 아닙니다.
+ *
+ *   실제 제보(2026-11-25): `youtu.be/dQw4w9WgXcQ`(릭 애슬리 뮤직비디오)를 넣으면
+ *   설명글의 `Follow Rick Astley: / Facebook: … / Twitter: … / Spotify: … / Lyrics: …` 가
+ *   상호 후보로 통과해 **울산 TWITTER**·**성수 NAVER x Spotify 팝업**이 1·2순위로 저장됐고,
+ *   한 번 추출에 지도 API 를 30여 회 호출했습니다.
+ *
+ *   규칙
+ *     · 이런 라벨은 낱말 하나든 문장이든 상호·검색어가 될 수 없습니다.
+ *     · 영문**만** 있는 설명글(해외 뮤직비디오 등)은 상호 근거로 쓰지 않습니다.
+ *       (한국어 설명글 속 영문 상호 — 예: “… 성수 Blue Bottle 카페” — 는 그대로 살립니다)
+ */
+export const ENGLISH_LINK_LABELS = [
+  'facebook', 'fb', 'instagram', 'insta', 'ig', 'twitter', 'tiktok', 'threads', 'youtube',
+  'spotify', 'soundcloud', 'apple', 'apple music', 'itunes', 'music', 'deezer', 'tidal',
+  'pandora', 'shazam', 'amazon music', 'naver', 'kakao', 'band', 'telegram', 'discord',
+  'reddit', 'pinterest', 'snapchat', 'tumblr', 'linkedin', 'whatsapp', 'patreon', 'paypal',
+  'lyrics', 'lyric', 'website', 'site', 'homepage', 'link', 'links', 'bio', 'merch', 'store',
+  'shop', 'tour', 'ticket', 'tickets', 'stream', 'streaming', 'download', 'listen', 'watch',
+  'video', 'mv', 'album', 'single', 'ep', 'label', 'records', 'copyright', 'credits', 'follow',
+  'subscribe', 'share', 'comment', 'contact', 'business', 'inquiry', 'inquiries', 'press',
+  'booking', 'management', 'official', 'now', 'out', 'available', 'presave', 'preorder',
+  'info', 'rights', 'reserved', 'presented', 'produced', 'directed', 'starring',
+];
+const ENGLISH_LABEL_SET = new Set(ENGLISH_LINK_LABELS);
+
+/** 영문 라벨(낱말 하나 또는 'Follow …' 같은 짧은 라벨 문구)인가 */
+export function isEnglishLinkLabel(token) {
+  const t = String(token || '')
+    .toLowerCase()
+    .replace(/[^a-z ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!t) return false;
+  if (ENGLISH_LABEL_SET.has(t)) return true;
+  const words = t.split(' ');
+  // 'Follow Rick Astley'·'Apple Music' 처럼 라벨로 시작하는 두세 낱말
+  return words.length <= 3 && ENGLISH_LABEL_SET.has(words[0]);
+}
+
+/** 한글 없이 영문만 있는 낱말인가 */
+function isEnglishOnlyToken(token) {
+  const t = String(token || '');
+  return /[A-Za-z]/.test(t) && !/[가-힣]/.test(t);
+}
+
+/** 설명글 전체에 한글이 있는가 (영문뿐인 설명글은 상호 근거로 쓰지 않음) */
+function hasHangulText(text) {
+  return /[가-힣]/.test(String(text || ''));
+}
+
+/**
+ * v2.44 — 한 줄이 `라벨: 주소` 꼴인 영문 줄은 통째로 지웁니다.
+ *   (`Facebook: https://…` · `Follow Rick Astley:` · `Lyrics:`) — 주소는 그 전에 지워지므로
+ *   라벨만 남아 상호 후보가 되던 자리입니다.
+ */
+const ENGLISH_LABEL_LINE_RE = /(^|\n)[ \t]*[A-Za-z][A-Za-z0-9 &'’.\-/]{0,40}:[ \t]*(?:https?:\/\/\S*)?(?=\n|$)/g;
+
 /** 토큰 끝에 붙은 수식어를 반복해서 걷어냅니다. ('성수동맛집' → '성수동', '카페추천' → '카페') */
 const TOKEN_SUFFIXES = [
   '브이로그', '맛집추천', '카페추천', '데이트코스', '데이트맛집', '줄서는식당', '핫플레이스',
@@ -2077,6 +2136,8 @@ function stripTokenSuffixes(token) {
 /** 이모지·해시태그 기호·문장부호·URL을 걷어낸 한 줄 문자열 */
 export function cleanCaptionText(text) {
   return String(text || '')
+    // v2.44 — `Facebook: https://…` 처럼 라벨만 남는 영문 줄을 먼저 지웁니다.
+    .replace(ENGLISH_LABEL_LINE_RE, ' ')
     .replace(URL_IN_TEXT, ' ')
     .replace(EMAIL_RE, ' ')
     .replace(EMOJI_RE, ' ')
@@ -2320,6 +2381,10 @@ function findStoreNameInText(rawText, area, options = {}) {
     if (area && (name === area || name.indexOf(area) === 0)) continue;
     if (isQuantityOrPriceToken(name)) continue;
     if (/^[0-9]/.test(name)) continue;
+    // v2.44 — 영문 링크 라벨(`Facebook`·`Lyrics`·`Apple Music`)과
+    //   영문뿐인 설명글의 영문 낱말은 상호가 아닙니다.
+    if (isEnglishLinkLabel(name)) continue;
+    if (isEnglishOnlyToken(name) && !hasHangulText(raw)) continue;
     return name;
   }
   return '';
@@ -2360,6 +2425,12 @@ function isStopToken(token, stopSet) {
 }
 
 /**
+ * v2.44 — 한 번 추출에 지도 API 로 보내는 검색어 수 상한.
+ *   (예전에 한 링크에서 15개 검색어 × 2지도 = 30여 회 호출되던 것을 막습니다)
+ */
+export const MAX_EXTRACT_QUERIES = 6;
+
+/**
  * 제목·설명·캡션 → 지도 검색어 후보들. (v1.2)
  *   "성수동 소금빵 맛집 베통 다녀왔어요 #성수맛집"
  *   → { area:'성수동', storeName:'베통', keywords:['소금빵'], queries:['성수동 베통','베통','성수동 소금빵',...] }
@@ -2372,6 +2443,8 @@ function isStopToken(token, stopSet) {
  */
 export function extractSearchQueries(text, options = {}) {
   const raw = String(text || '');
+  // v2.44 — 영문**만** 있는 설명글(해외 뮤직비디오 등)은 상호 근거가 아닙니다.
+  const sourceHasHangul = hasHangulText(raw);
   const channelList = channelTokenList(options.channel, options.channelName);
   (Array.isArray(options.channelNames) ? options.channelNames : []).forEach((n) => {
     channelTokenList(n).forEach((t) => {
@@ -2414,6 +2487,7 @@ export function extractSearchQueries(text, options = {}) {
     if (isQuantityOrPriceToken(tok)) return;
     if (/^[0-9]/.test(tok) && !/[가-힣A-Za-z]/.test(tok.replace(/[0-9]/g, ''))) return;
     if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
+    if (isEnglishLinkLabel(tok)) return;
     // v2.22 — 호칭(`미니님`)·감탄 꼴리는 낱말은 상호가 아닙니다.
     if (/님$/.test(tok)) return;
     if (PREDICATE_TAIL_RE.test(tok)) return;
@@ -2466,6 +2540,14 @@ export function extractSearchQueries(text, options = {}) {
     }
     if (tok.length < 2) return;
     if (!/[가-힣A-Za-z]/.test(tok)) return;
+    // v2.44 — 영문 라벨은 상호가 아니고, 영문뿐인 설명글의 영문 낱말도 검색어로 쓰지 않습니다.
+    if (isEnglishOnlyToken(tok)) {
+      if (isEnglishLinkLabel(tok)) return;
+      if (!sourceHasHangul) return;
+      if (area && tok === area) return;
+      pushUnique(keywords, tok);
+      return;
+    }
     if (area && tok === area) return;
     pushUnique(keywords, tok);
   });
@@ -2493,6 +2575,8 @@ export function extractSearchQueries(text, options = {}) {
     if (CAPTION_CATEGORY_WORDS.indexOf(tok) >= 0) return;
     if (isStopToken(tok, stopSet)) return;
     if (ENGLISH_NOISE.indexOf(tok.toLowerCase()) >= 0) return;
+    if (isEnglishLinkLabel(tok)) return;
+    if (isEnglishOnlyToken(tok) && !hasHangulText(raw)) return;
     if (CITY_NOISE.indexOf(tok) >= 0) return;
     if (KNOWN_AREAS.indexOf(tok) >= 0 || isAreaToken(tok)) return;
     if (PREDICATE_TAIL_RE.test(tok) || isBasePredicate(tok)) return;
@@ -2535,9 +2619,13 @@ export function extractSearchQueries(text, options = {}) {
     if (area) pushQuery([area, kw]);
     else pushQuery([kw]);
   });
-  if (!queries.length && cleaned) pushQuery([cleaned.slice(0, 40)]);
+  // v2.44 — 상호·지역·키워드를 하나도 못 잡았으면, 한국어 설명글일 때만 원문 앞부분을 씁니다.
+  //   (영문뿐인 설명글을 통째로 검색어로 보내면 무관한 동네 가게가 잡힙니다)
+  if (!queries.length && cleaned && hasHangulText(cleaned)) pushQuery([cleaned.slice(0, 40)]);
+  // 한 번 추출에 지도 API 를 30여 회 부르지 않도록 검색어 수를 묶어 둡니다.
+  const cappedQueries = queries.slice(0, MAX_EXTRACT_QUERIES);
 
-  return { queries, area, storeName, category, keywords: keywordList, hashtags: hashtagList, explicit, cleaned };
+  return { queries: cappedQueries, area, storeName, category, keywords: keywordList, hashtags: hashtagList, explicit, cleaned };
 }
 
 /** 캡션이 아니라 '제목'이 막힌 플랫폼에서 화면에 띄울 안내 문구 */
@@ -2728,6 +2816,8 @@ export function classifyQuery(query, options = {}) {
     if (t.length < 2) return;
     if (/님$/.test(t)) return; // 호칭(`미니님`)은 상호가 아님
     if (isChannelToken(t, channelList)) return;
+    // v2.44 — 영문 링크·SNS 라벨은 가게를 특정한 근거가 아닙니다.
+    if (isEnglishLinkLabel(t)) return;
     if (storeTokens.indexOf(t) < 0) storeTokens.push(t);
   });
   return {
@@ -4546,136 +4636,21 @@ function deriveQuery(text, llm, options = {}) {
 // ─────────────────────────────────────────────────────────────
 // 오프라인 스마트 추출기 — API 키 없이도 앱이 끝까지 동작하게 하는 안전망
 // ─────────────────────────────────────────────────────────────
-const PLACE_INDEX = [
-  {
-    name: '성수동 소금빵집',
-    area: '성수동',
-    category: '베이커리',
-    menuTags: ['소금빵', '크루아상'],
-    address: '서울 성동구 연무장길 00',
-    lat: 37.5445,
-    lng: 127.0557,
-    keywords: ['소금빵', '성수', '연무장', '베이커리', '빵'],
-  },
-  {
-    name: '똑섬 카페',
-    area: '성수동',
-    category: '카페',
-    menuTags: ['크루아상', '아메리카노'],
-    address: '서울 성동구 아차산로 00',
-    lat: 37.5412,
-    lng: 127.0611,
-    keywords: ['똑섬', '성수 카페', '아차산로', '카페'],
-  },
-  {
-    name: '연남동 딸기 케이크 맛집',
-    area: '연남동',
-    category: '디저트',
-    menuTags: ['딸기 케이크', '라떼'],
-    address: '서울 마포구 성미산로 00',
-    lat: 37.56,
-    lng: 126.925,
-    keywords: ['딸기', '케이크', '연남', '디저트', '성미산로'],
-  },
-  {
-    name: '망원동 우동 맛집',
-    area: '망원동',
-    category: '맛집',
-    menuTags: ['붓카케 우동', '튀김'],
-    address: '서울 마포구 월드컵로 00',
-    lat: 37.556,
-    lng: 126.902,
-    keywords: ['우동', '망원', '월드컵로', '튀김'],
-  },
-  {
-    name: '아라뱃길 뷰 카페',
-    area: '검단',
-    category: '카페',
-    menuTags: ['핸드드립', '뷰맛집'],
-    address: '인천 서구 아라뱃길 00',
-    lat: 37.592,
-    lng: 126.69,
-    keywords: ['아라뱃길', '검단', '인천 카페', '핸드드립', '뷰'],
-  },
-  {
-    name: '연무장길 로스터리',
-    area: '성수동',
-    category: '카페',
-    menuTags: ['스페셜티', '플랫화이트'],
-    address: '서울 성동구 연무장길 00',
-    lat: 37.5432,
-    lng: 127.0522,
-    keywords: ['로스터리', '스페셜티', '플랫화이트'],
-  },
-];
-
-const AREA_HINTS = ['성수', '연남', '망원', '검단', '홍대', '강남', '잠실', '여의도'];
-
-function scorePlace(place, text) {
-  const t = String(text || '').toLowerCase();
-  let score = 0;
-  for (const kw of place.keywords) {
-    if (t.includes(String(kw).toLowerCase())) score += kw.length >= 3 ? 2 : 1;
-  }
-  if (t.includes(place.name.toLowerCase())) score += 4;
-  return score;
-}
-
 /**
- * 오프라인 추출기: URL·캡션에서 키워드를 찾아 후보 1~3개를 만듭니다.
- * 후보가 하나도 안 잡히면 '그럴듯한 거짓 장소'를 만들지 않고
- * 사용자가 이름을 직접 넣을 수 있는 빈 후보 1개를 돌려줍니다.
+ * v2.44 — **가짜 후보를 만들지 않습니다.**
+ *
+ * 예전에는 API 키가 없거나 전부 실패하면 `PLACE_INDEX`(성수동 소금빵집 · 뚝섬 카페 …)의
+ * **그럴듯한 가짜 장소**를 후보로 돌려주고, 그것도 안 잡히면 이름 `이름 없는 릴스 장소` +
+ * 성수 좌표(37.5445, 127.0557)를 만들어 **체크된 채로 저장**되게 했습니다.
+ *   → 지하철·비행기 모드에서 "저장됐다"고 믿은 핀이 서울 성수에 찍혔습니다.
+ *
+ * 이제는 빈 목록을 돌려주고, 화면(PasteScreen)이 **안내 + [가게명으로 찾기]** 로 이어 줍니다.
+ * (`extractPlaces` 의 `reason: 'not-found'`)
+ *
+ * @returns {Array<object>} 항상 빈 목록 (예전 코드·검사 호환용 이름)
  */
-export function offlineSmartExtract(parsed, caption) {
-  const haystack = [parsed.url, caption, parsed.contentId].filter(Boolean).join(' ');
-  const ranked = PLACE_INDEX.map((p) => ({ place: p, score: scorePlace(p, haystack) }))
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 2);
-
-  // 후보가 1개뿐이면 같은 동네의 다른 저장 후보를 2번째로 붙여
-  // '라디오로 골라 확정'하는 UX가 항상 성립하게 합니다.
-  if (ranked.length === 1) {
-    const chosen = ranked[0].place;
-    const alt =
-      PLACE_INDEX.find((p) => p !== chosen && p.area === chosen.area) ||
-      PLACE_INDEX.find((p) => p !== chosen);
-    if (alt) ranked.push({ place: alt, score: 0 });
-  }
-
-  if (ranked.length === 0) {
-    const area = AREA_HINTS.find((a) => haystack.includes(a)) || '';
-    const guessName = area ? area + ' 릴스 장소' : '이름 없는 릴스 장소';
-    return [
-      {
-        id: 'manual-1',
-        name: guessName,
-        area,
-        category: '맛집',
-        menuTags: [],
-        address: area ? area + ' 일대 (주소 확인 필요)' : '주소 확인 필요',
-        lat: area === '검단' ? 37.592 : 37.5445,
-        lng: area === '검단' ? 126.69 : 127.0557,
-        confidence: 0.32,
-        provider: 'offline',
-        manual: true,
-      },
-    ];
-  }
-
-  return ranked.map((x, i) => ({
-    id: 'offline-' + i,
-    name: x.place.name,
-    area: x.place.area,
-    category: x.place.category,
-    menuTags: x.place.menuTags,
-    address: x.place.address,
-    lat: x.place.lat,
-    lng: x.place.lng,
-    confidence: i === 0 ? 0.86 : 0.54,
-    provider: 'offline',
-    manual: false,
-  }));
+export function offlineSmartExtract() {
+  return [];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -5189,8 +5164,9 @@ export async function extractPlaces(rawInput, options = {}) {
           category: llm.category || '맛집',
           menuTags: llm.menuTags || [],
           address: llm.addressHint || '주소 확인 필요',
-          lat: 37.5445,
-          lng: 127.0557,
+          // v2.44 — 이름만 읽은 후보에 **성수 좌표를 박지 않습니다** (지도에 엉뚱한 핀이 찍히던 원인)
+          lat: null,
+          lng: null,
           confidence: 0.7,
           provider: 'llm',
           manual: true,
@@ -5203,13 +5179,16 @@ export async function extractPlaces(rawInput, options = {}) {
     };
   }
 
-  // 4) 키가 없거나 전부 실패 → 오프라인 스마트 추출기
-  const candidates = offlineSmartExtract(parsed, text || sharedCaption);
+  // 4) 가게를 하나도 못 찾았습니다 — **가짜 후보를 만들지 않고** 안내로 끝냅니다.
+  //    (v2.44 · 예전에는 '이름 없는 릴스 장소' + 성수 좌표가 체크된 채로 저장됐습니다)
   return {
     ...base,
-    title: candidates[0] ? candidates[0].name : parsed.platformLabel,
-    candidates,
-    // 키는 넣었는데 결과가 없었던 경우와, 키 자체가 없는 경우를 구분해 둡니다.
+    title: sourceTitle || parsed.platformLabel,
+    candidates: [],
+    matchStatus: 'none',
+    emptyReason: 'not-found',
+    notFoundMessage:
+      '이 링크에서는 가게를 찾지 못했어요. 가게 이름이나 동네로 다시 찾아 주세요.',
     usedAdapter: chain.providersTried.length ? 'offline-fallback' : 'offline',
     providersTried: chain.providersTried,
     providersUsed: chain.providersUsed,

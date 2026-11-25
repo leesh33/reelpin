@@ -103,6 +103,13 @@ export default function PasteScreen({
    */
   const [visited, setVisited] = useState(false);
   const scrollRef = useRef(null);
+  /**
+   * v2.44 — 가게를 못 찾았을 때의 안내. 예전에는 `이름 없는 릴스 장소`(성수 좌표)가
+   *   **체크된 후보**로 저장됐습니다. 이제는 후보 대신 안내 + [가게명으로 찾기]만 보여 줍니다.
+   */
+  const [notFound, setNotFound] = useState(null);
+  /** 결과 카드가 시작하는 위치 — 결과가 나오면 여기로 스크롤합니다(맨 아래로 튀지 않게) */
+  const resultYRef = useRef(0);
 
   /**
    * v2.16 — 🔍 검색 팝업에서 [저장 탭에서 ‘가게명’ 찾기] 로 넘어올 때:
@@ -178,6 +185,7 @@ export default function PasteScreen({
     setMemoAutoFilled(false);
     setExtracting(false);
     setPhotoBusy(false);
+    setNotFound(null);
     // v2.33.4 — 탭을 옮기면 ✅ 가봤어요도 풀립니다(탭마다 새 결과이므로).
     setVisited(false);
   };
@@ -187,6 +195,21 @@ export default function PasteScreen({
     return setInterval(() => {
       setStage((s) => (s < 2 ? s + 1 : s));
     }, 380);
+  };
+
+  /**
+   * v2.44 — 결과가 나오면 **결과 카드 맨 위**로 스크롤합니다.
+   *   예전에는 `scrollToEnd` 로 화면이 맨 아래(14~15번 후보 + 저장 버튼)로 튀어
+   *   1순위 후보가 위로 밀려 안 보였습니다.
+   */
+  const scrollToResults = () => {
+    setTimeout(() => {
+      const node = scrollRef.current;
+      if (!node) return;
+      if (typeof node.scrollTo === 'function') {
+        node.scrollTo({ y: Math.max(0, resultYRef.current - 8), animated: true });
+      }
+    }, 120);
   };
 
   const runExtract = async (targetUrl) => {
@@ -213,6 +236,7 @@ export default function PasteScreen({
     setSelectedIds([]);
     setCategoryTouched(false);
     setPickedCategory('');
+    setNotFound(null);
     // v2.33.4 — 새 결과를 찾기 시작하면 ✅ 가봤어요는 미체크로 돌아갑니다.
     setVisited(false);
 
@@ -234,9 +258,20 @@ export default function PasteScreen({
         setError(result.reason || '링크를 읽지 못했어요.');
         return;
       }
-      setCandidates(result.candidates || []);
-      // 여러 곳이면 매칭된 후보를 모두 선택해 두고(바로 저장), 한 곳이면 1순위만 선택합니다.
       const firstList = result.candidates || [];
+      setCandidates(firstList);
+      // v2.44 — 가게를 못 찾았으면 가짜 후보 대신 안내를 띄웁니다.
+      setNotFound(
+        firstList.length
+          ? null
+          : {
+              message:
+                result.notFoundMessage ||
+                '이 링크에서는 가게를 찾지 못했어요. 가게 이름이나 동네로 다시 찾아 주세요.',
+              suggested: String(result.suggestedQuery || '').trim(),
+            }
+      );
+      // 여러 곳이면 매칭된 후보를 모두 선택해 두고(바로 저장), 한 곳이면 1순위만 선택합니다.
       setSelectedIds(
         result.mode === 'multi' ? firstList.map((c) => c.id) : firstList[0] ? [firstList[0].id] : []
       );
@@ -262,7 +297,7 @@ export default function PasteScreen({
       const draft = String(result.memoDraft || '').trim().slice(0, 120);
       setMemo(draft);
       setMemoAutoFilled(Boolean(draft));
-      setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
+      scrollToResults();
     } catch (e) {
       clearInterval(stageTimer);
       if (seq !== runSeq.current) return;
@@ -286,6 +321,7 @@ export default function PasteScreen({
     setSelectedIds([]);
     setCategoryTouched(false);
     setPickedCategory('');
+    setNotFound(null);
     setVisited(false); // v2.33.4 — 새 검색이면 ✅ 가봤어요 미체크
     if (targetQuery != null) setQuery(targetQuery);
 
@@ -324,7 +360,7 @@ export default function PasteScreen({
         distanceRanked: result.distanceRanked === true,
         near: result.near || null,
       });
-      setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
+      scrollToResults();
     } catch (e) {
       clearInterval(stageTimer);
       if (seq !== runSeq.current) return;
@@ -393,7 +429,7 @@ export default function PasteScreen({
       const photoDraft = String(result.memoDraft || '').trim().slice(0, 120);
       setMemo(photoDraft);
       setMemoAutoFilled(Boolean(photoDraft));
-      setTimeout(() => scrollRef.current && scrollRef.current.scrollToEnd({ animated: true }), 120);
+      scrollToResults();
     } catch (e) {
       if (seq !== runSeq.current) return;
       setError('사진을 분석하는 중 문제가 생겼어요. 다시 시도해 주세요.');
@@ -739,8 +775,33 @@ export default function PasteScreen({
           </>
         )}
 
+        {/* v2.44 — 가게를 못 찾았을 때: 가짜 후보 대신 안내 + [가게명으로 찾기] */}
+        {!!notFound && !extracting && !photoBusy && candidates.length === 0 && (
+          <View style={styles.notFoundCard} testID="paste-not-found">
+            <View style={styles.notFoundHead}>
+              <Ionicons name="search-outline" size={16} color={colors.brandDark} />
+              <Text style={styles.notFoundTitle}>가게를 찾지 못했어요</Text>
+            </View>
+            <Text style={styles.notFoundText}>{notFound.message}</Text>
+            <Pressable
+              style={styles.notFoundBtn}
+              onPress={() => switchToSearch(notFound.suggested)}
+              accessibilityRole="button"
+              testID="paste-not-found-search"
+            >
+              <Ionicons name="search" size={15} color={colors.white} />
+              <Text style={styles.notFoundBtnText}>
+                {notFound.suggested ? '‘' + notFound.suggested + '’ 가게명으로 찾기' : '가게명으로 찾기'}
+              </Text>
+            </Pressable>
+            <Text style={styles.notFoundHint}>
+              인스타·틱톡은 제목을 못 읽어오는 경우가 많아요. 가게 이름이나 동네만 알면 바로 꽂을 수 있어요.
+            </Text>
+          </View>
+        )}
+
         {/* 안내 카드 */}
-        {candidates.length === 0 && !extracting && !photoBusy && (
+        {candidates.length === 0 && !extracting && !photoBusy && !notFound && (
           <View style={styles.guideCard}>
             <Text style={styles.guideTitle}>
               {isPhoto ? '사진 한 장이면 충분해요' : isSearch ? '이름만 알 때는 이렇게' : '저장은 3초면 끝나요'}
@@ -777,7 +838,12 @@ export default function PasteScreen({
         )}
 
         {candidates.length > 0 && (
-          <View style={styles.resultWrap}>
+          <View
+            style={styles.resultWrap}
+            onLayout={(e) => {
+              resultYRef.current = e.nativeEvent.layout.y;
+            }}
+          >
             <View style={styles.resultHead}>
               <Text style={styles.sectionTitle}>
                 {meta && meta.multi
@@ -910,7 +976,7 @@ export default function PasteScreen({
 
             {meta && String(meta.usedAdapter || '').indexOf('offline') === 0 && (
               <Text style={styles.adapterNote}>
-                오프라인 추출기로 찾은 후보예요. API 키를 연결하면 실제 가게·좌표로 정확도가 올라갑니다.
+                지도에서 확인하지 못해 설명글만으로 찾은 후보예요 · 저장 전에 주소를 한 번 확인해 주세요.
               </Text>
             )}
 
@@ -1225,6 +1291,49 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0EFF4',
     borderRadius: radius.xl,
     padding: 14,
+  },
+  notFoundCard: {
+    marginTop: 20,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  notFoundHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  notFoundTitle: {
+    ...typography.h3,
+    fontSize: 14,
+  },
+  notFoundText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: colors.textSub,
+    lineHeight: 18,
+  },
+  notFoundBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.brand,
+  },
+  notFoundBtnText: {
+    color: colors.white,
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  notFoundHint: {
+    fontSize: 11,
+    color: colors.textMuted,
+    lineHeight: 16,
   },
   guideCard: {
     marginTop: 24,

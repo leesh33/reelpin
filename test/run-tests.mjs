@@ -395,6 +395,18 @@ if (!only || only === 'bottom') {
   });
 }
 
+if (!only || only === 'v244') {
+  // v2.44 — 웹·서버에서 바로 고친 P0/P1: 알림 반경 배선 · 영문 라벨 차단 · 가짜 후보 금지 ·
+  //         샘플 핀 업로드/공유 제외 · 계정 전환 정리 · 문구/16px/삭제 확인
+  failed += await runSuite({
+    name: 'v2.44 웹·서버 버그 수정 테스트',
+    entry: 'v244-fixes-test.mjs',
+    out: 'v244-fixes-test.bundle.mjs',
+    format: 'esm',
+    alias: aliasFor('react-native-web'),
+  });
+}
+
 if (!only || only === 'build22') {
   // v2.43 · 빌드 22 — 🗺️ 지도 핀 이름표 세로 잘림(고정 폭 마커 + 가운데 anchor) ·
   //                  백그라운드 복귀 까만 화면(onContentProcessDidTerminate → retry)

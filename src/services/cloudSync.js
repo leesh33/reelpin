@@ -22,6 +22,7 @@
 import { Linking } from 'react-native';
 import { authRedirectUrl, isBrowser, isSupabaseConfigured, supabase } from './supabase';
 import { isSamePin, normalizePin } from '../utils/pins';
+import { isSeedPin } from '../data/seedPins';
 
 /** Supabase 테이블 이름 */
 export const PIN_TABLE = 'pins';
@@ -320,9 +321,15 @@ export function mergeLocalAndCloudPins(localPins, cloudPins) {
   return merged.sort((a, b) => pinTime(b) - pinTime(a));
 }
 
-/** 동기화 계획 — 병합 결과 + 클라우드에 아직 없는/바뀐 핀만 올립니다. (삭제는 하지 않음) */
+/**
+ * 동기화 계획 — 병합 결과 + 클라우드에 아직 없는/바뀐 핀만 올립니다. (삭제는 하지 않음)
+ *
+ * v2.44 — 첫 실행 **예시 핀**(`seed-…`)은 내 핀이 아니므로
+ *   병합 결과·업로드·개수 어디에도 넣지 않습니다. (예전에는 샘플 4곳이 내 계정 핀이 됐습니다)
+ */
 export function planCloudSync(localPins, cloudPins) {
-  const merged = mergeLocalAndCloudPins(localPins, cloudPins);
+  const local = (Array.isArray(localPins) ? localPins : []).filter((pin) => pin && !isSeedPin(pin));
+  const merged = mergeLocalAndCloudPins(local, cloudPins);
   const cloudIds = new Set((Array.isArray(cloudPins) ? cloudPins : []).filter(Boolean).map((p) => String(p.id)));
   const toUpload = merged.filter((pin) => {
     const id = String(pin.id);

@@ -26,6 +26,16 @@ export const SHARE_MAX_PINS = 100;
 /** 필드 상한 — 비정상적으로 긴 값이 링크를 망가뜨리지 않게 */
 export const SHARE_FIELD_MAX = { name: 60, area: 30, category: 20, placeUrl: 300, phone: 24, address: 120, memo: 60 };
 
+/**
+ * v2.44 — 첫 실행 **예시 핀**(`seed-…`)은 내 핀이 아니므로 공유 링크·문구·동네 판정에서 뺍니다.
+ *   (예전에는 샘플 4곳의 가짜 주소가 공유 링크에 그대로 담겨 나갔습니다)
+ */
+function realPins(pins) {
+  return (Array.isArray(pins) ? pins : []).filter(
+    (pin) => pin && pin.name && pin.isSeed !== true && String(pin.id || '').indexOf('seed-') !== 0
+  );
+}
+
 /** 배포 주소 — 브라우저가 아닌 곳(테스트·SSR)에서 쓰는 기본 origin */
 export const DEFAULT_SHARE_ORIGIN = 'https://reelpin.vercel.app';
 
@@ -214,7 +224,7 @@ export function decodePinTuple(tuple, index) {
 
 /** 핀 목록 → 공유 코드 (`r2-…`) */
 export function encodeSharePins(pins) {
-  const list = (Array.isArray(pins) ? pins : []).filter((p) => p && p.name).slice(0, SHARE_MAX_PINS);
+  const list = realPins(pins).slice(0, SHARE_MAX_PINS);
   const body = list
     .map(encodePinTuple)
     .filter(Boolean)
@@ -283,7 +293,7 @@ export function buildShareUrl(pins, options = {}) {
  * (여러 동네에 흩어져 있으면 '내 릴스 맛집 지도' 가 맞습니다)
  */
 export function dominantArea(pins) {
-  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
+  const list = realPins(pins);
   if (!list.length) return '';
   const counts = {};
   list.forEach((pin) => {
@@ -297,7 +307,7 @@ export function dominantArea(pins) {
 
 /** 공유와 함께 보여 줄 짧은 문구 */
 export function shareMessage(pins, options = {}) {
-  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
+  const list = realPins(pins);
   const area = dominantArea(list);
   const title = options.title || (area ? '내 ' + area + ' 릴스 지도' : '내 릴스 맛집 지도');
   return title + ' · ' + list.length + '곳';

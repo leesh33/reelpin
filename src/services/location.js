@@ -96,6 +96,21 @@ export function formatDistance(meters) {
 }
 
 /**
+ * v2.44 — 알림 반경 표기 — `300m` · `500m` · `1km`
+ *   예전에는 화면마다 `radius >= 1000 ? '1km' : radius + 'm'` 를 복사해 두었고,
+ *   지도 토스트·앱 안내는 500m 로 **하드코딩**돼 있었습니다. 이제 한 곳에서 만듭니다.
+ */
+export function radiusLabel(radiusMeters) {
+  const value = toNumber(radiusMeters);
+  const n = Number.isFinite(value) && value > 0 ? Math.round(value) : NEARBY_RADIUS_M;
+  if (n >= 1000) {
+    const km = n / 1000;
+    return (km % 1 === 0 ? km.toFixed(0) : km.toFixed(1)) + 'km';
+  }
+  return n + 'm';
+}
+
+/**
  * 반경 안에 있는 핀들을 가까운 순으로 돌려줍니다.
  * @returns {{ pin: object, distanceMeters: number }[]}
  *

@@ -31,11 +31,14 @@ import { buildAlertFeed } from './src/utils/alertFeed';
 // v2.20.1 — 프로필 이름의 출처는 **로그인한 계정 하나** (로그아웃 = 게스트)
 import { profileIdentity } from './src/utils/profileIdentity';
 import { notificationPermission, requestNotificationPermission } from './src/services/notifications';
-import { requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
+import { radiusLabel, requestCurrentPosition, writeLocationGrantedFlag } from './src/services/location';
 import {
+  clearCollections,
+  clearPins,
   loadCategories,
   loadCategoryColors,
   loadCollections,
+  loadDataOwner,
   loadPins,
   loadPro,
   loadRadius,
@@ -43,11 +46,14 @@ import {
   saveCategories,
   saveCategoryColors,
   saveCollections,
+  saveDataOwner,
   savePins,
   savePro,
   saveRadius,
   saveAlerts,
 } from './src/storage';
+// v2.44 — 첫 실행 예시 핀(seed-)은 내 핀이 아닙니다 — 저장·업로드·공유·개수에서 뺀다
+import { isSeedPin, stripSeedPins } from './src/data/seedPins';
 import { findExistingPin, normalizePins, planPinAddition, withPlaceHours } from './src/utils/pins';
 import {
   addCategory,
@@ -234,6 +240,8 @@ function AppShell() {
   const [cloudSyncing, setCloudSyncing] = useState(false);
   const [cloudMessage, setCloudMessage] = useState('');
   const sessionRef = useRef(null);
+  // v2.44 — 이 기기의 핀이 어느 계정 것인지 (로그아웃 뒤 다른 계정으로 들어올 때 기준)
+  const dataOwnerRef = useRef('');
   const pinsRef = useRef([]);
   const syncWarnedRef = useRef(false);
   const authUnsubRef = useRef(null);
@@ -244,7 +252,7 @@ function AppShell() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections, storedAlerts, storedCategoryColors] = await Promise.all([
+      const [storedPins, storedRadius, storedPro, storedCategories, storedCollections, storedAlerts, storedCategoryColors, storedOwner] = await Promise.all([
         loadPins(),
         loadRadius(),
         loadPro(),
@@ -252,6 +260,7 @@ function AppShell() {
         loadCollections(),
         loadAlerts(),
         loadCategoryColors(),
+        loadDataOwner(),
       ]);
       if (cancelled) return;
       // v1.0에서 저장된 핀에 없던 필드(placeUrl·providers)를 채워 넣습니다.
@@ -263,6 +272,7 @@ function AppShell() {
       setCollections(normalizeCollections(storedCollections));
       setAlertsEnabled(storedAlerts === true);
       setNotifyPermission(notificationPermission());
+      dataOwnerRef.current = storedOwner || '';
       setReady(true);
     })();
     return () => {
@@ -271,8 +281,18 @@ function AppShell() {
   }, []);
 
   // 상태가 바뀔 때마다 기기에 저장 (AsyncStorage)
+  // v2.44 — 예시 핀(seed-)만 있는 상태는 **저장하지 않습니다**. 진짜 핀이 하나라도 생기면
+  //   화면에서 예시 핀을 걷어내고, 진짜 핀만 저장합니다. (샘플이 내 핀·클라우드에 섞이던 문제)
   useEffect(() => {
-    if (ready) savePins(pins);
+    if (!ready) return;
+    const real = stripSeedPins(pins);
+    if (real.length === 0) return;
+    if (real.length !== pins.length) {
+      pinsRef.current = real;
+      setPins(real);
+      return;
+    }
+    savePins(real);
   }, [pins, ready]);
 
   useEffect(() => {
@@ -517,9 +537,29 @@ function AppShell() {
       sessionRef.current = session;
       setCloudUser({ id: user.id, email: user.email || '', user_metadata: user.user_metadata || {} });
       if (known && options.fromEvent) return;
+      /**
+       * v2.44 — **다른 계정으로 바뀌었으면 이 기기에 남은 핀·컬렉션을 넘기지 않습니다.**
+       *   (A 로그아웃 → B 로그인 시 A의 장소·메모가 B 계정으로 복사되던 문제)
+       *   · 같은 계정이 다시 들어온 경우(owner === user.id)는 그대로 두고 병합합니다.
+       *   · owner 가 비어 있으면(로그인 전 게스트 핀) 그대로 올립니다 — 내가 만든 핀입니다.
+       */
+      const owner = dataOwnerRef.current;
+      if (owner && owner !== user.id) {
+        pinsRef.current = [];
+        setPins([]);
+        setSelectedPinId(null);
+        collectionsRef.current = [];
+        setCollections([]);
+        setCollectionFilterId(null);
+        clearPins();
+        clearCollections();
+        showToast('앞서 쓰던 계정의 핀·컬렉션은 이 기기에서 지웠어요');
+      }
+      dataOwnerRef.current = user.id;
+      saveDataOwner(user.id);
       syncWithCloud({ silent: !!options.silent });
     },
-    [syncWithCloud]
+    [syncWithCloud, showToast]
   );
 
   const clearCloudSession = useCallback(() => {
@@ -694,13 +734,16 @@ function AppShell() {
       return;
     }
     clearCloudSession();
-    showToast('로그아웃했어요 · 핀은 기기에 그대로 있어요');
+    // v2.44 — 로그아웃해도 기기 핀은 남기되, "누구 것인지"를 그대로 기록해 둡니다.
+    //   다른 계정으로 들어오면 그때 이 기기의 핀·컬렉션을 지웁니다(계정 간 데이터 섞임 방지).
+    showToast('로그아웃했어요 · 핀은 이 기기에 그대로 있어요');
   }, [clearCloudSession, showToast]);
 
   /**
    * v2.40.0 🗑️ 회원탈퇴 — Supabase `delete_my_account` 로 계정·클라우드 데이터를 지웁니다.
    *   확인 창(ProfileScreen)이 결과를 받아 열림/닫힘을 정하므로 `{ ok, message }` 를 돌려줍니다.
-   *   기기에 저장된 핀은 그대로 둡니다(로그아웃과 같은 원칙).
+   *   v2.44 — 탈퇴 뒤에는 **이 기기의 핀·컬렉션도 함께 지웁니다.**
+   *   (안내는 "지운 데이터는 되돌릴 수 없어요"인데 재가입하면 핀이 살아나던 모순)
    */
   const handleDeleteAccount = useCallback(async () => {
     if (cloudBusy) return { ok: false, message: '잠시만 기다려 주세요' };
@@ -712,7 +755,17 @@ function AppShell() {
       return res;
     }
     clearCloudSession();
-    showToast(res.message || '탈퇴했어요 · 계정과 클라우드 데이터를 지웠습니다');
+    pinsRef.current = [];
+    setPins([]);
+    setSelectedPinId(null);
+    collectionsRef.current = [];
+    setCollections([]);
+    setCollectionFilterId(null);
+    dataOwnerRef.current = '';
+    clearPins();
+    clearCollections();
+    saveDataOwner('');
+    showToast(res.message || '탈퇴했어요 · 계정과 클라우드·기기 데이터를 지웠습니다');
     return res;
   }, [clearCloudSession, cloudBusy, showToast]);
 
@@ -1128,9 +1181,9 @@ function AppShell() {
       const permission = await requestNotificationPermission();
       setNotifyPermission(permission);
       setAlertsEnabled(true);
-      const radiusLabel = radius >= 1000 ? '1km' : radius + 'm';
+      const radiusText = radiusLabel(radius);
       if (permission === 'granted') {
-        showToast('반경 내 알림을 켰어요 · 반경 ' + radiusLabel + ' 안에서 알려드려요', 'pro');
+        showToast('반경 내 알림을 켰어요 · 반경 ' + radiusText + ' 안에서 알려드려요', 'pro');
       } else if (permission === 'unsupported') {
         showToast('이 브라우저에는 알림창이 없어 앱 안에서 알려드릴게요');
       } else {
@@ -1243,7 +1296,11 @@ function AppShell() {
 
   // ── v2.15 · 공통 헤더의 🔔 알림 모음 · 👤 계정 ─────────────────
   // 반경 500m 안 저장 장소 수 = 헤더 🔔 뱃지, 목록 = 알림 모음(최대 5곳)
-  const alertFeed = useMemo(() => buildAlertFeed(pins, alertCoords), [pins, alertCoords]);
+  // v2.44 — 헤더 🔔 뱃지도 내가 고른 반경(300/500/1km)으로 셉니다 (예전엔 늘 500m)
+  const alertFeed = useMemo(
+    () => buildAlertFeed(pins, alertCoords, { radiusMeters: radius }),
+    [pins, alertCoords, radius]
+  );
 
   /** 지도 탭이 위치를 잡을 때마다 알려 주는 현재 위치 (없으면 null) */
   const handleMyCoords = useCallback((position) => {
@@ -1371,11 +1428,13 @@ function AppShell() {
   const headerProps = useMemo(
     () => ({
       alertCount: alertFeed.badgeCount,
+      // v2.44 — 뱃지·안내 문구도 내가 고른 반경을 씁니다
+      radiusText: radiusLabel(radius),
       onPressAlerts: openAlerts,
       onPressMenu: openMenu,
       signedIn,
     }),
-    [alertFeed.badgeCount, openAlerts, openMenu, signedIn]
+    [alertFeed.badgeCount, openAlerts, openMenu, signedIn, radius]
   );
 
   /**
@@ -1531,6 +1590,7 @@ function AppShell() {
           onLocate={handleLocateForAlerts}
           onOpenPin={openPinFromAlerts}
           onGoMap={goMapFromAlerts}
+          radiusMeters={radius}
         />
         {/* v2.35.0 — 🔍 검색 레이어 팝업은 없어졌습니다. 지도 화면 상단의 통합 검색창
             (MapSearchBar · MapSearchPanel)이 내 핀 검색과 `새 장소 찾기`를 함께 맡습니다. */}

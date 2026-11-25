@@ -34,13 +34,24 @@ AppText.displayName = 'AppText';
 /**
  * 입력칸(`TextInput`)도 같은 글꼴로 — 로그인·검색·메모 입력의 글자가
  * 옆의 본문 글꼴과 어긋나지 않게 합니다. 규칙은 `Text` 와 똑같습니다.
+ *
+ * v2.44 — **iOS Safari 입력 확대 방지**: 브라우저는 입력칸 글자가 16px 보다 작으면
+ *   포커스 순간 화면을 확대하고, 키보드를 닫아도 확대가 남아 레이아웃이 잘렸습니다.
+ *   (검색·링크·가게명·메모가 13~14px 이었음)
+ *   여기서 웹일 때 최소 16px 로 올려 **앱 전체 입력칸**이 한 번에 안전해지게 합니다.
+ *   네이티브는 확대가 없는 대신 디자인 그대로(13~14px) 둡니다.
  */
+export const INPUT_MIN_FONT_SIZE_WEB = 16;
+
 export const AppTextInput = forwardRef(function AppTextInput({ style, ...rest }, ref) {
-  const fontStyle = Platform.OS === 'web' ? null : nativeTextFontStyle(
-    (StyleSheet.flatten(style) || {}).fontWeight,
-    Platform.OS
-  );
-  return <RNTextInput ref={ref} {...rest} style={fontStyle ? [style, fontStyle] : style} />;
+  const flat = StyleSheet.flatten(style) || {};
+  const fontStyle = Platform.OS === 'web' ? null : nativeTextFontStyle(flat.fontWeight, Platform.OS);
+  const zoomGuard =
+    Platform.OS === 'web' && !(Number(flat.fontSize) >= INPUT_MIN_FONT_SIZE_WEB)
+      ? { fontSize: INPUT_MIN_FONT_SIZE_WEB }
+      : null;
+  const nextStyle = zoomGuard ? [style, zoomGuard] : style;
+  return <RNTextInput ref={ref} {...rest} style={fontStyle ? [nextStyle, fontStyle] : nextStyle} />;
 });
 
 AppTextInput.displayName = 'AppTextInput';

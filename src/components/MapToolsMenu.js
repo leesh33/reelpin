@@ -33,6 +33,7 @@ import { Animated, Easing, Pressable, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, mapControls, radius, typography } from '../theme';
+import { radiusLabel } from '../services/location';
 
 /** 카드가 펼쳐지는 애니메이션 길이(ms) */
 export const TOOLS_ANIM_MS = 150;
@@ -68,10 +69,12 @@ export default function MapToolsMenu({
   // v2.42 — 아래 안전 영역(홈 인디케이터)만큼 왼쪽 하단 도구도 올립니다
   bottomLift = 0,
 }) {
+  // v2.44 — 반경 표기는 radiusLabel 한 곳에서 (300m · 500m · 1km)
+  const nearbyRadiusText = radiusLabel(nearbyRadius);
   const nearbySub = nearbyOpen
-    ? '반경 ' + nearbyRadius + 'm · ' + nearbyCount + '곳 보는 중'
+    ? '반경 ' + nearbyRadiusText + ' · ' + nearbyCount + '곳 보는 중'
     : hasMyCoords
-    ? '반경 ' + nearbyRadius + 'm 안 ' + nearbyCount + '곳'
+    ? '반경 ' + nearbyRadiusText + ' 안 ' + nearbyCount + '곳'
     : '내 위치를 켜면 가까운 순으로';
   // 켜져 있을 때는 문구로도 상태를 분명히 — 스위치 모양만 보고 헷갈리지 않게
   const visitedSub = visitedOnly
@@ -144,14 +147,14 @@ export default function MapToolsMenu({
             onPress={onPressNearby}
             accessibilityRole="button"
             accessibilityState={{ expanded: nearbyOpen }}
-            accessibilityLabel={'반경 ' + nearbyRadius + 'm 주변 보기'}
+            accessibilityLabel={'반경 ' + nearbyRadiusText + ' 주변 보기'}
             testID="map-tools-nearby"
           >
             <View style={styles.nearbyIcon}>
               <Ionicons name="storefront-outline" size={14} color={colors.brand} />
             </View>
             <View style={styles.nearbyTextWrap}>
-              <Text style={styles.nearbyLabel}>{'주변 ' + nearbyRadius + 'm 보기'}</Text>
+              <Text style={styles.nearbyLabel}>{'주변 ' + nearbyRadiusText + ' 보기'}</Text>
               <Text style={styles.nearbySub} numberOfLines={1}>
                 {nearbySub}
               </Text>

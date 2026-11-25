@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
@@ -40,6 +40,14 @@ export default function FilterChips({
   countsLabel = null,
 }) {
   const options = filterOptions(categories);
+  /**
+   * v2.44 — 390px 화면에서 4번째 칩('가볼곳 0')이 화면 밖으로 잘리고,
+   *   가로로 더 넘길 수 있다는 표시도 없었습니다.
+   *   → 칩 간격·여백을 조금 줄이고, 넘칠 때만 오른쪽에 `›` 힌트를 띄웁니다.
+   */
+  const [overflowing, setOverflowing] = useState(false);
+  const scrollWidthRef = useRef(0);
+  const contentWidthRef = useRef(0);
   return (
     <View style={styles.row}>
       {/* v2.18 — 분류 맨 앞 목록 아이콘 버튼 (칩과 같은 흰색 반투명 알약) */}
@@ -58,7 +66,16 @@ export default function FilterChips({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.scroll}
         contentContainerStyle={styles.chipRow}
+        onLayout={(e) => {
+          scrollWidthRef.current = e.nativeEvent.layout.width;
+          setOverflowing(contentWidthRef.current > scrollWidthRef.current + 2);
+        }}
+        onContentSizeChange={(width) => {
+          contentWidthRef.current = width;
+          setOverflowing(width > scrollWidthRef.current + 2);
+        }}
       >
         {options.map((f) => {
           const on = value === f;
@@ -92,6 +109,11 @@ export default function FilterChips({
         })}
         {countsLabel ? <Text style={styles.countsLabel}>{countsLabel}</Text> : null}
       </ScrollView>
+      {overflowing ? (
+        <View style={styles.moreHint} pointerEvents="none" testID="filter-chips-more">
+          <Ionicons name="chevron-forward" size={12} color={colors.textSub} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -125,17 +147,33 @@ const styles = StyleSheet.create({
   listBtnPressed: {
     backgroundColor: 'rgba(255,255,255,0.75)',
   },
+  scroll: {
+    flex: 1,
+  },
   chipRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingRight: 4,
+    gap: 6,
+    paddingRight: 18,
+  },
+  // 넘칠 때만 보이는 '›' — 가로로 더 넘길 수 있다는 표시
+  moreHint: {
+    position: 'absolute',
+    right: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(15,23,42,0.10)',
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 13,
+    paddingHorizontal: 11,
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
@@ -160,7 +198,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   text: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
     color: '#1C1C1E',
     letterSpacing: -0.2,

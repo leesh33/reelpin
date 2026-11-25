@@ -3,7 +3,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 import { AppText as Text } from './AppText';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, typography } from '../theme';
-import { formatDistance } from '../services/location';
+import { formatDistance, radiusLabel } from '../services/location';
 import { buildAlertFeed } from '../utils/alertFeed';
 import LayerSheet from './LayerSheet';
 import { useSheetBodyScroll } from './useSheetSwipeDismiss';
@@ -42,7 +42,8 @@ export default function AlertInbox({
   if (!visible) return null;
 
   const feed = buildAlertFeed(pins, myCoords, { radiusMeters });
-  const distanceText = Math.round(feed.radiusMeters);
+  // v2.44 — 내 정보에서 고른 반경을 그대로 씁니다 (예전에는 500m 문구가 박혀 있었음)
+  const distanceText = radiusLabel(feed.radiusMeters);
 
   return (
     <LayerSheet
@@ -59,7 +60,7 @@ export default function AlertInbox({
       footer={
         <>
           <Text style={styles.footNote}>
-            반경 500m 알림은 잠깐 떴다 사라져도 여기서는 언제든 다시 볼 수 있어요.
+            {'반경 ' + distanceText + ' 알림은 잠깐 떴다 사라져도 여기서는 언제든 다시 볼 수 있어요.'}
           </Text>
           {feed.items.length > 0 && onGoMap ? (
             <Pressable
@@ -88,7 +89,7 @@ export default function AlertInbox({
               <Ionicons name="locate-outline" size={20} color={colors.brand} />
               <Text style={styles.needsTitle}>내 위치를 켜면 가까운 저장 장소가 모여요</Text>
               <Text style={styles.needsSub}>
-                {'지금 있는 곳 기준 반경 ' + distanceText + 'm 안의 저장 장소를 가까운 순으로 보여드려요.'}
+                {'지금 있는 곳 기준 반경 ' + distanceText + ' 안의 저장 장소를 가까운 순으로 보여드려요.'}
               </Text>
               {!!error && <Text style={styles.errorText}>{error}</Text>}
               <Pressable

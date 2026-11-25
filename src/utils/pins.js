@@ -36,6 +36,10 @@ export function buildPin(candidate, options = {}) {
       : candidate.provider
       ? [candidate.provider]
       : [];
+  // v2.44 — 좌표는 **실수일 때만** 저장합니다. 이름만 읽은 후보에 엉뚱한 좌표가 붙지 않게.
+  const lat = Number(candidate.lat);
+  const lng = Number(candidate.lng);
+  const hasCoords = candidate.lat !== null && candidate.lat !== '' && Number.isFinite(lat) && Number.isFinite(lng);
   return {
     id: options.id || 'pin-' + now.getTime(),
     name: candidate.name,
@@ -43,8 +47,8 @@ export function buildPin(candidate, options = {}) {
     category: candidate.category || '맛집',
     menuTags: Array.isArray(candidate.menuTags) ? candidate.menuTags : [],
     address: candidate.address || '주소 미확인',
-    lat: candidate.lat,
-    lng: candidate.lng,
+    lat: hasCoords ? lat : null,
+    lng: hasCoords ? lng : null,
     placeUrl: candidate.placeUrl || '',
     placeUrlLabel: candidate.placeUrlLabel || '',
     phone: candidate.phone || '',

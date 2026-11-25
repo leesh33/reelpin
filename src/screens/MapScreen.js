@@ -42,6 +42,7 @@ import {
   distanceMap,
   findNearbyPins,
   formatDistance,
+  radiusLabel,
   geolocationPermissionState,
   hasNativeLocationPermission,
   nearestPin,
@@ -87,7 +88,9 @@ export default function MapScreen({
   onAddCategory,
   selectedPinId,
   onSelectPin,
-  radiusMeters,
+  // v2.44 — 내 정보에서 고른 알림 반경(300/500/1km). 지도 감시·토스트·파란 원·주변 목록이
+  //   모두 이 **한 값**을 씁니다. (예전에는 이 상수를 무시하고 늘 500m 였습니다)
+  radiusMeters = NEARBY_RADIUS_M,
   onGoPaste,
   onDeletePin,
   onTogglePinVisited,
@@ -379,10 +382,12 @@ export default function MapScreen({
   // 내 위치로부터의 실제 거리 (핀 id → m)
   const distanceById = useMemo(() => distanceMap(pins, myCoords), [pins, myCoords]);
 
-  // 반경 500m 안의 핀 (가까운 순)
+  // 내가 고른 반경 안의 핀 (가까운 순)
+  const alertRadius = radiusMeters > 0 ? radiusMeters : NEARBY_RADIUS_M;
+  const alertRadiusLabel = radiusLabel(alertRadius);
   const nearby = useMemo(
-    () => (myCoords ? findNearbyPins(pins, myCoords, NEARBY_RADIUS_M) : []),
-    [pins, myCoords]
+    () => (myCoords ? findNearbyPins(pins, myCoords, alertRadius) : []),
+    [pins, myCoords, alertRadius]
   );
 
   // 반경 밖이어도 가장 가까운 저장 장소
@@ -413,7 +418,7 @@ export default function MapScreen({
         // 한 번 허용된 브라우저는 다음 방문·새로고침에서 바로 위치를 잡을 수 있게 기록
         writeLocationGrantedFlag(true);
         if (announce) {
-          const near = findNearbyPins(pinsRef.current, position, NEARBY_RADIUS_M);
+          const near = findNearbyPins(pinsRef.current, position, alertRadius);
           // v2.28.0 — 반경 안에 저장한 곳이 있으면 **한 줄 토스트**(nearKey 효과)가 알립니다. (v2.32.2 — 6초)
           //   예전처럼 `주변 500m` 패널을 저절로 열어 지도를 가리지 않습니다.
           if (!near.length) {
@@ -438,7 +443,7 @@ export default function MapScreen({
         setLocating(false);
       }
     },
-    [applyPosition, showToast]
+    [applyPosition, showToast, alertRadius]
   );
 
   /**
@@ -688,14 +693,14 @@ export default function MapScreen({
     const permission = await requestNotificationPermission();
     setNotifyPermission(permission);
     if (permission === 'granted') {
-      showToast('근처 알림을 켰어요 · 반경 ' + NEARBY_RADIUS_M + 'm 안에 들어오면 알려드려요');
+      showToast('근처 알림을 켰어요 · 반경 ' + alertRadiusLabel + ' 안에 들어오면 알려드려요');
     } else if (permission === 'unsupported') {
       showToast('이 브라우저에는 알림창이 없어 앱 안에서 알려드릴게요');
     } else {
       showToast('알림 권한이 꺼져 있어 앱 안 배너로 알려드릴게요');
     }
     if (!myCoords) await locate({ announce: false });
-  }, [alertsOn, onToggleAlerts, myCoords, locate, showToast]);
+  }, [alertsOn, onToggleAlerts, myCoords, locate, showToast, alertRadiusLabel]);
 
   // 알림을 켠 동안 위치를 계속 따라가며 500m 진입을 감지합니다.
   useEffect(() => {
@@ -703,12 +708,12 @@ export default function MapScreen({
     const stop = watchPosition(
       (position) => {
         applyPosition(position, { fly: false });
-        const near = findNearbyPins(pinsRef.current, position, NEARBY_RADIUS_M);
+        const near = findNearbyPins(pinsRef.current, position, alertRadius);
         const fresh = firstNewNearby(near, notifiedRef.current);
         if (!fresh) return;
         notifiedRef.current.add(fresh.pin.id);
         const label = formatDistance(fresh.distanceMeters);
-        showNearbyNotification(fresh.pin, fresh.distanceMeters, NEARBY_RADIUS_M);
+        showNearbyNotification(fresh.pin, fresh.distanceMeters, alertRadius);
         showToast('📍 ' + fresh.pin.name + '이 ' + label + ' 앞에 있어요');
       },
       (err) => {
@@ -721,7 +726,7 @@ export default function MapScreen({
     return () => {
       if (typeof stop === 'function') stop();
     };
-  }, [alertsOn, applyPosition, showToast, onToggleAlerts]);
+  }, [alertsOn, applyPosition, showToast, onToggleAlerts, alertRadius]);
 
   // ── v2.28.0 반경 500m 알림 = **한 줄 토스트** (v2.32.2 — 6초로 연장) ─────────
   //   상훈 님 결정(2026-11-18): "지도 위에 큰 카드로 떠 있는 배너는 지도를 가린다.
@@ -929,7 +934,7 @@ export default function MapScreen({
           focusKey={focusKey}
           fit={fit}
           fitKey={fitKey}
-          radiusMeters={NEARBY_RADIUS_M}
+          radiusMeters={alertRadius}
           categories={categories}
           hideNotice={toolsOpen}
           onLongPress={handleMapLongPress}
@@ -1045,7 +1050,11 @@ export default function MapScreen({
           )}
           {nearbyToast && (
             <View style={styles.geofenceToastWrap} pointerEvents="box-none">
-              <GeofenceToast message={nearbyToastMessage(nearbyToast.count)} onPress={openNearbyFromToast} />
+              <GeofenceToast
+                message={nearbyToastMessage(nearbyToast.count, alertRadius)}
+                radiusMeters={alertRadius}
+                onPress={openNearbyFromToast}
+              />
             </View>
           )}
           {!!locationError && (
@@ -1087,7 +1096,7 @@ export default function MapScreen({
             })}
             nearbyOpen={nearbyOpen}
             nearbyCount={nearbyList.length}
-            nearbyRadius={NEARBY_RADIUS_M}
+            nearbyRadius={alertRadius}
             hasMyCoords={Boolean(myCoords)}
             onToggleOpen={() => {
               // v2.17.1 — 카드와 반경 500m 패널이 동시에 떠 서로 가리지 않게,
@@ -1114,7 +1123,7 @@ export default function MapScreen({
           <View style={[styles.nearbyPanel, { bottom: mapControls.panelBottom + bottomLift }]} testID="nearby-panel">
             <View style={styles.panelHead}>
               <Text style={styles.panelTitle}>
-                {'반경 ' + NEARBY_RADIUS_M + 'm · ' + nearbyList.length + '곳'}
+                {'반경 ' + alertRadiusLabel + ' · ' + nearbyList.length + '곳'}
               </Text>
               <Pressable
                 style={[styles.alertToggle, alertsOn && styles.alertToggleOn]}
@@ -1140,7 +1149,7 @@ export default function MapScreen({
             {!myCoords ? (
               <View style={styles.panelEmptyWrap}>
                 <Text style={styles.panelEmpty}>
-                  {'내 위치를 켜면 반경 ' + NEARBY_RADIUS_M + 'm 안의 저장 장소를 가까운 순으로 보여드려요.'}
+                  {'내 위치를 켜면 반경 ' + alertRadiusLabel + ' 안의 저장 장소를 가까운 순으로 보여드려요.'}
                 </Text>
                 <Pressable style={styles.panelLocateBtn} onPress={() => locateFromUser()} accessibilityRole="button">
                   {locating ? (
@@ -1153,7 +1162,7 @@ export default function MapScreen({
               </View>
             ) : nearbyList.length === 0 ? (
               <Text style={styles.panelEmpty}>
-                {'반경 ' + NEARBY_RADIUS_M + 'm 안에는 저장한 곳이 없어요.' +
+                {'반경 ' + alertRadiusLabel + ' 안에는 저장한 곳이 없어요.' +
                   (closest ? ' 가장 가까운 곳은 ' + closest.pin.name + ' (' + formatDistance(closest.distanceMeters) + ')' : '')}
               </Text>
             ) : (

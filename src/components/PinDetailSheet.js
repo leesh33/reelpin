@@ -78,6 +78,8 @@ export default function PinDetailSheet({
   const [placeModalOpen, setPlaceModalOpen] = useState(false);
   // v2.10 — 📝 한줄 메모는 입력 중인 글자를 따로 들고 있다가 저장할 때 핀에 반영합니다.
   const [memoDraft, setMemoDraft] = useState(String((pin && pin.memo) || ''));
+  /** v2.44 — 핀 삭제 2단계 확인 (한 번 누르면 바로 지워지던 것을 확인 한 번 거치게) */
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // ── v2.34.0 · 아래로 쓸어내려 닫기 ─────────────────────────────
   //   · 손가락이 내려간 만큼 시트가 따라 내려오고(translateY), 손을 뗐을 때
@@ -180,6 +182,7 @@ export default function PinDetailSheet({
 
   useEffect(() => {
     setMemoDraft(String((pin && pin.memo) || ''));
+    setConfirmDelete(false);
   }, [pin && pin.id, pin && pin.memo]);
 
   if (!pin) return null;
@@ -660,11 +663,51 @@ export default function PinDetailSheet({
         {/* v2.30.0 — 하단 보조 칩(`네이버지도 / 카카오맵`)은 **완전히 삭제**했습니다.
             외부 지도로 나가는 길은 시트 맨 위의 작은 [카카오]·[네이버] 배지 하나뿐이고,
             바닥에는 주 동작 `🗺️ 지도에서 보기` 와 `핀 삭제` 만 남습니다. */}
-        {!readOnly && (
-          <Pressable style={styles.deleteBtn} onPress={() => onDelete(pin.id)} hitSlop={8}>
-            <Ionicons name="trash-outline" size={13} color={colors.textMuted} />
+        {!readOnly && !confirmDelete && (
+          <Pressable
+            style={styles.deleteBtn}
+            onPress={() => setConfirmDelete(true)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="핀 삭제"
+            testID="pin-delete"
+          >
+            <Ionicons name="trash-outline" size={14} color={colors.textMuted} />
             <Text style={styles.deleteText}>핀 삭제</Text>
           </Pressable>
+        )}
+
+        {/* v2.44 — 실수로 지우지 않게 한 번 더 묻습니다. 지운 핀은 되돌릴 수 없어요. */}
+        {!readOnly && confirmDelete && (
+          <View style={styles.deleteConfirm} testID="pin-delete-confirm">
+            <Text style={styles.deleteConfirmText}>
+              이 핀을 지울까요? 클라우드에서도 함께 지워지고, 되돌릴 수 없어요.
+            </Text>
+            <View style={styles.deleteConfirmRow}>
+              <Pressable
+                style={[styles.deleteConfirmBtn, styles.deleteCancelBtn]}
+                onPress={() => setConfirmDelete(false)}
+                accessibilityRole="button"
+                accessibilityLabel="삭제 취소"
+                testID="pin-delete-cancel"
+              >
+                <Text style={styles.deleteCancelText}>취소</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.deleteConfirmBtn, styles.deleteOkBtn]}
+                onPress={() => {
+                  setConfirmDelete(false);
+                  onDelete(pin.id);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="삭제 확인"
+                testID="pin-delete-ok"
+              >
+                <Ionicons name="trash-outline" size={14} color={colors.white} />
+                <Text style={styles.deleteOkText}>삭제</Text>
+              </Pressable>
+            </View>
+          </View>
         )}
 
         {readOnly && (visited || savedMemo) && (
@@ -1212,12 +1255,63 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 4,
+    justifyContent: 'center',
+    gap: 5,
+    // v2.44 — 터치 타깃 44pt (예전 11px 글씨 한 번에 삭제되던 자리)
+    minHeight: 44,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
   deleteText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
     color: colors.textMuted,
+  },
+  deleteConfirm: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: radius.md,
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.line,
+    gap: 10,
+  },
+  deleteConfirmText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSub,
+    lineHeight: 17,
+    textAlign: 'center',
+  },
+  deleteConfirmRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  deleteConfirmBtn: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: radius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  deleteCancelBtn: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  deleteCancelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSub,
+  },
+  deleteOkBtn: {
+    backgroundColor: '#DC2626',
+  },
+  deleteOkText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.white,
   },
 });

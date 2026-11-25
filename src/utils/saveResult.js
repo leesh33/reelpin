@@ -34,6 +34,8 @@ export function buildResultPins(candidates, options = {}) {
   const category = String(options.category || '').trim();
   const pins = [];
   list.forEach((candidate, index) => {
+    // v2.44 — 자리표시자 후보(예전 '이름 없는 릴스 장소')는 저장하지 않습니다.
+    if (!candidate.name || candidate.placeholder === true || /^이름 없는/.test(String(candidate.name))) return;
     const pin = buildPin(
       { ...candidate, category: category || candidate.category || '맛집' },
       {
