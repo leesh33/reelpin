@@ -4557,7 +4557,7 @@ export async function searchPlacesDirect(rawQuery, options = {}) {
 
   const message =
     chain.reason === 'no-key'
-      ? '지도 API 키가 없어 직접 검색을 쓸 수 없어요. 릴스 링크로 저장하거나 .env 에 카카오·네이버 키를 넣어 주세요.'
+      ? '지금은 가게 검색을 쓸 수 없어요. 잠시 뒤 다시 시도하거나, 릴스·쇼츠 링크로 저장해 주세요.'
       : '“' + query + '” 로 찾은 가게가 없어요. 동네 이름을 붙여 다시 찾아보세요. (예: 성수동 소금빵)';
   return {
     ok: false,

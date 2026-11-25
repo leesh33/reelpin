@@ -604,7 +604,7 @@ check('direct: 결과 없음이면 요청은 실제로 나감', calls.length ===
 setKeys({});
 calls = [];
 const directNoKey = await searchPlacesDirect('성수 소금빵');
-check('direct: 키 없음 → no-key 안내', directNoKey.ok === false && directNoKey.reason === 'no-key' && /지도 API 키/.test(directNoKey.message), directNoKey.reason);
+check('direct: 키 없음 → no-key 안내(사용자 문구)', directNoKey.ok === false && directNoKey.reason === 'no-key' && /가게 검색을 쓸 수 없어요/.test(directNoKey.message), directNoKey.reason);
 check('direct: 키 없으면 요청 0건', calls.length === 0, String(calls.length));
 check('direct: 예시 검색어 3개', Array.isArray(DIRECT_PRESETS) && DIRECT_PRESETS.length === 3, String(DIRECT_PRESETS.length));
 
