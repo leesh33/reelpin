@@ -52,9 +52,7 @@ import {
   saveRadius,
   saveAlerts,
 } from './src/storage';
-// v2.44 — 첫 실행 예시 핀(seed-)은 내 핀이 아닙니다 — 저장·업로드·공유·개수에서 뺀다
-import { isSeedPin, stripSeedPins } from './src/data/seedPins';
-import { findExistingPin, normalizePins, planPinAddition, withPlaceHours } from './src/utils/pins';
+import { findExistingPin, normalizePins, persistablePins, planPinAddition, withPlaceHours } from './src/utils/pins';
 import {
   addCategory,
   allCategories,
@@ -285,14 +283,15 @@ function AppShell() {
   //   화면에서 예시 핀을 걷어내고, 진짜 핀만 저장합니다. (샘플이 내 핀·클라우드에 섞이던 문제)
   useEffect(() => {
     if (!ready) return;
-    const real = stripSeedPins(pins);
-    if (real.length === 0) return;
-    if (real.length !== pins.length) {
-      pinsRef.current = real;
-      setPins(real);
+    const list = persistablePins(pins);
+    if (list === null) return; // 예시 핀만 있는 상태는 저장하지 않음
+    if (list.length !== pins.length) {
+      // 예시 핀이 섞여 있었다 → 화면에서도 걷어내고 진짜 핀만 저장
+      pinsRef.current = list;
+      setPins(list);
       return;
     }
-    savePins(real);
+    savePins(list); // 빈 목록도 저장 — 마지막 핀을 지운 사실이 남아야 합니다
   }, [pins, ready]);
 
   useEffect(() => {

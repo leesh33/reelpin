@@ -33,7 +33,7 @@ import { SEED_PINS, isSeedPin, stripSeedPins } from '../src/data/seedPins.js';
 import { planCloudSync } from '../src/services/cloudSync.js';
 import { buildShareUrl, decodeSharePins, encodeSharePins, shareMessage } from '../src/utils/shareMap.js';
 import { buildResultPins } from '../src/utils/saveResult.js';
-import { buildPin } from '../src/utils/pins.js';
+import { buildPin, persistablePins } from '../src/utils/pins.js';
 import { pinSearchQuery } from '../src/utils/links.js';
 import { loadDataOwner, loadPins, savePins, saveDataOwner, clearPins } from '../src/storage.js';
 
@@ -169,6 +169,10 @@ check('첫 실행: 샘플을 **저장하지 않는다**', rawAfterLoad == null, 
 await savePins(SEED_PINS.concat([{ id: 'pin-real', name: '진짜 가게', lat: 37.5, lng: 127 }]));
 const afterSave = await loadPins();
 check('저장값: 샘플은 읽을 때 걸러진다', afterSave.length === 1 && afterSave[0].id === 'pin-real', JSON.stringify(afterSave.map((p) => p.id)));
+
+check('저장 목록: 예시 핀만 있으면 저장 안 함', persistablePins(SEED_PINS) === null);
+check('저장 목록: 빈 목록은 저장한다(마지막 핀 삭제 반영)', Array.isArray(persistablePins([])) && persistablePins([]).length === 0);
+check('저장 목록: 예시+진짜면 진짜만', persistablePins(SEED_PINS.concat([{ id: 'pin-real', name: '진짜' }])).length === 1);
 
 const plan = planCloudSync(SEED_PINS.concat([{ id: 'pin-real', name: '진짜 가게' }]), []);
 check('클라우드: 샘플은 업로드하지 않는다', plan.toUpload.length === 1 && plan.toUpload[0].id === 'pin-real', JSON.stringify(plan.toUpload.map((p) => p.id)));

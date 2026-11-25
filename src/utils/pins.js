@@ -26,6 +26,20 @@
  *   예전에 저장된 핀에는 이 필드가 없으므로 `normalizePin` 이 기본값을 채웁니다.
  */
 
+/**
+ * v2.44 — 기기에 **저장할** 핀 목록을 정합니다.
+ *   · 첫 실행 예시 핀(`seed-…`)만 있으면 `null` → 저장하지 않습니다(화면 예시일 뿐).
+ *   · 진짜 핀이 하나라도 있으면 예시 핀을 빼고 그 핀들만 저장합니다.
+ *   · 핀이 0개면 `[]` 을 돌려줍니다 — 마지막 핀을 지운 사실도 저장돼야 합니다.
+ *     (예전에는 빈 목록을 저장하지 않아, 지운 핀이 새로고침 뒤 되살아났습니다)
+ */
+export function persistablePins(pins) {
+  const list = Array.isArray(pins) ? pins.filter(Boolean) : [];
+  const real = list.filter((pin) => pin.isSeed !== true && String(pin.id || '').indexOf('seed-') !== 0);
+  if (real.length === 0 && list.length > 0) return null;
+  return real;
+}
+
 /** 후보 → 핀. 저장에 필요한 값만 추리고, 나머지는 안전한 기본값으로 채웁니다. */
 export function buildPin(candidate, options = {}) {
   if (!candidate || !candidate.name) return null;
